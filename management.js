@@ -3,9 +3,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, 
 import { isAbsolute, join, resolve } from "node:path";
 
 import { assert } from "./assert.js";
+import { ACCOUNT_ID, CONVERSATION_ID } from "./ids.js";
 
-const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS = new Set(["keep", "archive", "delete"]);
 const ACTION_KEYS = new Set(["conversationId", "expectedTitle", "decision", "approved", "backupFile", "backupSha256", "newTitle"]);
 const MANIFEST_KEYS = new Set(["version", "workspace", "receiptDir", "source", "actions"]);

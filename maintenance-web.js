@@ -13,6 +13,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assert } from "./assert.js";
+import { ACCOUNT_ID } from "./ids.js";
 import { resolveDataDir, runsDir, stateFilePath } from "./data-dir.js";
 import { acquireLock, lockStatus, releaseLock } from "./maintenance-lock.js";
 import { createRelayApi } from "./relay-api.js";
@@ -32,8 +33,6 @@ import {
   validateClassificationProposals,
   writeClassificationReview,
 } from "./workflow.js";
-
-const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const APP_ROOT = dirname(fileURLToPath(import.meta.url));
 const JOB_TTL_MS = 60 * 60 * 1000;
