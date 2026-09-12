@@ -8,16 +8,10 @@ import {
 import { isAbsolute, join, resolve } from "node:path";
 
 import { assert } from "./assert.js";
+import { exactKeys } from "./exact-keys.js";
 import { ACCOUNT_ID, CONVERSATION_ID, PROJECT_ID } from "./ids.js";
 
 try { process.umask(0o077); } catch {}
-
-function exactKeys(value, expected, label) {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  assert(JSON.stringify(actual) === JSON.stringify(wanted),
-    `${label} must contain only: ${wanted.join(", ")}`);
-}
 
 function cleanText(value, label, { min = 0, max }) {
   assert(typeof value === "string", `${label} must be a string`);
