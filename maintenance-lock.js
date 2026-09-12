@@ -6,6 +6,7 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import { lockFilePath, resolveDataDir } from "./data-dir.js";
 
 // A single local lock file serializes the one-at-a-time maintenance work
@@ -15,10 +16,6 @@ import { lockFilePath, resolveDataDir } from "./data-dir.js";
 // behind by a crashed run is taken over automatically once it is stale.
 
 export const STALE_LOCK_MS = 6 * 60 * 60 * 1000;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function readHolder(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); }

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { assert } from "./assert.js";
+import { exactKeys } from "./exact-keys.js";
 import {
   listOwnedProjects,
   projectPlacementConfirmation,
@@ -9,17 +11,6 @@ import {
   runProjectPlacementWorkflow,
   validateProjectPlacementPlan,
 } from "./project-management.js";
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function exactKeys(value, expected, label) {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  assert(JSON.stringify(actual) === JSON.stringify(wanted),
-    `${label} must contain only: ${wanted.join(", ")}`);
-}
 
 export function validateProjectRouting(input) {
   assert(input && typeof input === "object" && !Array.isArray(input), "Routing plan must be an object");

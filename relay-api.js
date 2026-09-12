@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { assert } from "./assert.js";
 import { validateRemoteOperation, validateRemoteResult } from "./remote-ops.js";
 import { createRelayTrace } from "./relay-trace.js";
 
 const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
-
-function assert(condition, message) { if (!condition) throw new Error(message); }
 
 // timeoutMs: 한 요청의 왕복 제한. 대화 본문은 수 MB 라 목록 조회보다 오래 걸린다.
 // livenessMs: 유지관리 창이 살아있다고 볼 기간. 둘을 묶으면 왕복 제한을 늘릴 때

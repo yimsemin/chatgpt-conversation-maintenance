@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -12,6 +12,9 @@ import { hostname } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
+import { sha256 } from "./content-hash.js";
+import { ACCOUNT_ID } from "./ids.js";
 import { resolveDataDir, runsDir, stateFilePath } from "./data-dir.js";
 import { acquireLock, lockStatus, releaseLock } from "./maintenance-lock.js";
 import { createRelayApi } from "./relay-api.js";
@@ -31,30 +34,12 @@ import {
   validateClassificationProposals,
   writeClassificationReview,
 } from "./workflow.js";
-
-const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isNormalizedTitle } from "./title-rules.js";
 
 const APP_ROOT = dirname(fileURLToPath(import.meta.url));
 const JOB_TTL_MS = 60 * 60 * 1000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const jobs = new Map();
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function sha256(data) {
-  return createHash("sha256").update(data).digest("hex");
-}
-
-// 표준 제목 형식 "주제 — 작업/결과". 규칙의 정본은 CLASSIFICATION_WORKFLOW.md이며
-// workflow.js·maintenance-cli.js도 같은 검사를 각자 둔다.
-function isNormalizedTitle(title) {
-  if (typeof title !== "string" || title !== title.trim()) return false;
-  const parts = title.split(" — ");
-  return parts.length === 2
-    && parts.every((part) => part.length > 0 && part === part.trim() && !part.includes("—"));
-}
 
 function readJson(path, label = "JSON") {
   try { return JSON.parse(readFileSync(path, "utf8")); }
