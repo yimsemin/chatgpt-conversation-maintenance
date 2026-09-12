@@ -14,6 +14,7 @@ import {
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import { managementManifestDigest, validateManagementManifest } from "./management.js";
 import { projectRoutingDigest, validateProjectRouting } from "./project-routing.js";
 
@@ -77,9 +78,6 @@ const CLASSIFICATION_PROPOSAL_SCHEMA = {
   ],
 };
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");

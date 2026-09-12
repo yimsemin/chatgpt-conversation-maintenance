@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { assert } from "./assert.js";
 import {
   listOwnedProjects,
   projectPlacementConfirmation,
@@ -9,10 +10,6 @@ import {
   runProjectPlacementWorkflow,
   validateProjectPlacementPlan,
 } from "./project-management.js";
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function exactKeys(value, expected, label) {
   const actual = Object.keys(value).sort();

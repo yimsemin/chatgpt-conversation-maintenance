@@ -2,16 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { assert } from "./assert.js";
+
 const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS = new Set(["keep", "archive", "delete"]);
 const ACTION_KEYS = new Set(["conversationId", "expectedTitle", "decision", "approved", "backupFile", "backupSha256", "newTitle"]);
 const MANIFEST_KEYS = new Set(["version", "workspace", "receiptDir", "source", "actions"]);
 const DIGEST = /^[0-9a-f]{64}$/;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function cleanTitle(value, field) {
   assert(typeof value === "string" && value.trim(), `${field} must be a non-empty string`);

@@ -7,15 +7,13 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { assert } from "./assert.js";
+
 try { process.umask(0o077); } catch {}
 
 const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONVERSATION_ID = ACCOUNT_ID;
 const PROJECT_ID = /^g-p-[0-9a-f]{32}$/;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function exactKeys(value, expected, label) {
   const actual = Object.keys(value).sort();

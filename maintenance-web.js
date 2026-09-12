@@ -12,6 +12,7 @@ import { hostname } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import { resolveDataDir, runsDir, stateFilePath } from "./data-dir.js";
 import { acquireLock, lockStatus, releaseLock } from "./maintenance-lock.js";
 import { createRelayApi } from "./relay-api.js";
@@ -38,10 +39,6 @@ const APP_ROOT = dirname(fileURLToPath(import.meta.url));
 const JOB_TTL_MS = 60 * 60 * 1000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const jobs = new Map();
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");

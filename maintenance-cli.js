@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import { loadPlanSet } from "./management-cli.js";
 import { resolveDataDir } from "./data-dir.js";
 import { holdEntry, isHeld, readHoldList, writeHoldList } from "./hold-list.js";
@@ -31,10 +32,6 @@ const PAGE_SIZE = 100;
 const PROJECT_PAGE_SIZE = 20;
 const PROJECT_CONVERSATION_PAGE_SIZE = 50;
 const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");

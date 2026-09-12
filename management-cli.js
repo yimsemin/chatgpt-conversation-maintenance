@@ -5,6 +5,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import {
   managementConfirmation,
   managementManifestDigest,
@@ -18,10 +19,6 @@ try { process.umask(0o077); } catch {}
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
 
 const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function readJson(path, label) {
   try { return JSON.parse(readFileSync(path, "utf8")); }

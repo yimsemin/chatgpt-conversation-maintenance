@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assert } from "./assert.js";
 import { resolveDataDir } from "./data-dir.js";
 import { assertLockHeld } from "./maintenance-lock.js";
 import { collectConversationCatalog } from "./maintenance-cli.js";
@@ -23,10 +24,6 @@ import {
 try { process.umask(0o077); } catch {}
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function readPlan(path) {
   let input;
