@@ -1,0 +1,40 @@
+# Credentials and browser state (never commit)
+.env
+.env.*
+!.env.example
+session.json
+session-*.json
+cookies.json
+cookies-*.json
+*.pem
+*.key
+.local/
+.auth/
+.chrome-profile/
+**/chrome-profile/
+
+# User data: baseline, per-run artifacts and the maintenance lock (never commit)
+/data/
+
+# Conversation bodies and completed local audit artifacts
+exports/
+classification/
+management-plans/
+management-receipts/
+project-routing/
+
+# Generated files
+node_modules/
+dist/
+logs/
+*.log
+*.zip
+*.bundle
+
+# Editors and operating systems
+.claude/*
+!.claude/settings.json
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

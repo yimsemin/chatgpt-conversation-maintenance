@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChatGPT 세션 북마클릿</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b1017; --panel:#131b26; --line:#29384a; --text:#ecf2f8; --muted:#93a4b7; --accent:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.65; }
+  main { width:min(680px,calc(100% - 32px)); margin:0 auto; padding:40px 0 64px; }
+  h1 { font-size:clamp(22px,4vw,30px); letter-spacing:-.03em; margin:0 0 8px; }
+  .lede { color:var(--muted); margin:0 0 28px; }
+  ol { padding-left:20px; margin:0 0 28px; } li { margin:10px 0; }
+  .drag { display:inline-block; padding:10px 16px; border-radius:10px; background:var(--accent);
+    color:#07111d; font-weight:750; text-decoration:none; cursor:grab; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-top:20px; }
+  code { background:#0d141d; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:12px; }
+  .muted { color:var(--muted); font-size:13px; }
+  a.back { color:var(--muted); text-decoration:none; font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">← 유지관리 화면으로</a>
+  <h1 style="margin-top:14px;">ChatGPT 릴레이 북마클릿</h1>
+  <p class="lede">ChatGPT 세션을 페이지 안에 둔 채, 로컬 앱이 승인한 작업의 HTTP 수행만 중계합니다.</p>
+  <p class="muted">앱 버전 <code>__APP_RELEASE__</code> · 릴레이 <code>v__RELAY_PROTOCOL_VERSION__</code></p>
+
+  <ol>
+    <li>아래 <strong>ChatGPT → 유지관리</strong> 버튼을 브라우저의 북마크바로 드래그해 등록합니다.
+      <div style="margin-top:10px;"><a class="drag" id="bm" href="#">ChatGPT → 유지관리 (__APP_RELEASE__)</a></div>
+    </li>
+    <li><code>chatgpt.com</code>에 로그인한 탭에서 방금 만든 북마크를 클릭합니다.</li>
+    <li>유지관리 앱 창이 열리고 “ChatGPT 릴레이”가 “연결됨”으로 바뀌면 그 창에서 작업합니다.
+      원래 ChatGPT 탭은 작업이 끝날 때까지 열어 두세요.</li>
+  </ol>
+
+  <div class="card">
+    <p class="muted" style="margin-top:0;">동작 방식 · 안전 경계</p>
+    <p class="muted">로컬 앱은 원시 URL 대신 고정된 <code>{op, params}</code>만 보냅니다. 이 페이지는
+      자체 op→URL 표에 있는 요청만 만들고 결과만 반환합니다. 액세스 토큰·쿠키는 페이지 밖으로
+      보내지 않으며 브라우저 저장소에도 기록하지 않습니다.</p>
+  </div>
+</main>
+<script>
+(() => {
+  // 이 앱의 출처. bookmarklet.html은 항상 127.0.0.1:8523에서 서빙된다.
+  const target = location.origin;
+  const release = "__APP_RELEASE__";
+  const protocolVersion = Number("__RELAY_PROTOCOL_VERSION__");
+  function executor(T, R, V) {
+    if (location.origin !== "https://chatgpt.com") { alert("chatgpt.com에서 실행해 주세요."); return; }
+    const existing = window.__CHATGPT_MAINTENANCE_RELAY__;
+    if (existing?.window && !existing.window.closed && existing.release === R && existing.protocolVersion === V) {
+      existing.window.focus(); return;
+    }
+    existing?.stop?.();
+    const w = window.open(T, "chatgptMaintenance");
+    if (!w) { alert("팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요."); return; }
+    try { w.focus(); } catch (_) {}
+    const state = { window: w, queue: Promise.resolve(), release: R, protocolVersion: V };
+    window.__CHATGPT_MAINTENANCE_RELAY__ = state;
+    const session = (async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch("/api/auth/session", {
+          credentials: "include", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`ChatGPT session lookup failed: HTTP ${response.status}`);
+        const data = await response.json();
+        const token = typeof data?.accessToken === "string" ? data.accessToken : "";
+        let accountId = data?.account?.id || data?.accountId || "";
+        if (!accountId && token) {
+          try {
+            const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+            const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+            accountId = payload?.["https://api.openai.com/auth"]?.chatgpt_account_id || "";
+          } catch {}
+        }
+        if (!token || !accountId) throw new Error("ChatGPT session has no access token or account ID");
+        return { token, accountId };
+      } catch (error) {
+        if (error?.name === "AbortError") throw new Error("ChatGPT session lookup timed out after 15s");
+        throw error;
+      } finally { clearTimeout(timer); }
+    })();
+    const json = async (url, options) => {
+      const credentials = url.startsWith("/backend-api/") ? await session : null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      try {
+        const response = await fetch(url, { credentials: "include", cache: "no-store", ...options,
+          signal: controller.signal,
+          headers: { "Content-Type": "application/json",
+            ...(credentials ? { Authorization: `Bearer ${credentials.token}`, "ChatGPT-Account-Id": credentials.accountId } : {}),
+            ...(options?.headers || {}) } });
+        const contentType = response.headers.get("content-type") || "";
+        const text = await response.text();
+        let data = null; try { data = JSON.parse(text); } catch {}
+        return { ok: response.ok, status: response.status, data, contentType,
+          ...(response.ok ? {} : { bodySnippet: text.slice(0, 200) }) };
+      } finally { clearTimeout(timer); }
+    };
+    const run = async (op, p) => {
+      if (op === "accountInfo") {
+        const { accountId } = await session;
+        return { ok: true, status: 200, data: { accountId }, contentType: "application/json" };
+      }
+      if (op === "getConversation") return json(`/backend-api/conversation/${encodeURIComponent(p.id)}`);
+      if (op === "listConversations") {
+        const q = new URLSearchParams({ offset: String(p.offset), limit: String(p.limit), is_archived: String(p.archived) });
+        return json(`/backend-api/conversations?${q}`);
+      }
+      if (op === "listProjects") {
+        const q = new URLSearchParams({ owned_only: "true", conversations_per_gizmo: "0", limit: String(p.limit) });
+        if (p.cursor) q.set("cursor", p.cursor);
+        return json(`/backend-api/gizmos/snorlax/sidebar?${q}`);
+      }
+      if (op === "listProjectConversations") {
+        const q = new URLSearchParams({ limit: String(p.limit) }); if (p.cursor) q.set("cursor", p.cursor);
+        return json(`/backend-api/gizmos/${encodeURIComponent(p.projectId)}/conversations?${q}`);
+      }
+      if (op === "createProject") return json("/backend-api/projects", { method: "POST", body: JSON.stringify({ name: p.name, instructions: p.instructions }) });
+      if (op === "moveConversation") return json(`/backend-api/conversation/${encodeURIComponent(p.id)}`, { method: "PATCH", body: JSON.stringify({ gizmo_id: p.projectId }) });
+      if (op === "patchConversation") return json(`/backend-api/conversation/${encodeURIComponent(p.id)}`, { method: "PATCH", body: JSON.stringify(p.body) });
+      throw new Error("Unsupported remote operation");
+    };
+    const listener = (event) => {
+      if (event.origin !== T || event.source !== w || event.data?.type !== "chatgpt-relay-v2-request") return;
+      const { id, op, params } = event.data;
+      if (!w.closed) w.postMessage({ type: "chatgpt-relay-v2-ack", id }, T);
+      state.queue = state.queue.then(async () => {
+        let result;
+        try { result = await run(op, params); }
+        catch (error) { result = { ok: false, status: 599, data: null, contentType: "", bodySnippet: String(error?.message || error).slice(0, 200) }; }
+        if (!w.closed) w.postMessage({ type: "chatgpt-relay-v2-result", id, result }, T);
+      });
+    };
+    window.addEventListener("message", listener);
+    const stop = () => {
+      clearInterval(heartbeat);
+      window.removeEventListener("message", listener);
+      if (window.__CHATGPT_MAINTENANCE_RELAY__ === state) delete window.__CHATGPT_MAINTENANCE_RELAY__;
+    };
+    state.stop = stop;
+    const heartbeat = setInterval(() => {
+      if (w.closed) stop();
+      else w.postMessage({ type: "chatgpt-relay-v2-ready", release: R, protocolVersion: V }, T);
+    }, 500);
+  }
+  // javascript: URL 은 저장·실행 과정에서 줄바꿈이 사라진다. 그러면 `//` 라인 주석이
+  // 뒤쪽 코드를 전부 삼켜 북마클릿이 통째로 깨진다(실제로 r8 에서 발생). executor 안에는
+  // 라인 주석을 두지 않고, 줄바꿈도 생성 시점에 공백으로 접어 의존을 없앤다.
+  // executor 에는 여러 줄 문자열이 없으므로 이 치환은 안전하다.
+  function inlineSource(fn) {
+    const source = fn.toString();
+    const stripped = source.replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g, "");
+    if (/(^|[^:])\/\//.test(stripped)) {
+      throw new Error("북마클릿 executor 에는 // 라인 주석을 둘 수 없습니다");
+    }
+    return source.replace(/\n\s*/g, " ");
+  }
+  const code = `javascript:(${inlineSource(executor)})(${JSON.stringify(target)},${JSON.stringify(release)},${protocolVersion})`;
+  document.getElementById("bm").setAttribute("href", code);
+})();
+</script>
+</body>
+</html>
