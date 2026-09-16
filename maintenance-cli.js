@@ -131,9 +131,10 @@ export function unwrapSidebarGizmo(entry) {
   return current;
 }
 
-export async function collectConversationCatalog(api, now = () => new Date()) {
+export async function collectConversationCatalog(api, now = () => new Date(), onProgress = () => {}) {
   assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
     "Catalog API adapter is incomplete");
+  onProgress({ phase: "projects", index: 0, total: null });
   const projects = [];
   let projectCursor = null;
   const seenProjectCursors = new Set();
@@ -161,7 +162,8 @@ export async function collectConversationCatalog(api, now = () => new Date()) {
 
   const projectByConversation = new Map();
   const projectExtras = new Map();
-  for (const project of projects) {
+  for (const [projectIndex, project] of projects.entries()) {
+    onProgress({ phase: "projects", index: projectIndex, total: projects.length, projectName: project.projectName });
     let cursor = null;
     const seenCursors = new Set();
     while (true) {
@@ -207,6 +209,7 @@ export async function collectConversationCatalog(api, now = () => new Date()) {
       }
       offset += items.length;
       const total = Number.isFinite(data.total) ? data.total : null;
+      onProgress({ phase: isArchived ? "archived" : "active", index: offset, total });
       const hasNext = data.has_next ?? data.has_more;
       if (hasNext === false) break;
       if (hasNext !== true && total !== null && offset >= total) break;
@@ -478,29 +481,32 @@ export async function seedMaintenanceRun({ previousInventoryPath, runDir, api, n
   return { root, inventoryPath, catalog, inventory };
 }
 
-export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, now = () => new Date() }) {
+export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, now = () => new Date(), onProgress = () => {} }) {
   const stateRaw = readFileSync(statePath);
   const state = JSON.parse(stateRaw.toString("utf8"));
   const root = prepareRunDirectory(runDir);
   const holdDir = dataDir ? resolve(dataDir) : dirname(resolve(statePath));
   const holdList = readHoldList(holdDir);
-  const catalog = await collectConversationCatalog(api, now);
+  const catalog = await collectConversationCatalog(api, now, onProgress);
   const catalogPath = join(root, "catalog.json");
   const selected = selectMaintenanceCandidates(state, catalog, holdList);
   const confirmedUnavailableConversationIds = [];
   const unresolvedRemovedConversationIds = [];
-  for (const conversationId of selected.removedConversationIds) {
+  for (const [index, conversationId] of selected.removedConversationIds.entries()) {
+    onProgress({ phase: "removed", index, total: selected.removedConversationIds.length });
     const response = await api.getConversation(conversationId);
     if (response?.status === 404) confirmedUnavailableConversationIds.push(conversationId);
     else unresolvedRemovedConversationIds.push(conversationId);
   }
   const candidates = [];
-  for (const candidate of selected.candidates) {
+  for (const [index, candidate] of selected.candidates.entries()) {
+    onProgress({ phase: "downloads", index, total: selected.candidates.length });
     candidates.push({
       ...await downloadConversation(api, candidate, join(root, "json")),
       reasons: candidate.reasons,
     });
   }
+  onProgress({ phase: "downloads", index: selected.candidates.length, total: selected.candidates.length });
   writeJsonNew(catalogPath, catalog);
   const nextHold = nextHoldList(holdList, catalog, candidates);
   if (nextHold.changed) writeHoldList(holdDir, nextHold.list, now);
@@ -583,11 +589,10 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
       assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
         && decision.projectName.length > 0,
       `Reviewed projectName is required for a preserved conversation: ${decision.conversationId}`);
-      const currentProjectName = inventoryById.get(decision.conversationId)?.projectName || null;
-      if (currentProjectName) {
-        assert(decision.projectName === currentProjectName,
-          `Reviewed decision requests an unsupported move between projects: ${decision.conversationId}`);
-      }
+      // A decision.projectName that differs from the conversation's current
+      // project is a real move between two existing projects, handled by
+      // compileProjectRouting()/runProjectRouting() after this checkpoint —
+      // not something this checkpoint needs to reject.
     }
   }
   if (inventory.source?.mode === "scan") {
@@ -619,6 +624,21 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
       continue;
     }
     assert(currentItem, `Conversation disappeared during maintenance: ${beforeItem.conversationId}`);
+    const isPlannedMove = decision?.decision === "keep" && !decision.newTitle
+      && decision.projectName && decision.projectName !== beforeItem.projectName;
+    if (isPlannedMove) {
+      // A pure project move (no title change) is compiled into a separate
+      // routing plan applied after this checkpoint — so at checkpoint time
+      // the conversation may still be at its old project (routing hasn't run
+      // yet) or already at the new one (a previous attempt's routing partly
+      // succeeded before this retry). Either is expected; anything else, or
+      // a title/archived change, is not.
+      assert(currentItem.title === beforeItem.title && currentItem.isArchived === beforeItem.isArchived
+        && (currentItem.projectName === beforeItem.projectName || currentItem.projectName === decision.projectName),
+        `Conversation changed unexpectedly during maintenance: ${beforeItem.conversationId}`
+        + ` (${catalogItemDifferences(beforeItem, currentItem).join(", ")})`);
+      continue;
+    }
     if (!decision || (decision.decision === "keep" && !decision.newTitle)) {
       assert(catalogItemEqual(beforeItem, currentItem),
         `Conversation changed during maintenance: ${beforeItem.conversationId}`
@@ -691,8 +711,6 @@ export async function synchronizeMaintenanceStateAfterProjectRouting({
         `Unplanned conversation change blocks routing synchronization: ${previousItem.conversationId}`);
       continue;
     }
-    assert((previousItem.projectName || null) === null,
-      `Routing synchronization only accepts a projectless checkpoint source: ${previousItem.conversationId}`);
     assert(previousItem.title === planned.expectedTitle && currentItem.title === planned.expectedTitle,
       `Routed conversation title does not match the plan: ${previousItem.conversationId}`);
     assert(currentItem.isArchived === previousItem.isArchived,

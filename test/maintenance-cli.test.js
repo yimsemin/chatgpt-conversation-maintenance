@@ -496,6 +496,74 @@ test("checkpoint advances only after every no-mutation candidate was reviewed", 
   }
 });
 
+function movePlanFixture(root, { liveProjectName }) {
+  const current = conversation(ID1, "대상 — 작업", 2);
+  const beforeCatalog = catalog([catalogItem(current, "Project A")]);
+  const catalogPath = join(root, "catalog.json");
+  writeFileSync(catalogPath, JSON.stringify(beforeCatalog));
+  const inventoryPath = join(root, "inventory.json");
+  writeFileSync(inventoryPath, JSON.stringify({
+    version: 1,
+    kind: "conversation-maintenance-inventory",
+    warnings: [],
+    catalogFile: catalogPath,
+    source: { mode: "manual-reorg" },
+    conversations: [catalogItem(current, "Project A")],
+  }));
+  const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
+  const decisionsPath = join(root, "decisions.json");
+  writeFileSync(decisionsPath, JSON.stringify({
+    version: 1,
+    kind: "reviewed-decisions",
+    inventoryDigest,
+    decisions: [{
+      conversationId: ID1,
+      decision: "keep",
+      projectName: "Project B",
+      reviewed: true,
+    }],
+  }));
+  const liveConversation = conversation(ID1, "대상 — 작업", 2);
+  const projects = [{ id: "g-p-a", name: "Project A" }, { id: "g-p-b", name: "Project B" }, { id: "g-p-c", name: "Project C" }];
+  const projectIdByName = { "Project A": "g-p-a", "Project B": "g-p-b", "Project C": "g-p-c" };
+  const api = catalogApi({
+    active: [liveConversation],
+    details: { [ID1]: liveConversation },
+    projects,
+    projectConversations: { [projectIdByName[liveProjectName]]: [liveConversation] },
+  });
+  return { inventoryPath, decisionsPath, statePath: join(root, "state.json"), api };
+}
+
+test("checkpoint tolerates a planned project move whether or not it already happened", async () => {
+  for (const liveProjectName of ["Project A", "Project B"]) {
+    const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-move-checkpoint-test-"));
+    try {
+      const { inventoryPath, decisionsPath, statePath, api } = movePlanFixture(root, { liveProjectName });
+      const result = await checkpointMaintenanceRun({
+        inventoryPath, decisionsPath, statePath, api,
+        now: () => new Date("2026-08-10T00:00:00Z"),
+      });
+      assert.equal(result.state.conversations[0].projectName, liveProjectName);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("checkpoint still rejects a planned move landing somewhere unexpected", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-move-checkpoint-bad-test-"));
+  try {
+    const { inventoryPath, decisionsPath, statePath, api } = movePlanFixture(root, { liveProjectName: "Project C" });
+    await assert.rejects(
+      checkpointMaintenanceRun({ inventoryPath, decisionsPath, statePath, api }),
+      /Conversation changed unexpectedly during maintenance/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("maintenance checkpoint rejects archive and unresolved decisions", async () => {
   for (const decision of ["archive", "undecided"]) {
     const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-invalid-decision-test-"));

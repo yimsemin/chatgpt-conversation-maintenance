@@ -194,8 +194,37 @@ function createJob(kind, workspace) {
   return job;
 }
 
-function jobEvent(job, stage, message) {
+export function jobEvent(job, stage, message) {
+  // A "progress" event updates in place instead of piling up one line per
+  // tick (e.g. one per downloaded conversation) — every other stage still
+  // appends normally so the milestone log stays readable.
+  const last = job.events[job.events.length - 1];
+  if (stage === "progress" && last?.stage === "progress") {
+    last.at = new Date().toISOString();
+    last.message = message;
+    return;
+  }
   job.events.push({ at: new Date().toISOString(), stage, message });
+}
+
+const SCAN_PROGRESS_LABELS = {
+  projects: "프로젝트 목록 확인 중",
+  active: "활성 대화 목록 확인 중",
+  archived: "보관 대화 목록 확인 중",
+  removed: "삭제된 대화 확인 중",
+  downloads: "후보 대화 다운로드 중",
+};
+
+export function formatScanProgress({ phase, index, total, projectName }) {
+  const label = SCAN_PROGRESS_LABELS[phase] || phase;
+  if (phase === "projects" && projectName) {
+    return `${label}: ${projectName} (${index + 1}/${total})`;
+  }
+  if (Number.isFinite(total) && total > 0) {
+    const percent = Math.min(100, Math.round((index / total) * 100));
+    return `${label} (${index}/${total}, ${percent}%)`;
+  }
+  return `${label}${Number.isFinite(index) && index > 0 ? ` (${index}건)` : ""}`;
 }
 
 function publicJob(job) {
@@ -243,7 +272,13 @@ async function scanWorkflow(workspace, dataDir, api, job) {
     const inventoryPath = join(runDir, "inventory.json");
     const reviewPath = join(runDir, "review.json");
     jobEvent(job, "scan", "ChatGPT의 새 대화와 변경 대화를 확인합니다.");
-    const scanResult = await scanMaintenanceRun({ statePath: stateFilePath(dataDir), runDir, api, dataDir });
+    const scanResult = await scanMaintenanceRun({
+      statePath: stateFilePath(dataDir),
+      runDir,
+      api,
+      dataDir,
+      onProgress: (info) => jobEvent(job, "progress", formatScanProgress(info)),
+    });
     const scan = { counts: scanResult.inventory.counts, warnings: scanResult.inventory.warnings };
     const candidateCount = Number(scan.counts?.candidates || 0);
     const heldCount = Number(scan.counts?.held || 0);
@@ -413,10 +448,6 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
       `${label}: 제목은 "주제 — 작업/결과" 형식이어야 합니다`);
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
     assert(projectName, `${label}: 보존 대화에는 프로젝트가 필요합니다`);
-    if (source.projectName) {
-      assert(projectName === source.projectName,
-        `${label}: 이미 프로젝트에 있는 대화는 화면에서 옮길 수 없습니다 (ChatGPT에서 직접 옮긴 뒤 다시 스캔)`);
-    }
     return {
       conversationId: source.conversationId,
       decision: "keep",
@@ -507,7 +538,6 @@ export function buildReviewedDecisions(pointer, proposal) {
     receiptDir: join(pointer.runDir, "receipts"),
     decisions: proposal.items.map((item) => {
       assert(item.suggestedDecision !== "undecided", "undecided 항목은 승인 전에 해결해야 합니다");
-      assert(item.suggestedProjectAction !== "manual-move", "manual-move 항목은 ChatGPT에서 직접 옮긴 뒤 다시 스캔해야 합니다");
       if (item.suggestedDecision === "delete") {
         return {
           conversationId: item.conversationId,
@@ -581,7 +611,6 @@ async function applyWorkflow(workspace, dataDir, api, accountId, confirmDeletes,
     const proposal = proposalData(workspace, dataDir);
     assert(proposal.ready, "화면에서 결정을 저장하거나 proposal.json을 붙여넣으세요");
     assert(proposal.blockers.undecided === 0, "undecided 항목은 승인 전에 해결해야 합니다");
-    assert(proposal.blockers.manualMoves === 0, "manual-move 항목은 자동 적용할 수 없습니다");
     deletes = proposal.items.filter((item) => item.suggestedDecision === "delete").length;
     proposalCount = proposal.items.length;
   }

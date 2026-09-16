@@ -135,3 +135,57 @@ test("routing reuses one project catalog and applies existing and new targets", 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("routing resolves a named source project and moves a conversation already in it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-routing-move-test-"));
+  const oldProjectId = `g-p-${"3".repeat(32)}`;
+  const newProjectId = `g-p-${"4".repeat(32)}`;
+  const projects = [
+    { projectId: oldProjectId, projectName: "Old bucket" },
+    { projectId: newProjectId, projectName: "New home" },
+  ];
+  let currentGizmoId = oldProjectId;
+  let moveCalls = 0;
+  const api = {
+    listProjects: async () => ({
+      ok: true,
+      status: 200,
+      data: { items: projects.map((project) => ({ id: project.projectId, display: { name: project.projectName } })) },
+    }),
+    getConversation: async () => ({
+      ok: true,
+      status: 200,
+      data: { conversation_id: IDS[0], title: "Misfiled", gizmo_id: currentGizmoId },
+    }),
+    createProject: async () => { throw new Error("should not create a project"); },
+    moveConversation: async (id, projectId) => {
+      moveCalls++;
+      currentGizmoId = projectId;
+      return { ok: true, status: 200, data: {} };
+    },
+  };
+  const routing = validateProjectRouting({
+    version: 1,
+    kind: "chatgpt-project-routing",
+    workspace: "business",
+    receiptDir: root,
+    targets: [{
+      project: { name: "New home", instructions: "", projectId: newProjectId, createIfMissing: false, approved: true },
+      actions: [{ conversationId: IDS[0], expectedTitle: "Misfiled", expectedSourceProjectId: null, approved: true }],
+      sourceProjectNames: { [IDS[0]]: "Old bucket" },
+    }],
+  });
+  try {
+    const result = await runProjectRouting({
+      routing,
+      confirmation: projectRoutingConfirmation(routing),
+      accountId: ACCOUNT_ID,
+      api,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(moveCalls, 1);
+    assert.equal(currentGizmoId, newProjectId);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

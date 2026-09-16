@@ -50,7 +50,13 @@ test("project placement plans bind explicit project creation and projectless mov
 
     const invalid = fixturePlan(root);
     invalid.actions[0].expectedSourceProjectId = "g-p-somewhere-else";
-    assert.throws(() => validateProjectPlacementPlan(invalid), /only moves projectless conversations/);
+    assert.throws(() => validateProjectPlacementPlan(invalid), /must be null or a valid project ID/);
+
+    const sourceProjectId = `g-p-${"2".repeat(32)}`;
+    const withSource = fixturePlan(root);
+    withSource.actions[0].expectedSourceProjectId = sourceProjectId;
+    const preparedWithSource = prepareProjectPlacement(withSource);
+    assert.equal(preparedWithSource.actions[0].expectedSourceProjectId, sourceProjectId);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -233,9 +239,63 @@ test("preflight refuses conversations already assigned to a different project", 
     });
     assert.equal(result.ok, false);
     assert.equal(result.phase, "preflight");
-    assert.match(result.preflight[0].error, /already in another project/);
+    assert.match(result.preflight[0].error, /not in the expected source project/);
     assert.equal(writes, 0);
     assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("apply moves a conversation from a named source project to a different target project", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-project-move-test-"));
+  const SOURCE_PROJECT_ID = `g-p-${"3".repeat(32)}`;
+  let currentGizmoId = SOURCE_PROJECT_ID;
+  let moveCalls = 0;
+  const api = {
+    listProjects: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        items: [
+          { id: SOURCE_PROJECT_ID, display: { name: "Old bucket" } },
+          { id: PROJECT_ID, display: { name: "Research" } },
+        ],
+      },
+    }),
+    getConversation: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        conversation_id: CONVERSATION_ID,
+        title: "Exact title",
+        is_visible: true,
+        gizmo_id: currentGizmoId,
+      },
+    }),
+    createProject: async () => { throw new Error("should not create a project"); },
+    moveConversation: async () => {
+      moveCalls++;
+      currentGizmoId = PROJECT_ID;
+      return { ok: true, status: 200, data: {} };
+    },
+  };
+  try {
+    const plan = fixturePlan(root);
+    plan.project.createIfMissing = false;
+    plan.actions[0].expectedSourceProjectId = SOURCE_PROJECT_ID;
+    const prepared = prepareProjectPlacement(plan);
+    const result = await runProjectPlacementWorkflow({
+      plan,
+      accountId: ACCOUNT_ID,
+      confirmation: prepared.expectedConfirmation,
+      reviewedConversationIds: [CONVERSATION_ID],
+      api,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(moveCalls, 1);
+    const moveResult = result.results.find((item) => item.type === "move-conversation");
+    assert.equal(moveResult.sourceGizmoId, SOURCE_PROJECT_ID);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
