@@ -10,6 +10,8 @@ import {
   buildReviewedDecisions,
   buildReviewedDecisionsFromInputs,
   createSafeDiagnostic,
+  formatScanProgress,
+  jobEvent,
   planReuseDecision,
   validateMaintenanceWorkspace,
 } from "../maintenance-web.js";
@@ -108,16 +110,52 @@ test("approved proposals become complete reviewed decisions without extra fields
   });
 });
 
-test("web approval refuses undecided and manual project moves", () => {
+test("web approval refuses undecided but now accepts manual project moves", () => {
   const pointer = { runDir: "/tmp/local-run" };
   assert.throws(() => buildReviewedDecisions(pointer, {
     inventoryDigest: "abc",
     items: [{ suggestedDecision: "undecided", suggestedProjectAction: "use-or-create" }],
   }), /undecided/);
-  assert.throws(() => buildReviewedDecisions(pointer, {
+  const result = buildReviewedDecisions(pointer, {
     inventoryDigest: "abc",
-    items: [{ suggestedDecision: "keep", suggestedProjectAction: "manual-move" }],
-  }), /manual-move/);
+    items: [{
+      conversationId: "c-1",
+      suggestedDecision: "keep",
+      suggestedProjectAction: "manual-move",
+      suggestedProjectName: "다른 프로젝트",
+      rationale: "테스트",
+    }],
+  });
+  assert.deepEqual(result.decisions[0], {
+    conversationId: "c-1",
+    decision: "keep",
+    projectName: "다른 프로젝트",
+    reviewed: true,
+    rationale: "테스트",
+  });
+});
+
+test("jobEvent updates a running progress line in place instead of piling up", () => {
+  const job = { events: [] };
+  jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (1/3, 33%)");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (2/3, 66%)");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (3/3, 100%)");
+  jobEvent(job, "ready", "3개 후보의 분류 요청 준비가 끝났습니다.");
+  assert.equal(job.events.length, 3);
+  assert.equal(job.events[1].stage, "progress");
+  assert.equal(job.events[1].message, "후보 대화 다운로드 중 (3/3, 100%)");
+  assert.equal(job.events[2].stage, "ready");
+});
+
+test("formatScanProgress renders a percentage once a total is known", () => {
+  assert.equal(formatScanProgress({ phase: "downloads", index: 42, total: 139 }),
+    "후보 대화 다운로드 중 (42/139, 30%)");
+  assert.equal(formatScanProgress({ phase: "active", index: 100, total: 424 }),
+    "활성 대화 목록 확인 중 (100/424, 24%)");
+  assert.equal(formatScanProgress({ phase: "projects", index: 2, total: 9, projectName: "오디오" }),
+    "프로젝트 목록 확인 중: 오디오 (3/9)");
+  assert.equal(formatScanProgress({ phase: "removed", index: 0, total: 0 }), "삭제된 대화 확인 중");
 });
 
 test("GUI decisions validate against every maintenance candidate", () => {
@@ -139,7 +177,7 @@ test("GUI decisions validate against every maintenance candidate", () => {
   }
 });
 
-test("GUI decisions reject partial coverage, bad titles, and cross-project moves", () => {
+test("GUI decisions reject partial coverage and bad titles, but now allow cross-project moves", () => {
   const { root, pointer, inventory } = inventoryFixture();
   try {
     assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
@@ -149,10 +187,11 @@ test("GUI decisions reject partial coverage, bad titles, and cross-project moves
       { conversationId: "c-new", decision: "keep", newTitle: "형식없는제목", projectName: "조사" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /주제 — 작업\/결과/);
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    const moved = buildReviewedDecisionsFromInputs(pointer, inventory, [
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "조사" },
       { conversationId: "c-proj", decision: "keep", projectName: "다른 프로젝트" },
-    ]), /옮길 수 없습니다/);
+    ]);
+    assert.equal(moved.decisions[1].projectName, "다른 프로젝트");
     assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
       { conversationId: "c-new", decision: "delete", newTitle: "주제 — 결과" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },

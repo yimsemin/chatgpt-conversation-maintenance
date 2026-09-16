@@ -363,6 +363,45 @@ test("maintenance decisions can create no-op management plans and one source-bou
   }
 });
 
+test("moving a conversation already in a project compiles a named-source routing target", () => {
+  const root = fixture();
+  try {
+    const full = buildInventory(root);
+    const source = { ...full.conversations[0], title: "General — Review", projectName: "Project A" };
+    const inventoryPath = join(root, "maintenance-inventory.json");
+    writeFileSync(inventoryPath, JSON.stringify({
+      version: 1,
+      kind: "conversation-maintenance-inventory",
+      warnings: [],
+      conversations: [source],
+    }, null, 2));
+    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
+    const decisionsPath = join(root, "maintenance-decisions.json");
+    writeFileSync(decisionsPath, JSON.stringify({
+      version: 1,
+      kind: "reviewed-decisions",
+      inventoryDigest,
+      receiptDir: join(root, "receipts"),
+      decisions: [{
+        conversationId: source.conversationId,
+        decision: "keep",
+        projectName: "Project B",
+        reviewed: true,
+      }],
+    }, null, 2));
+
+    const routingResult = compileProjectRouting(inventoryPath, decisionsPath, join(root, "routing.json"));
+    assert.equal(routingResult.routingRequired, true);
+    const routing = JSON.parse(readFileSync(routingResult.routingPath, "utf8"));
+    assert.equal(routing.targets[0].project.name, "Project B");
+    assert.equal(routing.targets[0].actions[0].conversationId, source.conversationId);
+    assert.equal(routing.targets[0].actions[0].expectedSourceProjectId, null);
+    assert.deepEqual(routing.targets[0].sourceProjectNames, { [source.conversationId]: "Project A" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("classification proposals are source-bound and validate project routing semantics", () => {
   const root = fixture();
   try {

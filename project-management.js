@@ -60,13 +60,13 @@ export function validateProjectPlacementPlan(input) {
     assert(!seen.has(action.conversationId), `${label}.conversationId is duplicated`);
     seen.add(action.conversationId);
     const expectedTitle = cleanText(action.expectedTitle, `${label}.expectedTitle`, { min: 1, max: 256 });
-    assert(action.expectedSourceProjectId === null,
-      `${label}.expectedSourceProjectId must be null; this workflow only moves projectless conversations`);
+    assert(action.expectedSourceProjectId === null || PROJECT_ID.test(action.expectedSourceProjectId || ""),
+      `${label}.expectedSourceProjectId must be null or a valid project ID`);
     assert(action.approved === true, `${label}.approved must be true`);
     return {
       conversationId: action.conversationId,
       expectedTitle,
-      expectedSourceProjectId: null,
+      expectedSourceProjectId: action.expectedSourceProjectId,
       approved: true,
     };
   });
@@ -178,13 +178,13 @@ function conversationPlacement(response, action, targetProjectId = null) {
   assert(data?.is_visible !== false, `Conversation is not visible: ${action.conversationId}`);
   const currentGizmoId = data?.gizmo_id || null;
   const currentProjectId = PROJECT_ID.test(currentGizmoId || "") ? currentGizmoId : null;
-  assert(currentProjectId === null || currentProjectId === targetProjectId,
-    `Conversation is already in another project: ${action.conversationId}`);
+  assert(currentProjectId === action.expectedSourceProjectId || currentProjectId === targetProjectId,
+    `Conversation is not in the expected source project: ${action.conversationId}`);
   return {
     currentGizmoId,
     currentProjectId,
     conversationTemplateId: data?.conversation_template_id || null,
-    state: targetProjectId && currentProjectId === targetProjectId ? "already-target" : "projectless",
+    state: targetProjectId && currentProjectId === targetProjectId ? "already-target" : "moving",
   };
 }
 
@@ -238,6 +238,7 @@ export async function runProjectPlacementWorkflow({
   verificationDelayMs = 1000,
   initialProjects = null,
   batchRemotePreflight = true,
+  sourceProjectIds = {},
   sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
 }) {
   assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
@@ -247,6 +248,8 @@ export async function runProjectPlacementWorkflow({
     "discoveryAttempts must be a positive integer");
   assert(Number.isInteger(verificationAttempts) && verificationAttempts >= 1,
     "verificationAttempts must be a positive integer");
+  assert(sourceProjectIds && typeof sourceProjectIds === "object" && !Array.isArray(sourceProjectIds),
+    "sourceProjectIds must be an object");
 
   const plan = validateProjectPlacementPlan(rawPlan);
   const planDigest = projectPlacementPlanDigest(plan);
@@ -267,11 +270,23 @@ export async function runProjectPlacementWorkflow({
       `Target project does not exist and creation is not approved: ${plan.project.name}`);
   }
 
+  // sourceProjectIds is a runtime-only safety check: it resolves each
+  // action's expected current project (declared by NAME by an offline
+  // caller, e.g. project-routing.js) to a live project ID right before
+  // touching that conversation. It deliberately does not affect plan/
+  // planDigest/expectedConfirmation — those identify WHAT gets approved
+  // (which conversations move to which target project), not a live-only
+  // lookup that can't be computed offline.
+  function effectiveAction(action) {
+    const override = sourceProjectIds[action.conversationId];
+    return override === undefined ? action : { ...action, expectedSourceProjectId: override };
+  }
+
   const preflight = [];
   if (batchRemotePreflight) {
     for (const action of plan.actions) {
       try {
-        const remote = await inspectConversation(api, action, targetProject?.projectId || null);
+        const remote = await inspectConversation(api, effectiveAction(action), targetProject?.projectId || null);
         preflight.push({ ...action, remote, ok: true });
       } catch (error) {
         preflight.push({ ...action, ok: false, error: error.message });
@@ -343,7 +358,7 @@ export async function runProjectPlacementWorkflow({
         targetProjectId: targetProject.projectId,
       };
       writeReceiptAtPath(receiptFile, receipt);
-      const before = await inspectConversation(api, action, targetProject.projectId);
+      const before = await inspectConversation(api, effectiveAction(action), targetProject.projectId);
       if (before.state === "already-target") {
         receipt.results.push({
           type: "move-conversation",
@@ -370,7 +385,7 @@ export async function runProjectPlacementWorkflow({
       let afterPlacement = null;
       for (let attempt = 0; attempt < verificationAttempts; attempt++) {
         try {
-          const after = await inspectConversation(api, action, targetProject.projectId);
+          const after = await inspectConversation(api, effectiveAction(action), targetProject.projectId);
           verified = after.state === "already-target";
           afterPlacement = after;
           if (verified) break;

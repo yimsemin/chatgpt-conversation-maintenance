@@ -4,160 +4,235 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ChatGPT 대화 유지관리</title>
+<script>
+  // 테마를 렌더링 전에 정해서 깜빡임을 막는다. 외부 요청 없이 로컬 저장값과
+  // OS 설정만 본다.
+  try {
+    const saved = localStorage.getItem("maintenance_theme");
+    const theme = saved || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.dataset.theme = theme;
+  } catch {}
+</script>
 <style>
-  :root { color-scheme:dark; --bg:#0b1017; --panel:#131b26; --panel2:#182331; --line:#29384a; --text:#ecf2f8; --muted:#93a4b7; --accent:#58a6ff; --good:#39d98a; --warn:#f5bd4f; --danger:#ff6b6b; }
+  /* Spacing scale — every margin/padding/gap in this file uses one of these.
+     Small steps (1–2) separate tightly related elements (icon+label, a
+     control and its helper text); step 3 is the default gap between
+     controls in the same group; step 4 separates sub-groups within a
+     section; steps 5–6 are reserved for the gaps BETWEEN sections, so
+     section boundaries always read as visually larger than anything inside
+     a section. */
+  :root {
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  }
+  :root, :root[data-theme="dark"] {
+    color-scheme:dark;
+    --bg:#0b1017; --surface:#101823; --surface2:#16212e; --line:#22303f;
+    --text:#ecf2f8; --muted:#93a4b7; --accent:#58a6ff; --accent-ink:#07111d;
+    --good:#39d98a; --warn:#f5bd4f; --danger:#ff6b6b;
+    --link:#8fc5ff; --code:#cbd7e4; --heading-accent:#9dccff; --heading-accent-bg:#203d5f;
+    --banner-glow:rgba(88,166,255,.14);
+  }
+  :root[data-theme="light"] {
+    color-scheme:light;
+    --bg:#f6f7f9; --surface:#ffffff; --surface2:#eef1f5; --line:#dbe1e8;
+    --text:#161b22; --muted:#5b6b7c; --accent:#2563eb; --accent-ink:#ffffff;
+    --good:#1a8f57; --warn:#a2650f; --danger:#c93a3a;
+    --link:#1d5fc9; --code:#33404e; --heading-accent:#1d5fc9; --heading-accent-bg:#dbe7fb;
+    --banner-glow:rgba(37,99,235,.08);
+  }
   * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; background:radial-gradient(circle at 12% -10%,rgba(88,166,255,.16),transparent 34rem),var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  body { margin:0; min-height:100vh; background:radial-gradient(circle at 12% -10%,var(--banner-glow),transparent 34rem),var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:14px; }
   button,input,textarea,select { font:inherit; } button { cursor:pointer; }
-  .shell { width:min(1240px,calc(100% - 32px)); margin:0 auto; padding:32px 0 64px; }
-  .topline { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:24px; }
-  h1 { margin:0 0 8px; font-size:clamp(25px,4vw,38px); letter-spacing:-.04em; }
-  .lede { margin:0; color:var(--muted); line-height:1.6; }
-  .helper a,.docs-link { color:#8fc5ff; }
-  .statusbar { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:22px; }
-  .status { min-height:74px; padding:13px 15px; border:1px solid var(--line); border-radius:13px; background:rgba(19,27,38,.88); }
-  .status-label { display:block; color:var(--muted); font-size:12px; margin-bottom:7px; }
-  .status-value { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:650; min-width:0; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); flex:0 0 auto; }
-  .dot.good { background:var(--good); box-shadow:0 0 0 4px rgba(57,217,138,.1); }
-  .truncate { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px,.5fr); gap:18px; }
-  .stack { display:grid; gap:18px; align-content:start; min-width:0; }
-  .card { background:rgba(19,27,38,.94); border:1px solid var(--line); border-radius:17px; padding:22px; min-width:0; }
-  .card h2 { font-size:17px; margin:0 0 7px; }
-  .card p { color:var(--muted); line-height:1.6; margin:0; font-size:14px; }
-  .step-title { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
-  .step-num { display:grid; place-items:center; width:27px; height:27px; border-radius:9px; background:#203d5f; color:#9dccff; font-size:13px; font-weight:750; }
-  label { display:block; color:#cbd7e4; font-size:13px; margin:16px 0 7px; }
-  textarea,input,select { width:100%; border:1px solid var(--line); border-radius:10px; background:#0d141d; color:var(--text); padding:10px 11px; outline:none; }
+  .shell { width:min(1080px,calc(100% - 32px)); margin:0 auto; padding:var(--sp-6) 0 64px; }
+  .topline { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--sp-4); }
+  h1 { margin:0 0 var(--sp-1); font-size:clamp(23px,3.6vw,32px); letter-spacing:-.03em; }
+  .lede { margin:0; color:var(--muted); line-height:1.6; font-size:14px; }
+  .lede .ver { color:var(--muted); }
+  a { color:var(--link); }
+  .theme-toggle { flex:0 0 auto; border:1px solid var(--line); background:var(--surface2); color:var(--text); border-radius:9px; padding:var(--sp-2) var(--sp-3); font-size:12.5px; white-space:nowrap; }
+
+  /* ---- status zone: banner + statusline + log sit close together (they're
+     one "what's happening" unit) — sp-6 separates this whole zone from the
+     header above and the workflow sections below; sp-2 holds its own parts
+     together. ---- */
+  .banner { display:flex; align-items:flex-start; gap:var(--sp-3); margin-top:var(--sp-6); padding:var(--sp-4) 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .banner .dot { width:9px; height:9px; border-radius:50%; margin-top:var(--sp-1); flex:0 0 auto; background:var(--muted); }
+  .banner.running .dot { background:var(--accent); animation:pulse 1.1s ease-in-out infinite; }
+  .banner.done .dot { background:var(--good); }
+  .banner.waiting .dot { background:var(--warn); }
+  .banner.error .dot { background:var(--danger); }
+  .banner .btext { min-width:0; }
+  .banner .btitle { font-weight:700; font-size:14.5px; }
+  .banner.running .btitle { color:var(--accent); }
+  .banner.done .btitle { color:var(--good); }
+  .banner.waiting .btitle { color:var(--warn); }
+  .banner.error .btitle { color:var(--danger); }
+  .banner .bdetail { color:var(--muted); font-size:12.5px; margin-top:var(--sp-1); line-height:1.5; overflow-wrap:anywhere; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .statusline { display:flex; flex-wrap:wrap; gap:var(--sp-2) var(--sp-4); color:var(--muted); font-size:12.5px; margin-top:var(--sp-2); }
+  .statusline b { color:var(--text); font-weight:600; }
+  .statusline .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); display:inline-block; margin-right:var(--sp-1); }
+  .statusline .dot.good { background:var(--good); }
+
+  /* main > details covers the top-level "진행 로그"/"도움말" disclosures —
+     they read as their own section, same rhythm as section.block. */
+  main > details { margin-top:var(--sp-2); }
+  main > details.help { margin-top:var(--sp-6); }
+
+  section.block { margin-top:var(--sp-6); }
+  .block h2 { font-size:15.5px; margin:0 0 var(--sp-1); display:flex; align-items:center; gap:var(--sp-2); }
+  .step-num { display:inline-grid; place-items:center; width:20px; height:20px; border-radius:7px; background:var(--heading-accent-bg); color:var(--heading-accent); font-size:12px; font-weight:750; }
+  .block > p.desc { color:var(--muted); line-height:1.6; margin:0 0 var(--sp-4); font-size:13px; max-width:64ch; }
+
+  label { display:block; color:var(--code); font-size:12.5px; margin:var(--sp-4) 0 var(--sp-2); }
+  textarea,input,select { width:100%; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--text); padding:var(--sp-2) var(--sp-3); outline:none; font-size:13px; }
   textarea { min-height:90px; resize:vertical; font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
-  textarea:focus,input:focus,select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(88,166,255,.1); }
-  .row { display:flex; gap:9px; align-items:stretch; } .row input { min-width:0; }
-  .btn { border:0; border-radius:10px; padding:10px 15px; background:var(--accent); color:#07111d; font-weight:760; white-space:nowrap; text-decoration:none; text-align:center; }
+  textarea:focus,input:focus,select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--banner-glow); }
+  .btn { border:0; border-radius:9px; padding:var(--sp-2) var(--sp-4); background:var(--accent); color:var(--accent-ink); font-weight:700; white-space:nowrap; text-decoration:none; text-align:center; transition:opacity .15s; font-size:13px; }
   .btn:hover:not(:disabled) { filter:brightness(1.08); }
-  .btn.secondary { color:var(--text); background:var(--panel2); border:1px solid var(--line); }
-  .btn:disabled { opacity:.42; cursor:not-allowed; }
-  .helper { margin-top:9px!important; font-size:12px!important; }
-  .helper a,.docs-link { text-decoration:none; }
-  .action { width:100%; margin-top:17px; padding:13px 16px; }
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:15px; align-items:center; }
+  .btn.secondary { color:var(--text); background:var(--surface2); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .btn[data-busy="true"] { opacity:.75; cursor:wait; }
+  .helper { margin-top:var(--sp-2)!important; font-size:12px!important; color:var(--muted); }
+  .action { margin-top:var(--sp-4); padding:var(--sp-3) var(--sp-4); }
+  .toolbar { display:flex; gap:var(--sp-2); flex-wrap:wrap; margin-top:var(--sp-3); align-items:center; }
   .toolbar .btn { flex:0 0 auto; }
-  .filters { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:8px; margin-top:15px; }
-  .filters .check { display:flex; gap:14px; align-items:center; grid-column:1/-1; color:var(--muted); font-size:12px; }
-  .filters .check label { display:inline-flex; gap:5px; align-items:center; margin:0; color:var(--muted); }
+  .filters { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:var(--sp-2); margin-bottom:var(--sp-3); }
+  .filters .check { display:flex; gap:var(--sp-4); align-items:center; grid-column:1/-1; color:var(--muted); font-size:12px; }
+  .filters .check label { display:inline-flex; gap:var(--sp-1); align-items:center; margin:0; color:var(--muted); }
   .filters .check input { width:auto; }
-  .model { display:grid; gap:10px; margin-top:15px; }
-  .model-row { padding:13px; border-radius:11px; border:1px solid var(--line); background:#101924; }
-  .model-row strong { display:block; font-size:14px; margin-bottom:4px; }
-  .model-row span { color:var(--muted); font-size:12px; line-height:1.5; }
-  .model-row.recommended { border-color:#285e8e; background:rgba(32,61,95,.45); }
-  .notice { border-left:3px solid var(--accent); padding-left:12px; margin-top:15px!important; }
-  .activity { min-height:120px; max-height:320px; overflow:auto; margin-top:14px; padding:14px; border-radius:11px; background:#0d141d; border:1px solid var(--line); color:var(--muted); font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
-  .activity .rl { color:#ffe1a3; }
-  .summary { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
-  .pill { padding:6px 9px; border-radius:999px; background:#172536; border:1px solid var(--line); color:#c9d7e5; font-size:12px; }
-  .pill.warn { color:#ffe1a3; border-color:#6b5427; } .pill.danger { color:#ffc2c2; border-color:#704040; }
-  .pill.good { color:#bff3d6; border-color:#2f6b4c; }
-  .table-wrap { margin-top:14px; overflow:auto; border:1px solid var(--line); border-radius:11px; max-height:520px; }
+
+  .summary { display:flex; gap:var(--sp-2); flex-wrap:wrap; margin-top:var(--sp-3); }
+  .pill { padding:var(--sp-1) var(--sp-2); border-radius:999px; background:var(--surface2); color:var(--code); font-size:12px; }
+  .pill.warn { color:var(--warn); } .pill.danger { color:var(--danger); }
+  .pill.good { color:var(--good); }
+
+  .table-wrap { margin-top:var(--sp-3); overflow:auto; border:1px solid var(--line); border-radius:10px; max-height:480px; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
-  th { text-align:left; color:var(--muted); background:#101924; font-weight:600; position:sticky; top:0; z-index:1; }
-  th,td { padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.5; }
-  tr:last-child td { border-bottom:0; } td strong { display:block; color:var(--text); margin-bottom:3px; }
+  th { text-align:left; color:var(--muted); background:var(--surface); font-weight:600; position:sticky; top:0; z-index:1; }
+  th,td { padding:var(--sp-2) var(--sp-3); border-bottom:1px solid var(--line); vertical-align:top; line-height:1.5; }
+  tr:last-child td { border-bottom:0; } td strong { display:block; color:var(--text); margin-bottom:var(--sp-1); }
   #list-table { min-width:760px; } #decide-table { min-width:820px; }
   #decide-table td { vertical-align:middle; }
-  #decide-table input,#decide-table select { padding:7px 9px; font-size:12px; }
+  #decide-table input,#decide-table select { padding:var(--sp-2); font-size:12px; }
   #decide-table .col-title { min-width:230px; } #decide-table .col-project { min-width:160px; }
-  .rowmeta { color:var(--muted); font-size:11px; }
-  .rowmeta.bad { color:#ffc2c2; } .rowmeta.ok { color:#bff3d6; }
-  a.open-link { color:#8fc5ff; text-decoration:none; }
-  .tag { display:inline-block; padding:1px 6px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-size:11px; margin:1px 3px 1px 0; }
+  .rowmeta { color:var(--muted); font-size:12px; }
+  .rowmeta.bad { color:var(--danger); } .rowmeta.ok { color:var(--good); }
+  a.open-link { text-decoration:none; }
+  .tag { display:inline-block; padding:2px var(--sp-2); border-radius:999px; background:var(--surface2); color:var(--muted); font-size:12px; margin:2px var(--sp-1) 2px 0; }
   .muted { color:var(--muted); } .hidden { display:none!important; }
-  .error-box { margin-top:14px; padding:14px; border:1px solid #743f45; border-radius:11px; background:#2a171b; }
-  .error-box pre { margin:0 0 12px; color:#ffc8cd; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
-  details.paste { margin-top:14px; border:1px solid var(--line); border-radius:11px; background:#101924; padding:12px 14px; }
-  details.paste summary { cursor:pointer; color:#cbd7e4; font-size:13px; }
-  @media (max-width:900px) { .statusbar{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.topline{display:block}.filters{grid-template-columns:1fr} }
-  @media (max-width:480px) { .shell{width:min(100% - 20px,1240px);padding-top:20px}.statusbar{grid-template-columns:1fr}.row{display:grid}.toolbar{display:grid} }
+
+  .error-box { margin-top:var(--sp-3); padding:var(--sp-3) var(--sp-4); border-left:3px solid var(--danger); background:color-mix(in srgb, var(--danger) 8%, transparent); border-radius:0 8px 8px 0; }
+  .error-box pre { margin:0 0 var(--sp-3); color:var(--danger); white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+  details { margin-top:var(--sp-3); }
+  details > summary { cursor:pointer; color:var(--code); font-size:12.5px; list-style:none; display:flex; align-items:center; gap:var(--sp-2); }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::before { content:"▸"; color:var(--muted); font-size:12px; transition:transform .15s; }
+  details[open] > summary::before { transform:rotate(90deg); }
+  details.paste .inner, details.help .inner, details.log .inner { margin-top:var(--sp-3); }
+
+  details.help .inner p { color:var(--muted); font-size:12.5px; line-height:1.7; margin:0 0 var(--sp-3); }
+  details.help .inner p:last-child { margin-bottom:0; }
+  details.help .inner strong { color:var(--code); }
+
+  .activity { min-height:60px; max-height:280px; overflow:auto; padding:var(--sp-3) var(--sp-4); border-radius:9px; background:var(--surface); color:var(--muted); font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .activity .rl { color:var(--warn); }
+
+  @media (max-width:900px) { .filters{grid-template-columns:1fr} }
+  @media (max-width:480px) { .shell{width:min(100% - 20px,1080px)}.toolbar{display:grid} }
 </style>
 </head>
 <body>
 <main class="shell">
-  <div class="topline"><div><h1>ChatGPT 대화 유지관리</h1><p class="lede">대화 목록을 화면에서 보고, 보존·삭제·제목·프로젝트를 직접 결정해 적용합니다. AI 분류는 선택 사항입니다.</p><p class="muted">앱 버전 <code>__APP_RELEASE__</code> · 릴레이 <code>v__RELAY_PROTOCOL_VERSION__</code></p></div></div>
-  <section class="statusbar" aria-label="작업 상태">
-    <div class="status"><span class="status-label">로컬 서비스</span><span class="status-value"><i class="dot good"></i>연결됨</span></div>
-    <div class="status"><span class="status-label">ChatGPT 릴레이</span><span class="status-value"><i class="dot" id="relay-dot"></i><span id="relay-state">연결 대기</span></span></div>
-    <div class="status"><span class="status-label">데이터 폴더 · 잠금</span><span class="status-value truncate" id="folder-state">확인 중…</span></div>
-    <div class="status"><span class="status-label">기준선</span><span class="status-value truncate" id="baseline-state">확인 전</span></div>
+  <header class="topline">
+    <div>
+      <h1>ChatGPT 대화 유지관리</h1>
+      <p class="lede">대화 목록을 화면에서 보고, 보존·삭제·제목·프로젝트를 직접 결정해 적용합니다. AI 분류는 선택 사항입니다.
+      <span class="ver">· 앱 버전 <code>__APP_RELEASE__</code> · 릴레이 <code>v__RELAY_PROTOCOL_VERSION__</code></span></p>
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle">🌓 테마</button>
+  </header>
+
+  <div class="banner" id="run-banner">
+    <i class="dot"></i>
+    <div class="btext">
+      <div class="btitle" id="banner-title">확인 중…</div>
+      <div class="bdetail" id="banner-detail"></div>
+    </div>
+  </div>
+
+  <div class="statusline">
+    <span><i class="dot" id="relay-dot"></i><span id="relay-state">릴레이 연결 대기</span></span>
+    <span>폴더 <b id="folder-state">확인 중…</b></span>
+    <span>기준선 <b id="baseline-state">확인 전</b></span>
+  </div>
+
+  <details class="log" id="log-details">
+    <summary>진행 로그 보기</summary>
+    <div class="inner"><div class="activity" id="activity">로컬 상태를 확인하고 있습니다…</div></div>
+  </details>
+
+  <section class="block" id="step-auth">
+    <h2><span class="step-num">1</span>인증과 작업 폴더</h2>
+    <p class="desc">세션은 ChatGPT 페이지에만 남습니다. <a href="/auth/bookmarklet" target="_blank">북마클릿으로 chatgpt.com에서 릴레이 열기 →</a></p>
+    <label for="workspace">유지관리 프로젝트 폴더 (이 저장소 경로)</label>
+    <input id="workspace" type="text" spellcheck="false" autocomplete="off">
+    <button class="btn action" type="button" id="scan" disabled>새 대화 확인</button>
+    <p class="helper" id="scan-hint">ChatGPT 릴레이가 연결되면 활성화됩니다. 스캔은 ChatGPT를 바꾸지 않습니다.</p>
   </section>
 
-  <div class="grid">
-    <div class="stack">
-      <section class="card">
-        <div class="step-title"><span class="step-num">1</span><h2>인증과 작업 폴더</h2></div>
-        <p>세션은 ChatGPT 페이지에만 남습니다. 페이지가 고정된 원격 작업을 하나씩 수행하고 결과만 이 앱에 돌려줍니다.</p>
-        <p class="helper"><a class="docs-link" href="/auth/bookmarklet" target="_blank">북마클릿 설정 — chatgpt.com에서 릴레이 열기 →</a></p>
-        <label for="workspace">유지관리 프로젝트 폴더 (이 저장소 경로)</label>
-        <input id="workspace" type="text" spellcheck="false" autocomplete="off">
-        <button class="btn action" type="button" id="scan" disabled>새 대화 확인</button>
-        <p class="helper" id="scan-hint">ChatGPT 릴레이가 연결되면 활성화됩니다. 스캔은 ChatGPT를 변경하지 않습니다.</p>
-      </section>
-
-      <section class="card">
-        <div class="step-title"><span class="step-num">2</span><h2>대화 목록</h2></div>
-        <p id="list-source">스캔 전에는 데이터 폴더의 기준선(<code>state.json</code>)을 보여줍니다.</p>
-        <div class="filters">
-          <input id="q" type="text" placeholder="제목 검색">
-          <select id="f-project"><option value="">프로젝트: 전체</option></select>
-          <select id="f-sort"><option value="updated">정렬: 수정일 최신</option><option value="title">정렬: 제목</option><option value="project">정렬: 프로젝트</option></select>
-          <div class="check">
-            <label><input type="checkbox" id="f-candidates">후보만</label>
-            <label><input type="checkbox" id="f-unassigned">미분류만</label>
-            <label><input type="checkbox" id="f-archived">보관 포함</label>
-          </div>
-        </div>
-        <div id="list-summary" class="summary"></div>
-        <div class="table-wrap"><table id="list-table"><thead><tr><th>제목</th><th>프로젝트</th><th>수정일</th><th>상태</th><th>후보 사유</th></tr></thead><tbody id="list-body"></tbody></table></div>
-        <p class="helper muted" id="list-note"></p>
-      </section>
-
-      <section class="card">
-        <div class="step-title"><span class="step-num">3</span><h2>검토 · 결정 · 적용</h2></div>
-        <p>스캔 후보마다 보존/삭제, 표준 제목(<code>주제 — 작업/결과</code>), 프로젝트를 정합니다. 이미 다른 프로젝트에 있는 대화는 화면에서 옮길 수 없습니다.</p>
-        <div class="toolbar">
-          <button class="btn secondary" type="button" id="copy-prompt" disabled>AI 분류 요청문 복사</button>
-          <button class="btn secondary" type="button" id="copy-claude-prompt" disabled>Claude 요청문 복사 (자립형)</button>
-          <button class="btn secondary" type="button" id="reset-rows" disabled>행 초기화</button>
-        </div>
-        <details class="paste" id="paste">
-          <summary>AI 분류 결과(JSON) 붙여넣기 — 선택</summary>
-          <label for="proposal-input">외부 AI가 만든 <code>proposal.json</code> 전문</label>
-          <textarea id="proposal-input" autocomplete="off" spellcheck="false" placeholder='{"version":1,"kind":"classification-proposals", …}'></textarea>
-          <div class="toolbar"><button class="btn secondary" type="button" id="apply-proposal" disabled>검증하고 아래 표 채우기</button></div>
-          <p class="helper muted" id="proposal-note">현재 인벤토리 해시와 일치하는 분류안만 받습니다. 붙여넣기는 표를 채울 뿐, 적용은 아래 버튼에서 합니다.</p>
-        </details>
-        <div id="decide-summary" class="summary"></div>
-        <div class="table-wrap hidden" id="decide-wrap"><table id="decide-table"><thead><tr><th>대화</th><th>결정</th><th class="col-title">새 제목</th><th class="col-project">프로젝트</th></tr></thead><tbody id="decide-body"></tbody></table></div>
-        <p class="muted" id="decide-empty">먼저 ‘새 대화 확인’을 실행하세요. 후보가 없으면 이 단계는 비어 있습니다.</p>
-        <button class="btn action" type="button" id="apply" disabled>결정 저장 및 적용</button>
-      </section>
-
-      <section class="card">
-        <div class="step-title"><span class="step-num">4</span><h2>진행 · 오류 · 요청 상태</h2></div>
-        <p>스캔·적용의 단계별 로그입니다. rate limit 재시도는 <span class="rl">노란색</span>으로 표시됩니다.</p>
-        <div class="activity" id="activity">로컬 상태를 확인하고 있습니다…</div>
-        <div class="error-box hidden" id="error-box"><pre id="error-text"></pre><button class="btn secondary" type="button" id="copy-error">채팅에 붙여넣을 오류 복사</button></div>
-      </section>
+  <section class="block" id="step-list">
+    <h2><span class="step-num">2</span>대화 목록</h2>
+    <p class="desc" id="list-source">스캔 전에는 데이터 폴더의 기준선(<code>state.json</code>)을 보여줍니다.</p>
+    <div class="filters">
+      <input id="q" type="text" placeholder="제목 검색">
+      <select id="f-project"><option value="">프로젝트: 전체</option></select>
+      <select id="f-sort"><option value="updated">정렬: 수정일 최신</option><option value="title">정렬: 제목</option><option value="project">정렬: 프로젝트</option></select>
+      <div class="check">
+        <label><input type="checkbox" id="f-candidates">후보만</label>
+        <label><input type="checkbox" id="f-unassigned">미분류만</label>
+        <label><input type="checkbox" id="f-archived">보관 포함</label>
+      </div>
     </div>
+    <div id="list-summary" class="summary"></div>
+    <div class="table-wrap"><table id="list-table"><thead><tr><th>제목</th><th>프로젝트</th><th>수정일</th><th>상태</th><th>후보 사유</th></tr></thead><tbody id="list-body"></tbody></table></div>
+    <p class="helper" id="list-note"></p>
+  </section>
 
-    <aside class="stack">
-      <section class="card">
-        <h2>AI 분류는 선택 사항</h2><p>화면에서 직접 결정하면 AI 없이 1·3단계를 마칠 수 있습니다. 후보가 많아 판단을 돕고 싶을 때만 ‘요청문 복사 → 외부 AI → 결과 붙여넣기’를 씁니다.</p>
-        <div class="model"><div class="model-row recommended"><strong>1차 — 저비용 모델</strong><span>반복적이고 대량인 후보의 첫 검토. 낮거나 중간 추론부터 시작합니다.</span></div><div class="model-row"><strong>재검토 — 더 강한 모델</strong><span>삭제 후보, 새 프로젝트, 첨부가 있거나 판단이 애매한 항목만.</span></div></div>
-      </section>
-      <section class="card"><h2>안전 경계</h2><p>세션 토큰은 ChatGPT 페이지 밖으로 나오지 않습니다. 스캔은 ChatGPT를 변경하지 않습니다. 제목 변경·삭제·프로젝트 배치는 이 화면에서 결정을 저장하고 ‘적용’을 누른 뒤에만 실행되며, 삭제 후보가 있으면 별도 확인을 요구합니다.</p></section>
-      <section class="card"><h2>완료 기준</h2><p>스캔·적용은 데이터 폴더의 로컬 잠금으로 한 번에 한 대에서만 진행합니다. 원격 적용 후 checkpoint가 원격 상태와 <code>state.json</code> 기준선을 검증하면 완료입니다. 별도의 PR·병합 단계는 없습니다.</p></section>
-    </aside>
-  </div>
+  <section class="block" id="step-decide">
+    <h2><span class="step-num">3</span>검토 · 결정 · 적용</h2>
+    <p class="desc">후보마다 보존/삭제, 표준 제목(<code>주제 — 작업/결과</code>), 프로젝트를 정합니다. 이미 다른 프로젝트에 있는 대화도 여기서 옮길 수 있습니다.</p>
+    <div class="toolbar">
+      <button class="btn secondary" type="button" id="copy-prompt" disabled>AI 분류 요청문 복사</button>
+      <button class="btn secondary" type="button" id="copy-claude-prompt" disabled>Claude 요청문 복사 (자립형)</button>
+      <button class="btn secondary" type="button" id="reset-rows" disabled>행 초기화</button>
+    </div>
+    <details class="paste" id="paste">
+      <summary>AI 분류 결과(JSON) 붙여넣기 — 선택</summary>
+      <div class="inner">
+        <label for="proposal-input">외부 AI가 만든 <code>proposal.json</code> 전문</label>
+        <textarea id="proposal-input" autocomplete="off" spellcheck="false" placeholder='{"version":1,"kind":"classification-proposals", …}'></textarea>
+        <div class="toolbar"><button class="btn secondary" type="button" id="apply-proposal" disabled>검증하고 아래 표 채우기</button></div>
+        <p class="helper" id="proposal-note">현재 인벤토리 해시와 일치하는 분류안만 받습니다. 붙여넣기는 표를 채울 뿐, 적용은 아래 버튼에서 합니다.</p>
+      </div>
+    </details>
+    <div id="decide-summary" class="summary"></div>
+    <div class="table-wrap hidden" id="decide-wrap"><table id="decide-table"><thead><tr><th>대화</th><th>결정</th><th class="col-title">새 제목</th><th class="col-project">프로젝트</th></tr></thead><tbody id="decide-body"></tbody></table></div>
+    <p class="muted" id="decide-empty">먼저 ‘새 대화 확인’을 실행하세요. 후보가 없으면 이 단계는 비어 있습니다.</p>
+    <button class="btn action" type="button" id="apply" disabled>결정 저장 및 적용</button>
+    <div class="error-box hidden" id="error-box"><pre id="error-text"></pre><button class="btn secondary" type="button" id="copy-error">채팅에 붙여넣을 오류 복사</button></div>
+  </section>
+
+  <details class="help">
+    <summary>도움말 · AI 분류 · 안전 경계 · 완료 기준</summary>
+    <div class="inner">
+      <p><strong>AI 분류는 선택 사항입니다.</strong> 화면에서 직접 결정하면 AI 없이 1·3단계를 마칠 수 있습니다. 후보가 많아 판단을 돕고 싶을 때만 ‘요청문 복사 → 외부 AI → 결과 붙여넣기’를 씁니다. 반복적이고 대량인 후보는 저비용 모델로 먼저 훑고, 삭제 후보·새 프로젝트·첨부가 있거나 애매한 항목만 더 강한 모델로 재검토하는 걸 추천합니다.</p>
+      <p><strong>안전 경계.</strong> 세션 토큰은 ChatGPT 페이지 밖으로 나오지 않습니다. 스캔은 ChatGPT를 변경하지 않습니다. 제목 변경·삭제·프로젝트 배치는 결정을 저장하고 ‘적용’을 누른 뒤에만 실행되며, 삭제 후보가 있으면 별도 확인을 요구합니다.</p>
+      <p><strong>완료 기준.</strong> 스캔·적용은 데이터 폴더의 로컬 잠금으로 한 번에 한 대에서만 진행합니다. 원격 적용 후 checkpoint가 원격 상태와 <code>state.json</code> 기준선을 검증하면 완료입니다. 별도의 PR·병합 단계는 없습니다.</p>
+    </div>
+  </details>
 </main>
 
 <script>
@@ -169,6 +244,7 @@
     relayConnected: false, workspaceOk: false, phase: "",
     catalog: null, candidates: [], projectNames: [],
     proposal: null, rows: new Map(),
+    lastResult: null, bannerOverride: null,
   };
 
   function api(url, options) {
@@ -204,6 +280,42 @@
     return parts.length === 2 && parts.every((p) => p.length > 0 && p === p.trim() && !p.includes("—"));
   }
 
+  // ---- persistent status banner: the one place a user checks "is this doing something / did it finish" ----
+  // kind: "idle" | "waiting" | "running" | "done" | "error"
+  function setBanner(kind, title, detail = "") {
+    const el = $("run-banner");
+    el.className = `banner ${kind}`;
+    $("banner-title").textContent = title;
+    $("banner-detail").textContent = detail;
+  }
+  function refreshBanner() {
+    if (state.bannerOverride) { setBanner(...state.bannerOverride); return; }
+    const scanBusy = $("scan").dataset.busy === "true";
+    const applyBusy = $("apply").dataset.busy === "true";
+    if (scanBusy || applyBusy) {
+      const el = $("activity");
+      const lastLine = el.textContent.trim().split("\n").filter(Boolean).pop() || "";
+      setBanner("running", scanBusy ? "새 대화 확인 진행 중…" : "결정 적용 진행 중…", lastLine.replace(/^\[[^\]]+\]\s*/, ""));
+      return;
+    }
+    if (!$("error-box").classList.contains("hidden")) {
+      setBanner("error", "문제가 발생했습니다", "아래 오류 내용을 확인하세요.");
+      return;
+    }
+    if (state.phase === "awaiting-proposal" && state.candidates.length > 0) {
+      setBanner("waiting", `결정 대기 중 — 후보 ${state.candidates.length}개`, "3단계에서 검토하고 ‘결정 저장 및 적용’을 누르세요.");
+      return;
+    }
+    if (state.lastResult) {
+      const c = state.lastResult.counts || {};
+      const when = formatDate(state.lastResult.at);
+      setBanner("done", `완료됨 — ${when}`,
+        `후보 ${c.candidates ?? 0}개 확인 · 전체 ${c.catalogConversations ?? "?"}개`);
+      return;
+    }
+    setBanner("idle", "대기 중", "아직 확인한 적이 없습니다. ‘새 대화 확인’으로 시작하세요.");
+  }
+
   // ---- activity + error ----
   function activity(lines) {
     const el = $("activity");
@@ -215,13 +327,16 @@
       el.appendChild(div);
     }
     el.scrollTop = el.scrollHeight;
+    refreshBanner();
   }
-  function clearError() { $("error-box").classList.add("hidden"); $("error-text").textContent = ""; }
+  function clearError() { $("error-box").classList.add("hidden"); $("error-text").textContent = ""; refreshBanner(); }
   function showError(error) {
     const data = error?.code ? error : { code: "WORKFLOW_FAILED", stage: "unknown", occurredAt: new Date().toISOString(), message: error?.message || String(error) };
     $("error-text").textContent = ["[CHATGPT_MAINTENANCE_ERROR]", `stage=${data.stage || "unknown"}`, `code=${data.code}`,
       `run=${data.runId || "none"}`, `time=${data.occurredAt || new Date().toISOString()}`, `message=${data.message}`].join("\n");
     $("error-box").classList.remove("hidden");
+    $("log-details").open = true;
+    refreshBanner();
   }
 
   // ---- ChatGPT page relay ----
@@ -243,9 +358,9 @@
   }
   function applyRelayStatus(connected) {
     state.relayConnected = connected;
-    $("relay-state").textContent = connected ? "연결됨"
+    $("relay-state").textContent = connected ? "릴레이 연결됨"
       : relayOwnedElsewhere ? "다른 유지관리 창이 사용 중"
-      : relayNeedsUpdate ? "북마클릿 업데이트 필요" : "연결 대기";
+      : relayNeedsUpdate ? "북마클릿 업데이트 필요" : "릴레이 연결 대기";
     $("relay-dot").classList.toggle("good", connected);
     updateButtons();
   }
@@ -346,7 +461,6 @@
       const finalTitle = (row.newTitle || cand.title).trim();
       if (!isNormalizedTitle(finalTitle)) blockers.push(`제목 형식: ${cand.title.slice(0, 24)}`);
       if (!row.projectName.trim()) blockers.push(`프로젝트 없음: ${cand.title.slice(0, 24)}`);
-      else if (cand.projectName && row.projectName.trim() !== cand.projectName) blockers.push(`프로젝트 이동 불가: ${cand.title.slice(0, 24)}`);
     }
     return [...new Set(blockers)];
   }
@@ -354,6 +468,7 @@
     const busy = $("scan").dataset.busy === "true" || $("apply").dataset.busy === "true";
     const scanBlocked = Boolean(state.phase && state.phase !== "complete");
     $("scan").disabled = busy || !state.relayConnected || !state.workspaceOk || scanBlocked;
+    $("scan").textContent = $("scan").dataset.busy === "true" ? "확인 중…" : "새 대화 확인";
     $("copy-prompt").disabled = !state.proposal?.prompt;
     $("copy-claude-prompt").disabled = !state.proposal?.claudePrompt;
     $("apply-proposal").disabled = !$("proposal-input").value.trim() || state.phase !== "awaiting-proposal";
@@ -361,6 +476,8 @@
     const hasCandidates = state.candidates.length > 0;
     $("apply").disabled = busy || !state.relayConnected || state.phase !== "awaiting-proposal"
       || !hasCandidates || decisionBlockers().length > 0;
+    $("apply").textContent = $("apply").dataset.busy === "true" ? "적용 중…" : "결정 저장 및 적용";
+    refreshBanner();
   }
 
   // ---- status ----
@@ -374,15 +491,15 @@
       $("folder-state").textContent = `${folderName(status.dataDir)} · ${lockText}`;
       $("baseline-state").textContent = `${formatDate(status.baseline.generatedAt)} · ${status.baseline.counts?.conversations ?? "?"}개`;
       localStorage.setItem("maintenance_workspace", status.workspace);
-      if (status.currentRun && status.currentRun.phase !== "complete") {
-        activity(`현재 실행: ${status.currentRun.runId}\n상태: ${status.currentRun.phase}`);
-      } else {
-        activity("준비되었습니다. ChatGPT 릴레이를 연결하고 ‘새 대화 확인’을 누르세요.");
+      if (status.currentRun?.phase === "complete" && status.currentRun.result) {
+        state.lastResult = { at: status.currentRun.updatedAt, counts: status.currentRun.result.counts };
+      } else if (!status.currentRun) {
+        state.lastResult = null;
       }
     } catch (error) {
       state.workspaceOk = false;
       $("folder-state").textContent = "폴더 확인 필요";
-      activity(error.message || String(error));
+      showError(error);
     }
     await Promise.all([refreshCatalog(), refreshProposal(false), refreshDecisions()]);
     updateButtons();
@@ -493,9 +610,9 @@
       if (item.suggestedDecision === "delete") row.decision = "delete";
       else row.decision = "keep";
       row.newTitle = item.suggestedNewTitle || item.currentTitle || cand.title;
-      row.projectName = cand.projectName || item.suggestedProjectName || "";
+      row.projectName = item.suggestedProjectName || cand.projectName || "";
       row.hint = item.suggestedDecision === "undecided" ? "AI 미결정 — 직접 결정하세요"
-        : item.suggestedProjectAction === "manual-move" ? "AI: 프로젝트 이동 필요 (ChatGPT에서 직접)"
+        : item.suggestedProjectAction === "manual-move" ? `AI: ${cand.projectName || "?"}에서 이동 제안`
         : (item.rationale || "");
       state.rows.set(item.conversationId, row);
     }
@@ -560,9 +677,9 @@
       const projInput = document.createElement("input");
       projInput.type = "text"; projInput.value = row.projectName; projInput.spellcheck = false;
       projInput.setAttribute("list", "project-options");
-      projInput.disabled = row.decision === "delete" || Boolean(cand.projectName);
+      projInput.disabled = row.decision === "delete";
       const projHint = document.createElement("div"); projHint.className = "rowmeta";
-      if (cand.projectName) projHint.textContent = "기존 프로젝트 고정";
+      if (cand.projectName) projHint.textContent = "다른 프로젝트로 바꾸면 이동합니다";
       tdProject.append(projInput, projHint);
 
       const refreshRowHints = () => {
@@ -570,16 +687,17 @@
         if (row.decision === "delete") { titleHint.textContent = ""; titleHint.className = "rowmeta"; }
         else if (!isNormalizedTitle(finalTitle)) { titleHint.textContent = "형식: 주제 — 작업/결과"; titleHint.className = "rowmeta bad"; }
         else { titleHint.textContent = `${[...finalTitle].length}자`; titleHint.className = "rowmeta ok"; }
-        if (row.decision === "delete" || cand.projectName) { /* keep existing hint */ }
+        if (row.decision === "delete") { /* keep existing hint */ }
         else if (!projInput.value.trim()) { projHint.textContent = "프로젝트를 입력하세요"; projHint.className = "rowmeta bad"; }
         else if (!state.projectNames.includes(projInput.value.trim())) { projHint.textContent = "새 프로젝트로 생성됨"; projHint.className = "rowmeta"; }
+        else if (cand.projectName && projInput.value.trim() !== cand.projectName) { projHint.textContent = `${cand.projectName}에서 이동`; projHint.className = "rowmeta"; }
         else { projHint.textContent = "기존 프로젝트"; projHint.className = "rowmeta ok"; }
       };
 
       sel.addEventListener("change", () => {
         row.decision = sel.value;
         titleInput.disabled = row.decision === "delete";
-        projInput.disabled = row.decision === "delete" || Boolean(cand.projectName);
+        projInput.disabled = row.decision === "delete";
         refreshRowHints(); renderDecideSummary(); updateButtons();
       });
       titleInput.addEventListener("input", () => { row.newTitle = titleInput.value; refreshRowHints(); renderDecideSummary(); updateButtons(); });
@@ -676,13 +794,29 @@
     updateButtons();
     try {
       const result = await api("/maintenance/scan", { method: "POST", body: JSON.stringify({ workspace: wsValue() }) });
-      await pollJob(result.jobId, $("scan"));
+      const scanResult = await pollJob(result.jobId, $("scan"));
+      announceScanResult(scanResult);
     } catch (error) {
       $("scan").dataset.busy = "false";
       updateButtons();
       if (!error?.code) showError(error);
     }
   });
+  function announceScanResult(scanResult) {
+    const counts = scanResult?.run?.result?.counts || scanResult?.run?.counts;
+    if (!counts) return;
+    const candidates = counts.candidates || 0;
+    if (candidates > 0) {
+      activity(`후보 ${candidates}개를 찾았습니다. 아래에서 분류를 진행하세요.`);
+      state.bannerOverride = null;
+      setBanner("waiting", `결정 대기 중 — 후보 ${candidates}개`, "3단계에서 검토하고 ‘결정 저장 및 적용’을 누르세요.");
+      return;
+    }
+    const heldNote = counts.held ? ` (형식만 다른 보류 항목 ${counts.held}개 제외)` : "";
+    activity(`업데이트가 없습니다 — 지난 확인 이후 새로 추가되거나 변경된 대화가 없습니다.${heldNote} 최신 상태입니다.`);
+    state.lastResult = { at: new Date().toISOString(), counts };
+    refreshBanner();
+  }
   $("copy-prompt").addEventListener("click", async () => {
     if (!state.proposal?.prompt) return;
     await navigator.clipboard.writeText(state.proposal.prompt);
@@ -722,11 +856,17 @@
     try {
       const result = await api("/maintenance/apply", { method: "POST", body: JSON.stringify({ workspace: wsValue(), confirmDeletes }) });
       await pollJob(result.jobId, $("apply"));
+      activity("적용이 완료됐습니다.");
     } catch (error) { if (!error?.code) showError(error); }
   });
   $("copy-error").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("error-text").textContent);
     $("copy-error").textContent = "복사됨";
+  });
+  $("theme-toggle").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("maintenance_theme", next); } catch {}
   });
 
   fetch("/config", { cache: "no-store" }).then((r) => r.json()).then(async (config) => {

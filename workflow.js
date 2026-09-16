@@ -669,10 +669,10 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
       assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
         && decision.projectName.length > 0,
       `${label}.projectName is required for a preserved maintenance conversation`);
-      if (source.projectName) {
-        assert(decision.projectName === source.projectName,
-          `${label} requests an unsupported move between projects`);
-      }
+      // A move between two already-existing projects is handled by
+      // compileProjectRouting()/runProjectRouting(), not here — this
+      // compiler only builds title/delete batches, so it no longer needs to
+      // reject a decision.projectName that differs from source.projectName.
     }
     if (decision.decision === "keep" && !newTitle) continue;
     actions.push({
@@ -742,19 +742,20 @@ export function compileProjectRouting(inventoryPath, decisionsPath, outputPath) 
     }
     assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
       && decision.projectName.length > 0, `${label}.projectName is required for a preserved conversation`);
-    if (source.projectName) {
-      assert(decision.projectName === source.projectName,
-        `${label} requests an unsupported move between projects`);
+    if (source.projectName && decision.projectName === source.projectName) {
       continue;
     }
-    const actions = targetsByName.get(decision.projectName) || [];
-    actions.push({
+    const entry = targetsByName.get(decision.projectName) || { actions: [], sourceProjectNames: {} };
+    entry.actions.push({
       conversationId: source.conversationId,
       expectedTitle: decision.newTitle || source.title,
       expectedSourceProjectId: null,
       approved: true,
     });
-    targetsByName.set(decision.projectName, actions);
+    if (source.projectName) {
+      entry.sourceProjectNames[source.conversationId] = source.projectName;
+    }
+    targetsByName.set(decision.projectName, entry);
   }
   assert(seen.size === inventory.conversations.length,
     "Every maintenance candidate must have exactly one reviewed routing decision");
@@ -769,14 +770,15 @@ export function compileProjectRouting(inventoryPath, decisionsPath, outputPath) 
     receiptDir: resolve(decisions.receiptDir),
     targets: [...targetsByName.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, actions]) => ({
+      .map(([name, entry]) => ({
         project: {
           name,
           instructions: "",
           createIfMissing: true,
           approved: true,
         },
-        actions,
+        actions: entry.actions,
+        sourceProjectNames: entry.sourceProjectNames,
       })),
   });
   writeJsonAtomic(resolve(outputPath), routing);

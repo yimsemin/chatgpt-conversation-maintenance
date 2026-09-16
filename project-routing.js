@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { assert } from "./assert.js";
 import { exactKeys } from "./exact-keys.js";
+import { CONVERSATION_ID } from "./ids.js";
 import {
   listOwnedProjects,
   projectPlacementConfirmation,
@@ -28,7 +29,33 @@ export function validateProjectRouting(input) {
   const targets = input.targets.map((target, index) => {
     const label = `targets[${index}]`;
     assert(target && typeof target === "object" && !Array.isArray(target), `${label} must be an object`);
-    exactKeys(target, ["project", "actions"], label);
+    const targetKeys = ["project", "actions"];
+    if (target.sourceProjectNames !== undefined) targetKeys.push("sourceProjectNames");
+    exactKeys(target, targetKeys, label);
+
+    // A routing target may name, per conversation, the project it is
+    // currently expected to be in — since the author (an offline compiler)
+    // knows only names, never live project IDs. It is a target-level map
+    // (not folded into each action) so this whole object round-trips
+    // unchanged through re-validation (projectRoutingDigest/confirmation
+    // re-validate their own output). Names are resolved to IDs only at apply
+    // time, once a routing run has fetched the live project catalog — see
+    // resolveSourceProjectIds() below; the plan itself (and its digest) stays
+    // source-agnostic.
+    const rawSourceProjectNames = target.sourceProjectNames || {};
+    assert(rawSourceProjectNames && typeof rawSourceProjectNames === "object" && !Array.isArray(rawSourceProjectNames),
+      `${label}.sourceProjectNames must be an object`);
+    const actionIds = new Set((target.actions || []).map((action) => action?.conversationId));
+    const sourceProjectNames = {};
+    for (const [conversationId, name] of Object.entries(rawSourceProjectNames)) {
+      assert(CONVERSATION_ID.test(conversationId), `${label}.sourceProjectNames has an invalid conversation ID`);
+      assert(actionIds.has(conversationId),
+        `${label}.sourceProjectNames references a conversation not in this target's actions: ${conversationId}`);
+      assert(typeof name === "string" && name.trim() === name && name.length > 0,
+        `${label}.sourceProjectNames["${conversationId}"] is invalid`);
+      sourceProjectNames[conversationId] = name;
+    }
+
     const plan = validateProjectPlacementPlan({
       version: 1,
       kind: "chatgpt-project-placement-plan",
@@ -46,7 +73,7 @@ export function validateProjectRouting(input) {
       conversationIds.add(action.conversationId);
     }
     totalActions += plan.actions.length;
-    return { project: plan.project, actions: plan.actions };
+    return { project: plan.project, actions: plan.actions, sourceProjectNames };
   });
   assert(totalActions > 0, "Routing plan must move at least one conversation");
   assert(totalActions <= 200, "Routing plan is limited to 200 conversations");
@@ -109,6 +136,30 @@ function placementPlan(routing, target) {
     project: target.project,
     actions: target.actions,
   });
+}
+
+function resolveSourceProjectId(projectCatalog, name) {
+  const matches = projectCatalog.filter((project) => project.projectName === name);
+  assert(matches.length > 0, `Source project named "${name}" was not found among owned projects`);
+  assert(matches.length === 1,
+    `More than one owned project is named "${name}"; cannot resolve the source project unambiguously`);
+  return matches[0].projectId;
+}
+
+// Resolves each action's declared source project NAME to a live project ID,
+// keyed by conversationId, for use as runProjectPlacementWorkflow's
+// sourceProjectIds override. This can only happen once a routing run has
+// actually fetched the live project catalog (project IDs are not known
+// offline) — it is intentionally NOT baked into the placement plan itself,
+// so the plan digest used for the routing confirmation phrase and for
+// offline status/resume checks (projectRoutingStatus, which has no API
+// access) stays identical to what was compiled and approved.
+function resolveSourceProjectIds(target, projectCatalog) {
+  const overrides = {};
+  for (const [conversationId, name] of Object.entries(target.sourceProjectNames || {})) {
+    overrides[conversationId] = resolveSourceProjectId(projectCatalog, name);
+  }
+  return overrides;
 }
 
 export function projectRoutingStatus(routing) {
@@ -189,6 +240,7 @@ export async function runProjectRouting({
   for (const [selectedIndex, entry] of selected.entries()) {
     const { target, index } = entry;
     const plan = placementPlan(routing, target);
+    const sourceProjectIds = resolveSourceProjectIds(target, projectCatalog);
     onProgress({
       type: "target-start",
       index: index + 1,
@@ -204,6 +256,7 @@ export async function runProjectRouting({
       api,
       initialProjects: projectCatalog,
       batchRemotePreflight: false,
+      sourceProjectIds,
     });
     results.push({ projectName: plan.project.name, ...result });
     onProgress({
