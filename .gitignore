@@ -34,6 +34,8 @@ logs/
 # Editors and operating systems
 .claude/*
 !.claude/settings.json
+!.claude/skills/
+!.claude/skills/**
 .vscode/
 .idea/
 .DS_Store
