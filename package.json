@@ -11,6 +11,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "start": "node server.js",
     "app": "node launcher.js",
+    "brief": "node brief.js",
     "lock": "node maintenance-lock.js",
     "manage": "node management-cli.js",
     "maintenance": "node maintenance-cli.js",
