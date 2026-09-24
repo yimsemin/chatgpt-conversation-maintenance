@@ -1,0 +1,10 @@
+#!/bin/sh
+# main 에 직접 커밋하는 것을 막는다. 사용자가 "바로 고쳐"처럼 사소한 즉시 수정을
+# 요청했을 때만 ALLOW_MAIN_COMMIT=1 git commit ... 으로 우회한다.
+
+branch="$(git symbolic-ref --short -q HEAD)"
+if [ "$branch" = "main" ] && [ "$ALLOW_MAIN_COMMIT" != "1" ]; then
+  echo "main 에 직접 커밋할 수 없다. 작업 브랜치를 만든다 (docs/GIT.md)." >&2
+  exit 1
+fi
+exit 0
