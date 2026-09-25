@@ -6,7 +6,8 @@ import { api, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
 import { setupPanel } from "/assets/panel-setup.js";
-import { applyReadyPanel, scanPanel, startCollect, startFullScan, startProbe, startRebaseline, startScan } from "/assets/panel-scan.js";
+import { applyReadyPanel, scanPanel, startCollect, startRebaseline, startScan } from "/assets/panel-scan.js";
+import { renderGuide, stepHint } from "/assets/help.js";
 import { proposalPanel } from "/assets/panel-proposal.js";
 import { loadReview } from "/assets/panel-review.js";
 import { loadResult } from "/assets/panel-result.js";
@@ -38,9 +39,6 @@ function render() {
   if (key !== S.panelKey) { S.panelKey = key; S.live = []; buildPanel(step); }
   for (const update of S.live) update();
   renderRecent();
-  const fast = S.session?.fastScan;
-  $("fast-note").textContent = !fast ? "" : fast.verified ? `빠른 스캔 검증 통과(${ago(fast.checkedAt)}). 기준선이 30일 이내면 증분으로 확인합니다.`
-    : fast.reason ? `빠른 스캔을 쓸 수 없습니다: ${fast.message || "결과 불일치"}` : "빠른 스캔은 아직 검증 전입니다. 검증하면 새 대화 확인이 몇 초로 줄어듭니다.";
 }
 
 // 가장 최근 작업이 실패했고 그 뒤에 성공이 없으면 원인과 조치를 화면 맨 위에 보인다.
@@ -75,9 +73,9 @@ function renderTitle() {
 // 이 실행을 그만두고 최신 상태로 다시 시작한다(ChatGPT에서 그동안 직접 바꾼 것이 있을 때 등).
 function restartButton() {
   return h("button", { class: "btn ghost", type: "button", disabled: !S.session?.relay?.connected, onclick: async () => {
-    if (!confirm("이 실행의 검토 내용을 버리고 새 대화 확인부터 다시 합니다. 이미 ChatGPT에 적용된 것은 그대로 유지됩니다. 계속할까요?")) return;
+    if (!confirm("지금까지의 분류·검토 내용을 버리고 새 대화 확인부터 다시 합니다. 이미 ChatGPT에 적용된 것은 그대로 유지됩니다. 계속할까요?")) return;
     S.forceStep = null; S.view = null; await startScan();
-  } }, "새로 확인(이 실행 버리기)");
+  } }, "처음부터 다시 확인");
 }
 
 function renderNow() {
@@ -102,7 +100,7 @@ function renderNow() {
   } else if (step === "scan") {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
     headline = allClear ? "새로 정리할 대화가 없습니다" : base?.stale === false ? "지난 확인 이후 새 대화를 확인해 보세요" : "새 대화를 확인할 시간입니다";
-    sub = base ? `기준선 ${base.counts?.conversations ?? "?"}개 대화 · ${base.counts?.projects ?? "?"}개 프로젝트 · ${ago(allClear ? s.run.updatedAt : base.generatedAt)} 확인` : "기준선이 아직 없습니다";
+    sub = base ? `지난 확인 기준 대화 ${base.counts?.conversations ?? "?"}개 · 프로젝트 ${base.counts?.projects ?? "?"}개 · ${ago(allClear ? s.run.updatedAt : base.generatedAt)} 확인` : "아직 확인한 기록이 없습니다";
     action = h("button", { class: "btn", type: "button", disabled: !s?.relay?.connected, onclick: startScan }, "새 대화 확인");
   } else if (step === "proposal") {
     headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = "AI 에이전트에게 분류를 맡기세요.";
@@ -121,7 +119,8 @@ function renderSteps() {
   $("steps").hidden = ["parking", "setup"].includes(currentStep());
   const order = STEPS.map(([id]) => id); const at = order.indexOf(currentStep());
   fill($("steps"), ...STEPS.map(([id, label], i) =>
-    h("li", { class: i < at ? "done" : i === at ? "current" : "" }, h("b", { text: `${i + 1}` }), h("span", { class: "lbl", text: label }))));
+    h("li", { class: i < at ? "done" : i === at ? "current" : "", title: stepHint(id) }, h("b", { text: `${i + 1}` }), h("span", { class: "lbl", text: label }))));
+
 }
 
 function buildPanel(step) {
@@ -159,10 +158,9 @@ async function boot() {
     document.documentElement.dataset.theme = next; try { localStorage.setItem("maintenance_theme", next); } catch {}
   });
   $("relay-pill").addEventListener("click", () => { const hint = S.session?.relay?.hint; if (hint) toast(S.session.relay.label, hint); });
+  renderGuide();
   $("collect").addEventListener("click", startCollect);
-  $("probe").addEventListener("click", startProbe);
   $("rebaseline").addEventListener("click", startRebaseline);
-  $("full-scan").addEventListener("click", startFullScan);
   $("workspace").addEventListener("change", () => { S.workspace = $("workspace").value.trim(); try { localStorage.setItem("app_workspace", S.workspace); } catch {} refreshSession(); });
   const config = await api("/config").catch(() => ({}));
   S.workspace = (() => { try { return localStorage.getItem("app_workspace"); } catch { return null; } })() || config.workspace || "";

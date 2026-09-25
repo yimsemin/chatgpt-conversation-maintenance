@@ -10,7 +10,7 @@ export async function loadResult() {
     const r = data.report; const todo = r.todo;
     const copy = (text) => h("button", { class: "btn ghost", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(text); e.target.textContent = "복사됨"; } }, "목록 복사");
     fill($("panel"), 
-      h("h2", { text: "5. 정리 결과" }), h("p", { class: "headline", style: "font-size:20px;font-weight:650;margin:0", text: r.headline }),
+      h("h2", { text: "5. 정리 결과" }), h("p", { class: "lead", text: r.headline }),
       h("p", { class: "muted small", text: r.note }),
       r.mismatches.length ? h("p", { class: "chip bad", text: `예상과 다른 프로젝트: ${r.mismatches.join(", ")}` }) : h("p", { class: "chip good", text: "모든 프로젝트가 예상과 일치합니다" }),
       h("h3", { text: "직접 하실 일" }),
