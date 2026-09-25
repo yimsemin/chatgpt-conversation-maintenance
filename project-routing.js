@@ -24,7 +24,6 @@ export function validateProjectRouting(input) {
   assert(input.targets.length <= 50, "Routing plan is limited to 50 target projects");
 
   const conversationIds = new Set();
-  const projectKeys = new Set();
   let totalActions = 0;
   const targets = input.targets.map((target, index) => {
     const label = `targets[${index}]`;
@@ -64,9 +63,7 @@ export function validateProjectRouting(input) {
       project: target.project,
       actions: target.actions,
     });
-    const projectKey = plan.project.projectId || `name:${plan.project.name}`;
-    assert(!projectKeys.has(projectKey), `Routing target is duplicated: ${projectKey}`);
-    projectKeys.add(projectKey);
+    // 한 프로젝트가 25건을 넘으면 같은 프로젝트를 가리키는 타깃이 여러 개로 나뉜다.
     for (const action of plan.actions) {
       assert(!conversationIds.has(action.conversationId),
         `Conversation appears in more than one routing target: ${action.conversationId}`);
@@ -76,7 +73,7 @@ export function validateProjectRouting(input) {
     return { project: plan.project, actions: plan.actions, sourceProjectNames };
   });
   assert(totalActions > 0, "Routing plan must move at least one conversation");
-  assert(totalActions <= 200, "Routing plan is limited to 200 conversations");
+  assert(totalActions <= 600, "Routing plan is limited to 600 conversations");
 
   return {
     version: 1,

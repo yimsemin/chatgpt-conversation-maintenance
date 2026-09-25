@@ -180,6 +180,8 @@
     <label for="workspace">유지관리 프로젝트 폴더 (이 저장소 경로)</label>
     <input id="workspace" type="text" spellcheck="false" autocomplete="off">
     <button class="btn action" type="button" id="scan" disabled>새 대화 확인</button>
+    <button class="btn action" type="button" id="collect" disabled>전수 수집 (전체 본문 받기)</button>
+    <button class="btn" type="button" id="cancel-job" hidden>중단</button>
     <p class="helper" id="scan-hint">ChatGPT 릴레이가 연결되면 활성화됩니다. 스캔은 ChatGPT를 바꾸지 않습니다.</p>
   </section>
 
@@ -222,6 +224,7 @@
     <div class="table-wrap hidden" id="decide-wrap"><table id="decide-table"><thead><tr><th>대화</th><th>결정</th><th class="col-title">새 제목</th><th class="col-project">프로젝트</th></tr></thead><tbody id="decide-body"></tbody></table></div>
     <p class="muted" id="decide-empty">먼저 ‘새 대화 확인’을 실행하세요. 후보가 없으면 이 단계는 비어 있습니다.</p>
     <button class="btn action" type="button" id="apply" disabled>결정 저장 및 적용</button>
+    <label class="helper"><input type="checkbox" id="quiet-verify" checked> 빠른 검증 — 수집 이후 다른 대화를 만들거나 고치지 않았다고 가정하고 전체 재수집을 생략합니다(끄면 전체 재수집, 수 분 소요)</label>
     <div class="error-box hidden" id="error-box"><pre id="error-text"></pre><button class="btn secondary" type="button" id="copy-error">채팅에 붙여넣을 오류 복사</button></div>
   </section>
 
@@ -294,7 +297,7 @@
     const applyBusy = $("apply").dataset.busy === "true";
     if (scanBusy || applyBusy) {
       const el = $("activity");
-      const lastLine = el.textContent.trim().split("\n").filter(Boolean).pop() || "";
+      const lastLine = el.lastElementChild?.textContent.trim() || "";
       setBanner("running", scanBusy ? "새 대화 확인 진행 중…" : "결정 적용 진행 중…", lastLine.replace(/^\[[^\]]+\]\s*/, ""));
       return;
     }
@@ -460,7 +463,6 @@
       if (row.decision === "delete") continue;
       const finalTitle = (row.newTitle || cand.title).trim();
       if (!isNormalizedTitle(finalTitle)) blockers.push(`제목 형식: ${cand.title.slice(0, 24)}`);
-      if (!row.projectName.trim()) blockers.push(`프로젝트 없음: ${cand.title.slice(0, 24)}`);
     }
     return [...new Set(blockers)];
   }
@@ -469,6 +471,8 @@
     const scanBlocked = Boolean(state.phase && state.phase !== "complete");
     $("scan").disabled = busy || !state.relayConnected || !state.workspaceOk || scanBlocked;
     $("scan").textContent = $("scan").dataset.busy === "true" ? "확인 중…" : "새 대화 확인";
+    // 전수 수집은 이전 실행의 대기 상태와 무관하게 시작할 수 있다. 끝나면 새 실행이 그것을 대체한다.
+    $("collect").disabled = busy || !state.relayConnected || !state.workspaceOk;
     $("copy-prompt").disabled = !state.proposal?.prompt;
     $("copy-claude-prompt").disabled = !state.proposal?.claudePrompt;
     $("apply-proposal").disabled = !$("proposal-input").value.trim() || state.phase !== "awaiting-proposal";
@@ -612,6 +616,7 @@
       row.newTitle = item.suggestedNewTitle || item.currentTitle || cand.title;
       row.projectName = item.suggestedProjectName || cand.projectName || "";
       row.hint = item.suggestedDecision === "undecided" ? "AI 미결정 — 직접 결정하세요"
+        : item.suggestedProjectAction === "manual-remove" ? `AI: ${cand.projectName || "?"}에서 프로젝트 없음 제안 — ChatGPT에서 직접 빼야 함`
         : item.suggestedProjectAction === "manual-move" ? `AI: ${cand.projectName || "?"}에서 이동 제안`
         : (item.rationale || "");
       state.rows.set(item.conversationId, row);
@@ -768,12 +773,19 @@
   }
 
   // ---- job polling ----
+  let activeJobId = null;
+  $("cancel-job").addEventListener("click", async () => {
+    if (!activeJobId || !confirm("진행 중인 작업을 중단합니다. 받은 본문은 남고, 전수 수집은 나중에 이어받을 수 있습니다.")) return;
+    try { await api("/maintenance/cancel", { method: "POST", body: JSON.stringify({ jobId: activeJobId }) }); } catch {}
+  });
   async function pollJob(jobId, button) {
+    activeJobId = jobId; $("cancel-job").hidden = false;
     button.dataset.busy = "true"; updateButtons(); clearError();
     for (;;) {
       const job = await api(`/maintenance/job/${encodeURIComponent(jobId)}`);
       activity(job.events.map((e) => `[${e.stage}] ${e.message}`));
       if (job.done) {
+        activeJobId = null; $("cancel-job").hidden = true;
         button.dataset.busy = "false";
         if (!job.ok) { showError(job.error); updateButtons(); throw job.error; }
         await refreshStatus();
@@ -796,6 +808,20 @@
       const result = await api("/maintenance/scan", { method: "POST", body: JSON.stringify({ workspace: wsValue() }) });
       const scanResult = await pollJob(result.jobId, $("scan"));
       announceScanResult(scanResult);
+    } catch (error) {
+      $("scan").dataset.busy = "false";
+      updateButtons();
+      if (!error?.code) showError(error);
+    }
+  });
+  $("collect").addEventListener("click", async () => {
+    if (!confirm("모든 대화 본문을 받습니다(수백 건, 수 분 이상). 대기 중인 이전 실행은 새 실행이 대체합니다. ChatGPT는 바뀌지 않으며 끊기면 이어받습니다. 시작할까요?")) return;
+    activity("[request] 전수 수집을 시작합니다…");
+    $("scan").dataset.busy = "true";
+    updateButtons();
+    try {
+      const result = await api("/maintenance/collect", { method: "POST", body: JSON.stringify({ workspace: wsValue() }) });
+      announceScanResult(await pollJob(result.jobId, $("scan")));
     } catch (error) {
       $("scan").dataset.busy = "false";
       updateButtons();
@@ -854,7 +880,7 @@
     const confirmDeletes = deletes ? window.confirm(`${deletes}개 대화를 삭제하는 결정입니다. 그대로 적용할까요?`) : true;
     if (!confirmDeletes) return;
     try {
-      const result = await api("/maintenance/apply", { method: "POST", body: JSON.stringify({ workspace: wsValue(), confirmDeletes }) });
+      const result = await api("/maintenance/apply", { method: "POST", body: JSON.stringify({ workspace: wsValue(), confirmDeletes, quiet: $("quiet-verify").checked }) });
       await pollJob(result.jobId, $("apply"));
       activity("적용이 완료됐습니다.");
     } catch (error) { if (!error?.code) showError(error); }

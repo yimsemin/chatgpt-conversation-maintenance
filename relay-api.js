@@ -4,6 +4,8 @@ import { validateRemoteOperation, validateRemoteResult } from "./remote-ops.js";
 import { createRelayTrace } from "./relay-trace.js";
 
 const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
+// 599 는 페이지 쪽 fetch 예외·결과 전달 실패를 뜻하는 가짜 상태다. 읽기 op 에서만 재시도한다.
+const READ_OPS = new Set(["getConversation", "listConversations", "listProjects", "listProjectConversations"]);
 
 // timeoutMs: 한 요청의 왕복 제한. 대화 본문은 수 MB 라 목록 조회보다 오래 걸린다.
 // livenessMs: 유지관리 창이 살아있다고 볼 기간. 둘을 묶으면 왕복 제한을 늘릴 때
@@ -132,7 +134,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
 
 export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(), maxRetries = 8, backoffBaseMs = 5000, backoffCapMs = 300000,
-  requestDelayMs = 1000, onRetry = () => {} } = {}) {
+  requestDelayMs = 1000, onRetry = () => {}, onRequest = () => {} } = {}) {
   assert(broker?.request, "Relay broker is required");
   let cooldownUntil = 0;
   const metrics = { requests: 0, retries: 0, rateLimits: 0, retryWaitMs: 0, pacingWaitMs: 0 };
@@ -142,6 +144,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
       const cooldown = Math.max(0, cooldownUntil - now());
       if (cooldown) await sleep(cooldown);
       metrics.requests++;
+      onRequest({ op, attempt, count: metrics.requests });
       let result;
       try { result = await broker.request({ op, params }); }
       catch (error) {
@@ -150,7 +153,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
         metrics.retries++; metrics.retryWaitMs += waitMs; onRetry({ type: "network", attempt: attempt + 1, waitMs });
         await sleep(waitMs); continue;
       }
-      if (!RETRYABLE.has(result.status) || attempt === retryLimit) {
+      if (!(RETRYABLE.has(result.status) || (result.status === 599 && READ_OPS.has(op))) || attempt === retryLimit) {
         if (requestDelayMs) { metrics.pacingWaitMs += requestDelayMs; await sleep(requestDelayMs); }
         return result;
       }

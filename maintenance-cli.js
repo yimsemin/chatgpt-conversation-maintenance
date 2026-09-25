@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assert } from "./assert.js";
+import { assertOptionalProjectName } from "./workflow.js";
 import { attachmentReferenceCount, contentSha256, sha256, stableJson } from "./content-hash.js";
 import { CONVERSATION_ID } from "./ids.js";
 export { isNormalizedTitle } from "./title-rules.js";
@@ -63,10 +64,16 @@ function writeJsonAtomic(path, value, finalFlag) {
   }
 }
 
-function prepareRunDirectory(path) {
+function prepareRunDirectory(path, { resume = false } = {}) {
   const root = resolve(path);
   mkdirSync(root, { recursive: true });
   assert(statSync(root).isDirectory(), `Run path is not a directory: ${root}`);
+  if (resume) {
+    // 수집 도중 끊긴 실행만 이어받는다. 인벤토리까지 만든 실행은 다시 쓰지 않는다.
+    assert(readdirSync(root).every((name) => name === "json"), `Run directory is not resumable: ${root}`);
+    mkdirSync(join(root, "json"), { recursive: true });
+    return root;
+  }
   assert(readdirSync(root).length === 0, `Run directory is not empty: ${root}`);
   mkdirSync(join(root, "json"));
   return root;
@@ -300,6 +307,16 @@ export function isFormatOnlyCandidate(candidate) {
   return reasons.length === 1 && reasons[0] === "title-format";
 }
 
+// 전수 수집: 모든 대화가 후보다. 사유는 "overhaul" 하나로 기록한다.
+export function fullCollectionSelection(state, catalog) {
+  const selected = selectMaintenanceCandidates(state, catalog, { conversations: [] });
+  return {
+    candidates: catalog.conversations.map((item) => ({ ...item, reasons: ["overhaul"] })),
+    removedConversationIds: selected.removedConversationIds,
+    suppressedByHoldIds: [],
+  };
+}
+
 export function selectMaintenanceCandidates(state, catalog, holdList = { conversations: [] }) {
   assert(state?.version === 1 && state.kind === "conversation-maintenance-state",
     "Unsupported maintenance state");
@@ -322,7 +339,6 @@ export function selectMaintenanceCandidates(state, catalog, holdList = { convers
       if (current.isArchived !== previous.isArchived) reasons.push("archive-changed");
       if ((current.projectName || null) !== (previous.projectName || null)) reasons.push("project-changed");
     }
-    if (!current.projectName) reasons.push("project-required");
     if (!isNormalizedTitle(current.title)) reasons.push("title-format");
     if (!reasons.length) continue;
     const candidate = { ...current, reasons: [...new Set(reasons)] };
@@ -363,18 +379,12 @@ function nextHoldList(holdList, catalog, candidates) {
   return { changed: signature(conversations) !== signature(previous), list: { ...holdList, conversations } };
 }
 
-async function downloadConversation(api, catalogItem, jsonDirectory) {
-  const response = await api.getConversation(catalogItem.conversationId);
-  assert(response.ok, `Conversation download failed for ${catalogItem.conversationId}: HTTP ${response.status}`);
-  const data = response.data;
+function conversationRecord(catalogItem, data, raw, backupFile) {
   const id = data?.conversation_id || data?.id;
   assert(id === catalogItem.conversationId, `Conversation download returned a different ID: ${catalogItem.conversationId}`);
   assert(data?.title === catalogItem.title, `Conversation title changed during scan: ${catalogItem.conversationId}`);
   assert(data?.mapping && typeof data.mapping === "object" && Object.keys(data.mapping).length > 0,
     `Conversation has no mapping: ${catalogItem.conversationId}`);
-  const raw = Buffer.from(JSON.stringify(data, null, 2));
-  const backupFile = resolve(jsonDirectory, `${catalogItem.conversationId}.json`);
-  writeFileSync(backupFile, raw, { mode: 0o600, flag: "wx" });
   return {
     ...catalogItem,
     messageCount: Object.values(data.mapping).filter((node) => node?.message).length,
@@ -384,6 +394,26 @@ async function downloadConversation(api, catalogItem, jsonDirectory) {
     backupBytes: raw.length,
     backupSha256: sha256(raw),
   };
+}
+
+// resume 이면 이미 받은 본문이 이 대화와 맞을 때 다시 받지 않고 재사용한다.
+// 맞지 않거나 깨진 파일은 새로 받아 덮어쓴다.
+async function downloadConversation(api, catalogItem, jsonDirectory, { resume = false } = {}) {
+  const backupFile = resolve(jsonDirectory, `${catalogItem.conversationId}.json`);
+  if (resume && existsSync(backupFile)) {
+    try {
+      const raw = readFileSync(backupFile);
+      return conversationRecord(catalogItem, JSON.parse(raw.toString("utf8")), raw, backupFile);
+    } catch {}
+  }
+  const response = await api.getConversation(catalogItem.conversationId);
+  assert(response.ok, `Conversation download failed for ${catalogItem.conversationId}: HTTP ${response.status}`
+    + (response.bodySnippet ? ` (${String(response.bodySnippet).slice(0, 120)})` : ""));
+  const data = response.data;
+  const raw = Buffer.from(JSON.stringify(data, null, 2));
+  const record = conversationRecord(catalogItem, data, raw, backupFile);
+  writeFileSync(backupFile, raw, { mode: 0o600, flag: resume ? "w" : "wx" });
+  return record;
 }
 
 function maintenanceInventory({ mode, runRoot, catalogPath, catalog, conversations,
@@ -446,7 +476,6 @@ export async function seedMaintenanceRun({ previousInventoryPath, runDir, api, n
   for (const catalogItem of catalog.conversations) {
     const reasons = [];
     if (!previousById.has(catalogItem.conversationId)) reasons.push("new");
-    if (!catalogItem.projectName) reasons.push("project-required");
     if (!isNormalizedTitle(catalogItem.title)) reasons.push("title-format");
     if (reasons.length) {
       candidates.push({
@@ -481,15 +510,19 @@ export async function seedMaintenanceRun({ previousInventoryPath, runDir, api, n
   return { root, inventoryPath, catalog, inventory };
 }
 
-export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, now = () => new Date(), onProgress = () => {} }) {
+// full 이면 변경 여부와 무관하게 카탈로그의 모든 대화를 후보로 받는다(전수 재정비 수집).
+// 보류 목록은 적용하지 않고, 도중에 끊긴 실행 폴더는 같은 runDir 로 이어받는다.
+export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, full = false, now = () => new Date(), onProgress = () => {} }) {
   const stateRaw = readFileSync(statePath);
   const state = JSON.parse(stateRaw.toString("utf8"));
-  const root = prepareRunDirectory(runDir);
+  const root = prepareRunDirectory(runDir, { resume: full });
   const holdDir = dataDir ? resolve(dataDir) : dirname(resolve(statePath));
   const holdList = readHoldList(holdDir);
   const catalog = await collectConversationCatalog(api, now, onProgress);
   const catalogPath = join(root, "catalog.json");
-  const selected = selectMaintenanceCandidates(state, catalog, holdList);
+  const selected = full
+    ? fullCollectionSelection(state, catalog)
+    : selectMaintenanceCandidates(state, catalog, holdList);
   const confirmedUnavailableConversationIds = [];
   const unresolvedRemovedConversationIds = [];
   for (const [index, conversationId] of selected.removedConversationIds.entries()) {
@@ -502,19 +535,19 @@ export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, now 
   for (const [index, candidate] of selected.candidates.entries()) {
     onProgress({ phase: "downloads", index, total: selected.candidates.length });
     candidates.push({
-      ...await downloadConversation(api, candidate, join(root, "json")),
+      ...await downloadConversation(api, candidate, join(root, "json"), { resume: full }),
       reasons: candidate.reasons,
     });
   }
   onProgress({ phase: "downloads", index: selected.candidates.length, total: selected.candidates.length });
   writeJsonNew(catalogPath, catalog);
-  const nextHold = nextHoldList(holdList, catalog, candidates);
-  if (nextHold.changed) writeHoldList(holdDir, nextHold.list, now);
+  const nextHold = nextHoldList(holdList, catalog, full ? [] : candidates);
+  if (nextHold.changed && !full) writeHoldList(holdDir, nextHold.list, now);
   const warnings = unresolvedRemovedConversationIds.length
     ? ["Previously checkpointed conversations are missing; reconcile them before advancing the checkpoint"]
     : [];
   const inventory = maintenanceInventory({
-    mode: "scan",
+    mode: full ? "overhaul" : "scan",
     runRoot: root,
     catalogPath,
     catalog,
@@ -533,6 +566,73 @@ export async function scanMaintenanceRun({ statePath, runDir, api, dataDir, now 
     checkpointAdvanced = true;
   }
   return { root, inventoryPath, catalog, inventory, checkpointAdvanced };
+}
+
+// 빠른 검증(quiet): 사용자가 수집 이후 다른 대화를 만들거나 고치지 않았다고 가정하고 전체 카탈로그를
+// 다시 수집하는 대신 기준 카탈로그에 확인된 변경만 반영한다. 제목·삭제·이동은 적용 단계가 이미
+// 대화별로 다시 읽어 검증했다. 가정이 깨진 흔적은 최근 수정 순 목록의 앞부분만 대조해 잡는다
+// (새 대화·편집된 대화는 목록 맨 위로 올라온다).
+async function recentDriftCheck({ api, baseline, plannedIds, margin = 20, maxPages = 8, onProgress = () => {} }) {
+  const byId = new Map(baseline.conversations.map((item) => [item.conversationId, item]));
+  const fresh = new Map();
+  let others = 0;
+  for (let page = 0; page < maxPages && others < margin; page++) {
+    onProgress({ phase: "drift", index: page, total: maxPages });
+    const data = unwrap(await api.listConversations({ archived: false, offset: page * PAGE_SIZE, limit: PAGE_SIZE }),
+      "Recent conversation check");
+    const items = data.items || [];
+    if (!items.length) break;
+    for (const item of items) {
+      if (!CONVERSATION_ID.test(item.id || "")) continue;
+      if (plannedIds.has(item.id)) {
+        fresh.set(item.id, { updateTime: item.update_time ?? null, title: item.title });
+        continue;
+      }
+      others++;
+      const known = byId.get(item.id);
+      assert(known, `New conversation appeared during maintenance: ${item.id} (빠른 검증 가정 위반 — 전체 검증으로 다시 실행하세요)`);
+      assert(item.title === known.title && sameTime(item.update_time, known.updateTime),
+        `Conversation changed during maintenance: ${item.id} (빠른 검증 가정 위반 — 전체 검증으로 다시 실행하세요)`);
+      if (others >= margin) break;
+    }
+    if (data.has_next === false || items.length < PAGE_SIZE) break;
+  }
+  onProgress({ phase: "drift", index: maxPages, total: maxPages });
+  return fresh;
+}
+
+function catalogFrom(base, conversations, now) {
+  return {
+    ...base,
+    generatedAt: now().toISOString(),
+    counts: {
+      ...base.counts,
+      conversations: conversations.length,
+      active: conversations.filter((item) => !item.isArchived).length,
+      archived: conversations.filter((item) => item.isArchived).length,
+      unassigned: conversations.filter((item) => !item.projectName).length,
+    },
+    projects: projectCatalog(base.projects, conversations),
+    conversations,
+  };
+}
+
+async function quietCheckpointCatalog({ api, before, decisions, now, onProgress }) {
+  const deleted = new Set(decisions.filter((item) => item.decision === "delete").map((item) => item.conversationId));
+  const renamed = new Map(decisions.filter((item) => item.decision === "keep" && item.newTitle)
+    .map((item) => [item.conversationId, item.newTitle]));
+  // 이동 예정 대화도 계획된 변경이다. 이미 옮겨졌다면 수정 시각이 바뀌어 목록 앞쪽에 나타난다.
+  const beforeById = new Map(before.conversations.map((item) => [item.conversationId, item]));
+  const moving = decisions.filter((item) => item.decision === "keep" && item.projectName
+    && item.projectName !== beforeById.get(item.conversationId)?.projectName).map((item) => item.conversationId);
+  const fresh = await recentDriftCheck({ api, baseline: before,
+    plannedIds: new Set([...deleted, ...renamed.keys(), ...moving]), onProgress });
+  const conversations = before.conversations.filter((item) => !deleted.has(item.conversationId)).map((item) => ({
+    ...item,
+    ...(renamed.has(item.conversationId) ? { title: renamed.get(item.conversationId) } : {}),
+    ...(fresh.has(item.conversationId) ? { updateTime: fresh.get(item.conversationId).updateTime } : {}),
+  }));
+  return catalogFrom(before, conversations, now);
 }
 
 function mutationDecisions(decisions) {
@@ -556,7 +656,8 @@ function validateCompletedPlans(plansDir, inventoryDigest, decisionsDigest, expe
     "Completed plan actions do not exactly match reviewed mutations");
 }
 
-export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, statePath, plansDir, api, now = () => new Date() }) {
+export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, statePath, plansDir, api, quiet = false,
+  now = () => new Date(), onProgress = () => {} }) {
   const inventoryRaw = readFileSync(inventoryPath);
   const decisionsRaw = readFileSync(decisionsPath);
   const inventory = JSON.parse(inventoryRaw.toString("utf8"));
@@ -586,16 +687,15 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
     if (decision.decision !== "delete") {
       assert(isNormalizedTitle(decision.newTitle || inventoryById.get(decision.conversationId)?.title),
         `Reviewed title must use the exact "topic — work/result" form: ${decision.conversationId}`);
-      assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
-        && decision.projectName.length > 0,
-      `Reviewed projectName is required for a preserved conversation: ${decision.conversationId}`);
+      assertOptionalProjectName(decision.projectName,
+        `Reviewed projectName for ${decision.conversationId}`);
       // A decision.projectName that differs from the conversation's current
       // project is a real move between two existing projects, handled by
       // compileProjectRouting()/runProjectRouting() after this checkpoint —
       // not something this checkpoint needs to reject.
     }
   }
-  if (inventory.source?.mode === "scan") {
+  if (["scan", "overhaul"].includes(inventory.source?.mode)) {
     const stateRaw = readFileSync(statePath);
     assert(sha256(stateRaw) === inventory.source.stateDigest,
       "Maintenance state changed after this scan; run a new scan");
@@ -607,7 +707,9 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
   }
 
   const before = readJson(inventory.catalogFile, "Maintenance catalog");
-  const current = await collectConversationCatalog(api, now);
+  const current = quiet
+    ? await quietCheckpointCatalog({ api, before, decisions: decisionsFile.decisions, now, onProgress })
+    : await collectConversationCatalog(api, now, onProgress);
   const beforeById = new Map(before.conversations.map((item) => [item.conversationId, item]));
   const currentById = new Map(current.conversations.map((item) => [item.conversationId, item]));
   const decisionsById = new Map(decisionsFile.decisions.map((item) => [item.conversationId, item]));
@@ -651,6 +753,7 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
     const drift = describeMetadataDrift(beforeItem, currentItem);
     assert(!drift,
       `Conversation metadata drifted during maintenance: ${beforeItem.conversationId} (${drift})`);
+    if (quiet) continue;
     const downloaded = await api.getConversation(beforeItem.conversationId);
     assert(downloaded.ok, `Could not verify maintained conversation: ${beforeItem.conversationId}`);
     assert(contentSha256(downloaded.data) === candidateById.get(beforeItem.conversationId)?.contentSha256,
@@ -660,7 +763,7 @@ export async function checkpointMaintenanceRun({ inventoryPath, decisionsPath, s
     - decisionsFile.decisions.filter((item) => item.decision === "delete").length,
   "Conversation count changed unexpectedly during maintenance");
 
-  const state = maintenanceState(current, { inventoryDigest, decisionsDigest });
+  const state = maintenanceState(current, { inventoryDigest, decisionsDigest, ...(quiet ? { verification: "assume-quiet" } : {}) });
   writeJsonReplace(resolve(statePath), state);
   return { statePath: resolve(statePath), state, inventoryDigest, decisionsDigest };
 }
@@ -669,7 +772,9 @@ export async function synchronizeMaintenanceStateAfterProjectRouting({
   statePath,
   routingPath,
   api,
+  quiet = false,
   now = () => new Date(),
+  onProgress = () => {},
 }) {
   const stateRaw = readFileSync(statePath);
   const routingRaw = readFileSync(routingPath);
@@ -695,7 +800,18 @@ export async function synchronizeMaintenanceStateAfterProjectRouting({
       `Routed conversation is not present in the maintenance state: ${conversationId}`);
   }
 
-  const current = await collectConversationCatalog(api, now);
+  let current;
+  if (quiet) {
+    // 이동은 프로젝트 배치 단계가 대화별로 다시 읽어 검증하고 영수증에 남겼다.
+    const fresh = await recentDriftCheck({ api, baseline: state, plannedIds: new Set(plannedById.keys()), onProgress });
+    current = catalogFrom(state, state.conversations.map((item) => ({
+      ...item,
+      ...(plannedById.has(item.conversationId) ? { projectName: plannedById.get(item.conversationId).projectName } : {}),
+      ...(fresh.has(item.conversationId) ? { updateTime: fresh.get(item.conversationId).updateTime } : {}),
+    })), now);
+  } else {
+    current = await collectConversationCatalog(api, now, onProgress);
+  }
   const currentById = new Map(current.conversations.map((item) => [item.conversationId, item]));
   const deferredNewConversationIds = current.conversations
     .map((item) => item.conversationId)
@@ -718,9 +834,6 @@ export async function synchronizeMaintenanceStateAfterProjectRouting({
     assert(currentItem.projectName === planned.projectName,
       `Routed conversation is not in the planned project: ${previousItem.conversationId}`);
   }
-  const unassigned = current.conversations.filter((item) => !item.projectName);
-  assert(unassigned.length === 0,
-    `Project routing is incomplete: ${unassigned.length} conversation(s) remain unassigned`);
 
   const trackedConversations = current.conversations
     .filter((item) => previousById.has(item.conversationId));
@@ -741,6 +854,7 @@ export async function synchronizeMaintenanceStateAfterProjectRouting({
     projectRoutingDigest: projectRoutingDigest(routing),
     routingFileDigest: sha256(routingRaw),
     deferredNewConversationIds,
+    ...(quiet ? { verification: "assume-quiet" } : {}),
   });
   writeJsonReplace(resolve(statePath), nextState);
   return {

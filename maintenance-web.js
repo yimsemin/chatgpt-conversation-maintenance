@@ -181,7 +181,7 @@ export function createSafeDiagnostic(stage, error, workspace, runId = null) {
 
 function cleanupJobs() {
   const cutoff = Date.now() - JOB_TTL_MS;
-  for (const [id, job] of jobs) if (job.createdAt < cutoff) jobs.delete(id);
+  for (const [id, job] of jobs) if (job.done && job.createdAt < cutoff) jobs.delete(id);
 }
 
 function createJob(kind, workspace) {
@@ -194,13 +194,17 @@ function createJob(kind, workspace) {
   return job;
 }
 
+const TRANSIENT_STAGES = new Set(["progress", "rate-limit", "retry", "request"]);
+
 export function jobEvent(job, stage, message) {
   // A "progress" event updates in place instead of piling up one line per
   // tick (e.g. one per downloaded conversation) — every other stage still
   // appends normally so the milestone log stays readable.
   const last = job.events[job.events.length - 1];
-  if (stage === "progress" && last?.stage === "progress") {
+  // 429 재시도 알림도 같은 자리에 덮어써서 로그가 수백 줄로 늘지 않게 한다.
+  if (TRANSIENT_STAGES.has(stage) && TRANSIENT_STAGES.has(last?.stage)) {
     last.at = new Date().toISOString();
+    last.stage = stage;
     last.message = message;
     return;
   }
@@ -213,6 +217,7 @@ const SCAN_PROGRESS_LABELS = {
   archived: "보관 대화 목록 확인 중",
   removed: "삭제된 대화 확인 중",
   downloads: "후보 대화 다운로드 중",
+  drift: "최근 수정 대화 대조 중(빠른 검증)",
 };
 
 export function formatScanProgress({ phase, index, total, projectName }) {
@@ -245,8 +250,38 @@ function runId() {
   return `${stamp}-${device}-${randomUUID().slice(0, 6)}`;
 }
 
+// 429 쿨다운 대기 중에도 중단 요청에 반응하도록 잘게 나눠 잔다.
+async function cancellableSleep(job, ms) {
+  for (let left = ms; left > 0; left -= 500) {
+    if (job.cancelled) throw new Error("사용자가 중단했습니다");
+    await new Promise((resolve) => setTimeout(resolve, Math.min(500, left)));
+  }
+  if (job.cancelled) throw new Error("사용자가 중단했습니다");
+}
+
+// 일시적인 실패(429·릴레이 시간 초과·5xx)는 사용자가 버튼을 다시 누르지 않아도 기다렸다가 이어서 한다.
+// 각 단계는 영수증·재조회로 이미 끝난 일을 건너뛰므로 다시 실행해도 안전하다.
+const AUTO_RESUME_ATTEMPTS = 12;
+const TRANSIENT_FAILURE = /429|rate.?limit|timed out|시간 초과|HTTP 5\d\d|HTTP 599|relay|릴레이|disconnected|not connected/i;
+
+async function untilDone(job, label, step) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await step();
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (job.cancelled || attempt >= AUTO_RESUME_ATTEMPTS || !TRANSIENT_FAILURE.test(message)) throw error;
+      const waitMinutes = Math.min(5 * attempt, 30);
+      jobEvent(job, "rate-limit", `${label}: 일시적 실패(${message.slice(0, 80)}). ${waitMinutes}분 뒤 자동으로 이어서 진행합니다 (${attempt}/${AUTO_RESUME_ATTEMPTS}). 중단하려면 중단 버튼을 누르세요.`);
+      await cancellableSleep(job, waitMinutes * 60 * 1000);
+      jobEvent(job, "apply", `${label}: 다시 시도합니다.`);
+    }
+  }
+}
+
 function relayApi(job, requestDelayMs = 1000) {
-  return createRelayApi({ broker: relayBroker, requestDelayMs, onRetry: (retry) => {
+  return createRelayApi({ broker: relayBroker, requestDelayMs, sleep: (ms) => cancellableSleep(job, ms),
+    onRequest: ({ op, count }) => jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}`), onRetry: (retry) => {
     const status = retry.status ? ` HTTP ${retry.status}` : "";
     const stage = retry.type === "http" && retry.status === 429 ? "rate-limit" : "retry";
     jobEvent(job, stage, `Retry${status} in ${Math.round(retry.waitMs / 1000)}s (${retry.attempt})`);
@@ -261,22 +296,35 @@ async function relayAccountId(api) {
   return accountId;
 }
 
-async function scanWorkflow(workspace, dataDir, api, job) {
+// 전수 수집은 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
+function overhaulRunDir(dataDir) {
+  const root = runsDir(dataDir);
+  const open = existsSync(root)
+    ? readdirSync(root).filter((name) => name.startsWith("overhaul-")
+      && !existsSync(join(root, name, "inventory.json"))).sort().pop()
+    : null;
+  return join(root, open || `overhaul-${runId()}`);
+}
+
+async function scanWorkflow(workspace, dataDir, api, job, { full = false } = {}) {
   let lockHeld = false;
   try {
     jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
     acquireLock({ dataDir });
     lockHeld = true;
     const id = runId();
-    const runDir = join(runsDir(dataDir), id);
+    const runDir = full ? overhaulRunDir(dataDir) : join(runsDir(dataDir), id);
     const inventoryPath = join(runDir, "inventory.json");
     const reviewPath = join(runDir, "review.json");
-    jobEvent(job, "scan", "ChatGPT의 새 대화와 변경 대화를 확인합니다.");
+    jobEvent(job, "scan", full
+      ? "전수 재정비: 모든 대화 본문을 받습니다. 이미 받은 것은 건너뜁니다."
+      : "ChatGPT의 새 대화와 변경 대화를 확인합니다.");
     const scanResult = await scanMaintenanceRun({
       statePath: stateFilePath(dataDir),
       runDir,
       api,
       dataDir,
+      full,
       onProgress: (info) => jobEvent(job, "progress", formatScanProgress(info)),
     });
     const scan = { counts: scanResult.inventory.counts, warnings: scanResult.inventory.warnings };
@@ -447,12 +495,11 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
     assert(isNormalizedTitle(newTitle || source.title),
       `${label}: 제목은 "주제 — 작업/결과" 형식이어야 합니다`);
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
-    assert(projectName, `${label}: 보존 대화에는 프로젝트가 필요합니다`);
     return {
       conversationId: source.conversationId,
       decision: "keep",
       ...(newTitle && newTitle !== source.title ? { newTitle } : {}),
-      projectName,
+      projectName: projectName || null,
       reviewed: true,
     };
   });
@@ -550,7 +597,7 @@ export function buildReviewedDecisions(pointer, proposal) {
         conversationId: item.conversationId,
         decision: "keep",
         ...(item.suggestedNewTitle ? { newTitle: item.suggestedNewTitle } : {}),
-        projectName: item.suggestedProjectName,
+        projectName: item.suggestedProjectName ?? null,
         reviewed: true,
         rationale: item.rationale,
       };
@@ -592,7 +639,7 @@ function receiptFileCount(receiptDir) {
   return readdirSync(receiptDir).filter((name) => name.toLowerCase().endsWith(".json")).length;
 }
 
-async function applyWorkflow(workspace, dataDir, api, accountId, confirmDeletes, job) {
+async function applyWorkflow(workspace, dataDir, api, accountId, confirmDeletes, job, { quiet = false } = {}) {
   const pointer = readPointer(workspace, dataDir);
   assert(pointer, "적용할 현재 실행이 없습니다");
   assertApplyablePhase(pointer.phase);
@@ -676,15 +723,23 @@ async function applyWorkflow(workspace, dataDir, api, accountId, confirmDeletes,
       const prepare = preparePlanSet(plansDir);
       if (prepare.summary?.remainingActions > 0) {
         jobEvent(job, "apply", `${prepare.summary.remainingActions}개 제목 변경 또는 삭제를 적용합니다.`);
-        const applied = await applyPlanSet({ plansDir, confirmation: prepare.summary.expectedConfirmation, accountId, api,
-          onProgress: (event) => jobEvent(job, "apply", `${event.type}: ${basename(event.file || "batch")}`) });
-        assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
+        await untilDone(job, "제목 변경·삭제", async () => {
+          const remaining = preparePlanSet(plansDir).summary;
+          if (remaining.remainingActions === 0) return;
+          const applied = await applyPlanSet({ plansDir, confirmation: remaining.expectedConfirmation, accountId, api,
+            onProgress: (event) => jobEvent(job, "apply", `${event.type}: ${basename(event.file || "batch")}`) });
+          assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
+        });
       }
     }
 
-    jobEvent(job, "checkpoint", "적용 결과와 원격 상태를 검증합니다.");
-    await checkpointMaintenanceRun({ inventoryPath: pointer.inventoryPath, decisionsPath, statePath,
-      plansDir: hasManagementPlans ? plansDir : "", api });
+    jobEvent(job, "checkpoint", quiet
+      ? "적용 결과를 빠른 검증으로 확인합니다(전체 카탈로그 재수집 생략, 최근 수정 목록만 대조)."
+      : "적용 결과와 원격 상태를 전체 카탈로그 재수집으로 검증합니다(수 분 걸릴 수 있음).");
+    const onProgress = (info) => jobEvent(job, "progress", formatScanProgress(info));
+    await untilDone(job, "체크포인트", () => checkpointMaintenanceRun({ inventoryPath: pointer.inventoryPath,
+      decisionsPath, statePath, plansDir: hasManagementPlans ? plansDir : "", api, quiet, onProgress }));
+    jobEvent(job, "checkpoint", "체크포인트 검증을 통과했고 기준선을 갱신했습니다.");
 
     if (routingCompile.routingRequired) {
       const routing = validateProjectRouting(readJson(routingPath, "프로젝트 배치 계획"));
@@ -692,15 +747,25 @@ async function applyWorkflow(workspace, dataDir, api, accountId, confirmDeletes,
       const routingStatus = projectRoutingStatus(routing);
       if (routingStatus.pendingTargets > 0) {
         jobEvent(job, "routing", `${routingPrepare.conversationCount}개 대화를 승인된 프로젝트에 배치합니다.`);
-        const routed = await runProjectRouting({ routing, confirmation: routingPrepare.expectedConfirmation,
-          accountId, api, pendingOnly: true,
-          onProgress: (event) => jobEvent(job, "routing", `${event.type}: ${event.projectName}`) });
-        assert(routed.ok, "프로젝트 배치에 실패했습니다");
+        await untilDone(job, "프로젝트 배치", async () => {
+          if (projectRoutingStatus(routing).pendingTargets === 0) return;
+          const routed = await runProjectRouting({ routing, confirmation: routingPrepare.expectedConfirmation,
+            accountId, api, pendingOnly: true,
+            onProgress: (event) => jobEvent(job, "routing", event.type === "target-start"
+              ? `배치 ${event.index}/${event.targets}: ${event.projectName} (${event.conversations}건)`
+              : `${event.type}: ${event.projectName}`) });
+          const failed = routed.results?.find((item) => !item.ok);
+          assert(routed.ok, `프로젝트 배치에 실패했습니다: ${failed?.error || ""}`);
+        });
       } else {
         jobEvent(job, "routing", "기존 영수증으로 프로젝트 배치 완료를 확인했습니다.");
       }
-      jobEvent(job, "verify", "프로젝트 배치와 최종 기준선을 검증합니다.");
-      await synchronizeMaintenanceStateAfterProjectRouting({ statePath, routingPath, api });
+      jobEvent(job, "verify", quiet
+        ? "프로젝트 배치를 영수증 기준으로 반영하고 최근 수정 목록만 대조합니다."
+        : "프로젝트 배치와 최종 기준선을 전체 카탈로그 재수집으로 검증합니다.");
+      await untilDone(job, "배치 검증", () => synchronizeMaintenanceStateAfterProjectRouting({
+        statePath, routingPath, api, quiet, onProgress }));
+      jobEvent(job, "verify", "프로젝트 배치 검증을 통과했고 기준선을 갱신했습니다.");
     }
 
     const state = readJson(statePath, "최종 기준선");
@@ -784,6 +849,26 @@ export async function handleMaintenanceWebRequest(req, res) {
       jsonResponse(res, 202, { jobId: job.id });
       return true;
     }
+    if (req.method === "POST" && url.pathname === "/maintenance/cancel") {
+      const body = await readRequestJson(req);
+      const job = jobs.get(body.jobId);
+      if (!job || job.done) jsonResponse(res, 404, { error: { code: "JOB_NOT_FOUND", message: "진행 중인 작업이 없습니다" } });
+      else {
+        job.cancelled = true;
+        jsonResponse(res, 200, { cancelling: true });
+      }
+      return true;
+    }
+    if (req.method === "POST" && url.pathname === "/maintenance/collect") {
+      const body = await readRequestJson(req);
+      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
+      assert(relayBroker.status().connected, "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요");
+      const job = createJob("scan", workspace);
+      const api = relayApi(job);
+      startAsyncJob(job, "scan", () => scanWorkflow(workspace, dataDir, api, job, { full: true }));
+      jsonResponse(res, 202, { jobId: job.id });
+      return true;
+    }
     if (req.method === "POST" && url.pathname === "/maintenance/apply") {
       const body = await readRequestJson(req);
       const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
@@ -791,7 +876,7 @@ export async function handleMaintenanceWebRequest(req, res) {
       const job = createJob("apply", workspace);
       const api = relayApi(job, 2000);
       startAsyncJob(job, "apply", async () => applyWorkflow(workspace, dataDir, api,
-        await relayAccountId(api), body.confirmDeletes === true, job));
+        await relayAccountId(api), body.confirmDeletes === true, job, { quiet: body.quiet === true }));
       jsonResponse(res, 202, { jobId: job.id });
       return true;
     }

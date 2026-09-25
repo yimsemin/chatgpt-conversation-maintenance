@@ -196,10 +196,11 @@ test("GUI decisions reject partial coverage and bad titles, but now allow cross-
       { conversationId: "c-new", decision: "delete", newTitle: "주제 — 결과" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /제목은 바꿀 수 없습니다/);
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    const projectless = buildReviewedDecisionsFromInputs(pointer, inventory, [
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
-    ]), /프로젝트가 필요합니다/);
+    ]);
+    assert.equal(projectless.decisions[0].projectName, null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

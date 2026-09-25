@@ -150,7 +150,7 @@ test("scan preserves title whitespace so exact backup checks can classify it", a
     });
     assert.equal(result.inventory.conversations[0].title, "줄바꿈 제목\n");
     assert.deepEqual(result.inventory.conversations[0].reasons,
-      ["new", "project-required", "title-format"]);
+      ["new", "title-format"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -169,7 +169,7 @@ test("candidate selection reads only new, changed, projectless, or nonconforming
   const selected = selectMaintenanceCandidates(state, catalog([unchanged, updated, invalid]));
   assert.deepEqual(selected.candidates.map((item) => item.conversationId), [ID2, ID3]);
   assert.deepEqual(selected.candidates[0].reasons, ["updated"]);
-  assert.deepEqual(selected.candidates[1].reasons, ["project-required", "title-format"]);
+  assert.deepEqual(selected.candidates[1].reasons, ["title-format"]);
 });
 
 test("a format-only candidate is suppressed while on a matching hold list and released by any change", () => {
@@ -315,7 +315,7 @@ test("seed accepts the completed cleanup as baseline and downloads only new or i
     }]);
     assert.equal(result.inventory.conversations[0].conversationId, ID2);
     assert.deepEqual(result.inventory.conversations[0].reasons,
-      ["new", "project-required", "title-format"]);
+      ["new", "title-format"]);
     assert.equal(downloads, 1);
     assert.equal(existsSync(join(root, "run", "all-inventory.json")), false);
     assert.equal(result.inventory.source.baselinePolicy,
@@ -816,3 +816,149 @@ test("sidebar entries are unwrapped at every observed nesting depth", () => {
   assert.deepEqual(unwrapSidebarGizmo(null), {});
   assert.deepEqual(unwrapSidebarGizmo("x"), {});
 })
+
+test("full collection downloads every conversation and resumes without refetching", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-full-test-"));
+  try {
+    const current = conversation(ID1, "대상 — 작업", 2);
+    const item = catalogItem(current, "Project A");
+    const statePath = join(root, "state.json");
+    writeFileSync(statePath, JSON.stringify({
+      version: 1,
+      kind: "conversation-maintenance-state",
+      conversations: [item],
+    }));
+    const api = catalogApi({
+      active: [current],
+      projects: [{ id: "g-p-one", name: "Project A" }],
+      projectConversations: { "g-p-one": [current] },
+      details: { [ID1]: current },
+    });
+    let fetched = 0;
+    const counting = { ...api, getConversation: (id) => { fetched += 1; return api.getConversation(id); } };
+    const runDir = join(root, "run");
+    const options = { statePath, runDir, api: counting, dataDir: root, full: true,
+      now: () => new Date("2026-08-10T00:00:00Z") };
+    // 앞선 실행이 본문만 받고 끊긴 상태를 만든다.
+    await scanMaintenanceRun(options);
+    assert.equal(fetched, 1);
+    rmSync(join(runDir, "inventory.json"));
+    rmSync(join(runDir, "catalog.json"));
+    const result = await scanMaintenanceRun(options);
+    assert.equal(fetched, 1);
+    assert.equal(result.inventory.counts.candidates, 1);
+    assert.equal(result.inventory.source.mode, "overhaul");
+    assert.deepEqual(result.inventory.conversations[0].reasons, ["overhaul"]);
+    assert.equal(result.checkpointAdvanced, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function quietCheckpointFixture(root, currents, targetProject = "Project A") {
+  const beforeCatalog = catalog(currents.map((item) => catalogItem(item, "Project A")));
+  const catalogPath = join(root, "catalog.json");
+  writeFileSync(catalogPath, JSON.stringify(beforeCatalog));
+  const inventoryPath = join(root, "inventory.json");
+  writeFileSync(inventoryPath, JSON.stringify({
+    version: 1,
+    kind: "conversation-maintenance-inventory",
+    warnings: [],
+    catalogFile: catalogPath,
+    source: { mode: "seed" },
+    conversations: currents.map((item) => ({ ...catalogItem(item, "Project A"), backupFile: "x", backupSha256: "x" })),
+  }));
+  const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
+  const decisionsPath = join(root, "decisions.json");
+  writeFileSync(decisionsPath, JSON.stringify({
+    version: 1,
+    kind: "reviewed-decisions",
+    inventoryDigest,
+    decisions: currents.map((item) => ({
+      conversationId: item.conversation_id || item.id, decision: "keep", projectName: targetProject, reviewed: true,
+    })),
+  }));
+  return { inventoryPath, decisionsPath, statePath: join(root, "state.json") };
+}
+
+test("quiet checkpoint skips the full catalog collection and only compares the recent list", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-quiet-test-"));
+  try {
+    const one = conversation(ID1, "대상 — 작업", 2);
+    const two = conversation(ID2, "다른 — 작업", 1);
+    const files = quietCheckpointFixture(root, [one, two]);
+    const base = catalogApi({ active: [one, two] });
+    let sidebarCalls = 0;
+    const api = { ...base, listProjectSidebar: () => { sidebarCalls += 1; return base.listProjectSidebar(); } };
+    const result = await checkpointMaintenanceRun({ ...files, api, quiet: true,
+      now: () => new Date("2026-08-10T00:00:00Z") });
+    assert.equal(sidebarCalls, 0);
+    assert.equal(result.state.counts.conversations, 2);
+    assert.equal(result.state.source.verification, "assume-quiet");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("quiet checkpoint fails when a new or edited conversation shows up at the top of the list", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-quiet-drift-"));
+  try {
+    const one = conversation(ID1, "대상 — 작업", 2);
+    const files = quietCheckpointFixture(root, [one]);
+    const added = conversation(ID3, "새 — 대화", 9);
+    await assert.rejects(checkpointMaintenanceRun({ ...files, quiet: true,
+      api: catalogApi({ active: [added, one] }) }), /New conversation appeared/);
+    const edited = { ...one, title: "바뀐 — 제목" };
+    await assert.rejects(checkpointMaintenanceRun({ ...files, quiet: true,
+      api: catalogApi({ active: [edited] }) }), /Conversation changed during maintenance/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("quiet routing synchronization applies receipt-proven moves without recollecting the catalog", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-quiet-sync-"));
+  try {
+    const receipts = join(root, "receipts");
+    mkdirSync(receipts);
+    const routed = conversation(ID1, "대상 — 작업", 3);
+    const routing = {
+      version: 1, kind: "chatgpt-project-routing", workspace: "business", receiptDir: receipts,
+      targets: [{
+        project: { name: "Project A", instructions: "", projectId: `g-p-${"1".repeat(32)}`, createIfMissing: false, approved: true },
+        actions: [{ conversationId: ID1, expectedTitle: routed.title, expectedSourceProjectId: null, approved: true }],
+      }],
+    };
+    const routingPath = join(root, "routing.json");
+    writeFileSync(routingPath, JSON.stringify(routing));
+    writeFileSync(join(receipts, "completed.json"), JSON.stringify({
+      kind: "chatgpt-project-placement-receipt", status: "completed",
+      planDigest: projectRoutingStatus(routing).targets[0].planDigest,
+      results: [{ type: "move-conversation", conversationId: ID1, ok: true }],
+    }));
+    const stable = conversation(ID2, "기존 — 작업", 2);
+    const statePath = join(root, "state.json");
+    writeFileSync(statePath, JSON.stringify({
+      version: 1, kind: "conversation-maintenance-state",
+      projects: [{ projectName: "Project A", conversationCount: 0, sampleTitles: [] }],
+      conversations: [catalogItem(routed), catalogItem(stable, "Project B")],
+    }));
+    const base = catalogApi({ active: [routed, stable] });
+    let sidebarCalls = 0;
+    const api = { ...base, listProjectSidebar: () => { sidebarCalls += 1; return base.listProjectSidebar(); } };
+    const result = await synchronizeMaintenanceStateAfterProjectRouting({ statePath, routingPath, api, quiet: true });
+    assert.equal(sidebarCalls, 0);
+    const state = JSON.parse(readFileSync(statePath));
+    assert.equal(state.conversations.find((item) => item.conversationId === ID1).projectName, "Project A");
+    assert.equal(state.source.verification, "assume-quiet");
+    assert.equal(result.synchronizedConversations, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("quiet checkpoint tolerates a planned project move that already happened", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-quiet-move-"));
+  try {
+    const one = conversation(ID1, "대상 — 작업", 2);
+    const files = quietCheckpointFixture(root, [one], "Project B");
+    const movedRemotely = { ...one, update_time: 99 };
+    const result = await checkpointMaintenanceRun({ ...files, quiet: true,
+      api: catalogApi({ active: [movedRemotely] }) });
+    assert.equal(result.state.counts.conversations, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

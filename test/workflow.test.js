@@ -655,3 +655,39 @@ test("remaining manifest excludes actions already completed in a matching receip
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a preserved conversation may stay projectless; one already in a project is reported as manual-remove", () => {
+  const root = fixture();
+  try {
+    const base = buildInventory(root).conversations[0];
+    const run = (projectName, action) => {
+      const source = { ...base, projectName, reasons: ["overhaul"] };
+      const inventoryPath = join(root, `inv-${action}.json`);
+      const catalogPath = join(root, `cat-${action}.json`);
+      writeFileSync(catalogPath, JSON.stringify({
+        version: 1, kind: "conversation-maintenance-catalog", projects: [], conversations: [source],
+      }));
+      writeFileSync(inventoryPath, JSON.stringify({
+        version: 1, kind: "conversation-maintenance-inventory", warnings: [],
+        catalogFile: catalogPath, projects: [], conversations: [source],
+      }));
+      const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
+      const proposalPath = join(root, `prop-${action}.json`);
+      writeFileSync(proposalPath, JSON.stringify({
+        version: 1, kind: "classification-proposals", inventoryDigest, scope: { candidateCount: 1 },
+        items: [{
+          conversationId: source.conversationId, currentTitle: source.title, projectName, reasons: source.reasons,
+          suggestedDecision: "keep", suggestedNewTitle: "일반 대화 검토 — 제목과 프로젝트 정리",
+          suggestedProjectAction: action, suggestedProjectName: null,
+          confidence: "high", rationale: "고유한 검토 결과가 있다",
+        }],
+      }));
+      return validateClassificationProposals(inventoryPath, proposalPath);
+    };
+    assert.equal(run(null, "none").ok, true);
+    assert.equal(run("Project A", "manual-remove").ok, true);
+    assert.throws(() => run("Project A", "none"), /manual-remove/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

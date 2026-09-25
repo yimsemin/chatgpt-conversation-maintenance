@@ -26,7 +26,14 @@ const DECISIONS = new Set(["keep", "archive", "delete"]);
 const MAINTENANCE_DECISIONS = new Set(["keep", "delete"]);
 const PROPOSAL_DECISIONS = new Set(["keep", "delete", "undecided"]);
 const PROPOSAL_CONFIDENCE = new Set(["high", "medium", "low"]);
-const PROJECT_ACTIONS = new Set(["keep-current", "use-or-create", "manual-move", "none"]);
+// 보존 대화의 프로젝트는 선택이다(프로젝트 없음이 정상). 값이 있으면 다듬어진 이름이어야 한다.
+export function assertOptionalProjectName(value, label) {
+  if (value === undefined || value === null) return;
+  assert(typeof value === "string" && value.trim() === value && value.length > 0,
+    `${label} must be empty or a trimmed project name`);
+}
+
+const PROJECT_ACTIONS = new Set(["keep-current", "use-or-create", "manual-move", "manual-remove", "none"]);
 const DIGEST = /^[0-9a-f]{64}$/;
 const INVENTORY_KINDS = new Set(["conversation-inventory", "conversation-maintenance-inventory"]);
 
@@ -42,18 +49,18 @@ const MESSAGE_WINDOW_TAIL = 3;
 // CLASSIFICATION_WORKFLOW.md이며 이 배열은 그 요약이다. review.json과 Claude
 // 요청문에 그대로 삽입된다.
 export const CLASSIFICATION_CRITERIA = [
+  "목적: 필요한 과거 맥락은 살리고, 오래되거나 잘못된 맥락이 답변에 섞이는 것을 줄이며, 관리 부담을 줄인다. 판단이 갈리면 '앞으로 ChatGPT를 더 정확하고 적은 관리비용으로 쓸 수 있는가'로 정한다.",
   "역할: 각 후보에 delete·keep·undecided 중 하나, confidence(high|medium|low), 한 문장 근거를 제안한다. 승인·실행·실제 변경은 하지 않는다.",
-  "delete: 대화 전체의 재사용 가치가 낮고 삭제 사유가 있다 — 테스트·실수·빈 대화, 다른 대화와 실질 중복, 사용자가 거부했거나 실패·중단만 남음, 다시 볼 일 없는 일회성, 시점성 정보라 재조사가 맞는 경우.",
-  "keep: 고유하게 보존할 내용이 있거나 삭제 근거가 부족하다. 삭제할 부분과 보존할 부분이 섞여 있으면 keep. 고유한 유용한 내용이 하나라도 있으면 보존 우선. 길이는 메시지 수가 아니라 사용자 요청과 고유 산출물로 판단한다.",
-  "undecided: 대화만으로 가치·위험·보존 상태를 판단하기 어렵다. 첨부 내용이나 유일 원본 여부를 확인해야만 판단되는 경우(첨부가 있다는 사실만으로는 아님). 민감정보·증빙·의사결정 기록의 보존 가치가 불분명한 경우. 불확실하면 undecided.",
-  "오래됐다는 이유만으로 삭제하지 않는다. 시점성 정보가 고유한 문안·기획·의사결정의 근거이면 keep.",
+  "delete: 재사용 가치가 없으면 삭제한다 — 테스트·실수·잡음, 중복, 실패·중단만 남은 것, 완료된 일회성, 결과가 원본(repo·문서)에 이미 반영되어 대화에 고유한 것이 없는 것, 현재 원본과 충돌해 남으면 해로운 것. 재사용 가치란 향후 같은 프로젝트 대화가 참조할 결정·근거·조사결과·산출물·선호가 있고 원본이나 후속 대화에 없는 경우다.",
+  "keep: 원본에 없는 결정·근거·기각한 대안·조사결과·산출물·사용자 선호가 있다. 오래됐다는 이유만으로 삭제하지 않는다. 길이는 메시지 수가 아니라 사용자 요청과 고유 산출물로 판단한다.",
+  "undecided: 대화만으로 판단하기 어려운 경우에만, 이유를 근거에 적는다. 남발하지 않는다.",
+  "repo가 있는 프로젝트는 현재 repo가 진실이다. 과거 대화 내용을 현재 상태로 간주하지 않는다.",
   "제목(keep·undecided만, delete는 제목 제안 안 함): 형식은 `핵심 대상·주제 — 실제 작업 또는 결과`. 구분자는 정확히 한 번의 ` — `(양쪽 공백 1칸의 em dash), 양쪽은 비어있지 않음.",
   "현재 제목이 이 형식이고 대화 전체를 정확·구체적으로 나타내면 suggestedNewTitle을 null로 둔다. 형식이 아니면 내용이 맞아도 표준 형식의 새 제목을 제안한다.",
-  "제목은 첫 질문이 아니라 대화 전체의 주된 목적과 실제 결과를 반영한다. 중복 제목은 고유 초점으로 구분한다. 날짜·버전은 시점이 핵심일 때만. 상태 태그·막연한 표현·대화에 없는 결론 금지. 대체로 15~35자.",
-  "프로젝트(keep·undecided만): 모든 보존 대화는 적합한 하나의 프로젝트에 둔다. suggestedProjectName을 반드시 제안한다.",
-  "현재 프로젝트가 적합하면 유지(suggestedProjectAction=keep-current). 프로젝트가 없으면 정확히 맞는 기존 프로젝트를 우선하고 없으면 명확한 범위의 새 프로젝트를 제안한다(use-or-create). 이미 다른 프로젝트에 있는데 옮겨야 하면 manual-move.",
-  "프로젝트를 대화 하나의 제목처럼 만들지 않는다. 같은 자료·목적·작업 방식이 재사용될 대화들을 묶는 범위. 단발성 대화 하나만을 위한 새 프로젝트는 만들지 않는다.",
-  "프로젝트 우선순위: ①현재 프로젝트가 앞으로도 맥락 제공 → 유지 ②같은 고객·사업·제품·연속 산출물 ③같은 자료·지침 재사용 ④없으면 더 넓은 업무 분야 ⑤주제가 다르면 도구·방식만 같다고 묶지 않음.",
+  "제목은 첫 질문이 아니라 대화의 최종 내용(주된 목적과 실제 결과)을 반영한다. 중복 제목은 고유 초점으로 구분한다. 날짜·버전은 시점이 핵심일 때만. 상태 태그·막연한 표현·대화에 없는 결론 금지. 대체로 15~35자.",
+  "프로젝트(keep·undecided만): '같은 프로젝트에 있으면서 서로를 과거 맥락으로 참조할 때 답변 품질에 도움이 되는가'로 정한다. 맞는 프로젝트가 없으면 프로젝트 없음이 정상이다(suggestedProjectName null). 모든 대화를 억지로 프로젝트에 넣지 않는다.",
+  "기존 프로젝트 배치가 잘못됐을 수 있다. 현재 프로젝트를 옳다고 가정하지 않는다. 너무 큰 프로젝트도, 작은 차이로 잘게 쪼갠 프로젝트도 피한다.",
+  "프로젝트 조치: 프로젝트가 없는 대화는 새·기존 프로젝트에 배치(use-or-create) 또는 프로젝트 없음(none). 현재 프로젝트가 적합하면 keep-current. 다른 프로젝트로 옮길 것이면 manual-move. 이미 프로젝트 안에 있는데 프로젝트 없음이 맞으면 manual-remove(API로 뺄 수 없어 사용자가 수동 처리).",
   "confidence: 명시적 근거는 high, 내용상 추론은 medium, 근거가 부족하면 low(그리고 undecided).",
   "delete 항목은 suggestedNewTitle·suggestedProjectName·projectRationale를 넣지 않고 suggestedProjectAction은 none.",
 ];
@@ -71,8 +78,8 @@ const CLASSIFICATION_PROPOSAL_SCHEMA = {
       reasons: ["new", "title-format"],
       suggestedDecision: "keep",
       suggestedNewTitle: "핵심 주제 — 실제 작업 또는 결과",
-      suggestedProjectAction: "keep-current | use-or-create | manual-move | none",
-      suggestedProjectName: "최종 프로젝트명",
+      suggestedProjectAction: "keep-current | use-or-create | manual-move | manual-remove | none",
+      suggestedProjectName: "최종 프로젝트명 또는 null(프로젝트 없음)",
       confidence: "high",
       rationale: "간결한 보존·삭제 판단 근거",
       projectRationale: "현재 또는 새 프로젝트가 적합한 이유",
@@ -145,7 +152,7 @@ function currentConversationPath(conversation, label) {
   return reversed.reverse();
 }
 
-function classificationReviewConversation(source) {
+export function classificationReviewConversation(source) {
   const raw = readFileSync(source.backupFile);
   assert(sha256(raw) === source.backupSha256,
     `Conversation backup digest changed: ${source.conversationId}`);
@@ -325,7 +332,7 @@ export function buildClaudePrompt(review, { inventoryPath = null, proposalPath =
     "```",
     `- inventoryDigest: "${digest}"`,
     `- scope.candidateCount: ${count}`,
-    "- keep/undecided: suggestedNewTitle(null 가능), suggestedProjectName, suggestedProjectAction, projectRationale 필수.",
+    "- keep/undecided: suggestedNewTitle(null 가능), suggestedProjectAction 필수. 프로젝트를 정하면 suggestedProjectName·projectRationale 필수, 프로젝트 없음이면 suggestedProjectName null(현재 프로젝트 없음 → none, 있음 → manual-remove).",
     "- delete: suggestedNewTitle·suggestedProjectName·projectRationale 생략, suggestedProjectAction \"none\".",
     "",
     "결과 JSON 전문을 답변에 그대로 붙여 유지관리 앱의 '분류 결과 JSON 붙여넣기'에 넣을 수 있게 한다.",
@@ -587,8 +594,16 @@ export function validateClassificationProposals(inventoryPath, proposalPath) {
     }
     finalTitles.set(item.conversationId, finalTitle);
 
-    assert(nonEmptyString(item.suggestedProjectName), `${label}.suggestedProjectName is required`);
+    if (item.suggestedProjectName === undefined || item.suggestedProjectName === null) {
+      // 프로젝트 없음. 이미 프로젝트 안에 있으면 API로 뺄 수 없어 사용자가 수동으로 뺀다.
+      assert(item.suggestedProjectAction === (source.projectName ? "manual-remove" : "none"),
+        `${label}.suggestedProjectAction must be ${source.projectName ? "manual-remove" : "none"} when no project is suggested`);
+      continue;
+    }
+    assert(nonEmptyString(item.suggestedProjectName), `${label}.suggestedProjectName is invalid`);
     assert(nonEmptyString(item.projectRationale), `${label}.projectRationale is required`);
+    assert(item.suggestedProjectAction !== "manual-remove" && item.suggestedProjectAction !== "none",
+      `${label}.suggestedProjectAction is invalid for a suggested project`);
     if (source.projectName) {
       const expectedAction = item.suggestedProjectName === source.projectName
         ? "keep-current"
@@ -666,9 +681,7 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
     if (inventory.kind === "conversation-maintenance-inventory" && decision.decision !== "delete") {
       assert(isNormalizedTitle(newTitle || source.title),
         `${label} must preserve or set the exact "topic — work/result" title form`);
-      assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
-        && decision.projectName.length > 0,
-      `${label}.projectName is required for a preserved maintenance conversation`);
+      assertOptionalProjectName(decision.projectName, `${label}.projectName`);
       // A move between two already-existing projects is handled by
       // compileProjectRouting()/runProjectRouting(), not here — this
       // compiler only builds title/delete batches, so it no longer needs to
@@ -740,8 +753,9 @@ export function compileProjectRouting(inventoryPath, decisionsPath, outputPath) 
         `${label}.projectName must be empty for a deleted conversation`);
       continue;
     }
-    assert(typeof decision.projectName === "string" && decision.projectName.trim() === decision.projectName
-      && decision.projectName.length > 0, `${label}.projectName is required for a preserved conversation`);
+    assertOptionalProjectName(decision.projectName, `${label}.projectName`);
+    // 프로젝트 없음이면 옮길 곳이 없다. 이미 프로젝트 안이면 사용자가 수동으로 뺀다.
+    if (decision.projectName === undefined || decision.projectName === null) continue;
     if (source.projectName && decision.projectName === source.projectName) {
       continue;
     }
@@ -768,18 +782,23 @@ export function compileProjectRouting(inventoryPath, decisionsPath, outputPath) 
     kind: "chatgpt-project-routing",
     workspace: "business",
     receiptDir: resolve(decisions.receiptDir),
+    // 배치 계획 하나는 25건까지다. 큰 프로젝트는 같은 프로젝트를 가리키는 타깃 여러 개로 나눈다.
     targets: [...targetsByName.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, entry]) => ({
-        project: {
-          name,
-          instructions: "",
-          createIfMissing: true,
-          approved: true,
-        },
-        actions: entry.actions,
-        sourceProjectNames: entry.sourceProjectNames,
-      })),
+      .flatMap(([name, entry]) => {
+        const chunks = [];
+        for (let offset = 0; offset < entry.actions.length; offset += 25) {
+          const actions = entry.actions.slice(offset, offset + 25);
+          const ids = new Set(actions.map((action) => action.conversationId));
+          chunks.push({
+            project: { name, instructions: "", createIfMissing: true, approved: true },
+            actions,
+            sourceProjectNames: Object.fromEntries(
+              Object.entries(entry.sourceProjectNames).filter(([id]) => ids.has(id))),
+          });
+        }
+        return chunks;
+      }),
   });
   writeJsonAtomic(resolve(outputPath), routing);
   return {
