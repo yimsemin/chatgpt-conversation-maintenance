@@ -12,9 +12,11 @@
 - 429는 `relay-api.js`의 쿨다운·백오프로만 처리한다. 별도 대량 재시도를 추가하지 않는다.
 - **HTTP 599는 ChatGPT의 응답이 아니다.** 페이지 실행기의 fetch 예외이거나 유지관리 창이 60초 안에 ChatGPT 탭의 응답을 받지 못한 경우(탭이 백그라운드이면 흔하다)다. 그 요청만 599 결과로 실패시켜 릴레이 루프를 유지하며, **읽기 op만** 자동 재시도한다. 쓰기 op는 결과가 모호하므로 반복하지 않는다.
 - **빠른 검증은 "그동안 아무것도 바뀌지 않았다"는 가정이다.** 최근 수정 순 목록의 앞부분만 대조하므로 오래된 대화를 조용히 고친 경우는 못 잡는다. 기준선에 `verification: assume-quiet`가 남고, 가끔 전체 스캔으로 확정한다.
-- **증분 스캔은 검증(probe) 없이 켜지 않는다.** 목록 응답의 `gizmo_id`로 프로젝트 소속을 알아내는 방식이 전체 수집과 같은 결과임이 `data/fast-scan-probe.json`에 기록되기 전에는 전체 스캔을 쓴다. 삭제된 대화는 증분으로 알 수 없다.
+- **전체 대화 목록만으로는 대화를 다 얻지 못한다.** `/backend-api/conversations`는 프로젝트 대화의 약 20%를 주지 않는다(2026-09-25 실측). 그래서 증분·빠른 수집을 두지 않고 항상 프로젝트를 순회한다. 목록 앞부분만 읽는 최적화를 다시 만들기 전에 `API_COMPATIBILITY.md`의 실측을 본다.
 - **배치 계획 하나는 25건, 총 600건이다.** 큰 프로젝트는 같은 프로젝트를 가리키는 타깃 여러 개로 나뉜다(`compileProjectRouting`). 이 한도가 사용자 오류로 보이면 분할이 깨진 것이다.
 - **임시 보관한 대화는 이름을 바꾸지 않는다.** 백업 JSON의 제목이 삭제 계획의 예상 제목과 같아야 하므로, 이름을 바꿔 두면 나중에 삭제가 "Backup title does not match"로 막힌다. 표준 제목 규칙은 `parked` 결정에만 예외다.
 - **자동 재개는 결과가 모호한 항목에서 멈춘다.** `Uncertain in-progress receipt actions`는 같은 쓰기를 반복하지 않으려는 의도적 중단이다. 원격 상태를 먼저 확인한다.
 - **개발용 모의 서버(`dev/fake-server.js`)를 실제 데이터 폴더에 붙이지 않는다.** 임시 작업 폴더를 스스로 만든다. 새 화면은 작업 폴더를 `localStorage`의 `app_workspace`에 저장하고(이전 화면은 `maintenance_workspace`), 서버가 알려 주는 폴더가 기본이다.
 - 자동 시험이 서버를 띄울 때는 `MAINTENANCE_PORT`, 대기 시간을 줄일 때는 `MAINTENANCE_REQUEST_DELAY_MS`·`MAINTENANCE_RELAY_BACKOFF_MS`·`MAINTENANCE_RESUME_WAIT_SECONDS`를 쓴다. 실제 사용에서는 설정하지 않는다.
+- **창은 역할이 둘이다.** 서버가 여는 탭이 작업 화면이고, 북마클릿이 여는 `chatgptMaintenance` 창(`window.name`)은 릴레이 연결만 맡는 축약 화면이다(`public/assets/app.js`의 `relay-window`). 작업 화면은 릴레이를 소유하지 않는다(페이지 하트비트를 받은 창만 `/relay/connect` 한다). 탭 제목으로도 구분한다(연결 창 “🔒 ChatGPT 연결 창 — 닫지 마세요”, 작업 창 “… · 작업 창”). 연결 창을 최소화하면 타이머가 늦어져 클라이언트 교체(`Relay client was replaced`)가 날 수 있어 안내문에 닫거나 최소화하지 말라고 적었다.
+- **창은 역할이 둘이다.** 서버가 여는 탭이 작업 화면이고, 북마클릿이 여는 `chatgptMaintenance` 창(`window.name`)은 릴레이 연결만 맡는 축약 화면이다(`public/assets/app.js`의 `relay-window`). 작업 화면은 릴레이를 소유하지 않는다(페이지 하트비트를 받은 창만 `/relay/connect` 한다). 탭 제목으로도 구분한다(연결 창 “🔒 ChatGPT 연결 창 — 닫지 마세요”, 작업 창 “… · 작업 창”). 연결 창을 최소화하면 타이머가 늦어져 클라이언트 교체(`Relay client was replaced`)가 날 수 있어 안내문에 닫거나 최소화하지 말라고 적었다.

@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { handleMaintenanceWebRequest } from "./maintenance-web.js";
+import { CONFIG } from "./config.js";
 import { resolveDataDir } from "./data-dir.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
 import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
@@ -35,8 +36,7 @@ const MODULE_DIR = resolveModuleDir();
 const NO_OPEN = process.argv.includes("--no-open");
 
 const HOST = "127.0.0.1";
-// 기본 포트는 고정이다. 자동 시험이 실제 앱과 겹치지 않도록 환경 변수로만 바꿀 수 있다.
-const PORT = Number(process.env.MAINTENANCE_PORT) || 8523;
+const PORT = CONFIG.port;
 
 const STRICT_CSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 

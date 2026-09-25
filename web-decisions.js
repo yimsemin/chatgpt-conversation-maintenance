@@ -1,17 +1,20 @@
 // 사용자의 결정을 검증·저장하고, 임시 보관과 후속 실행을 준비한다.
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { PHASE } from "./phases.js";
 import { basename, join } from "node:path";
 import { assert } from "./assert.js";
+import { runFiles } from "./run-files.js";
 import { sha256 } from "./content-hash.js";
 import { runsDir, stateFilePath } from "./data-dir.js";
-import { compileReviewedDecisions } from "./workflow.js";
+import { compileReviewedDecisions } from "./decision-compile.js";
 import { isNormalizedTitle } from "./title-rules.js";
 import { readParking } from "./parking.js";
-import { publicPointer, readJson, readPointer, runId, writeJsonAtomic, writePointer } from "./web-common.js";
+import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
+import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { proposalData, reviewedDecisionsSummary } from "./web-views.js";
 
 // 화면에서 직접 만든 후보별 결정을 reviewed-decisions.json 형식으로 검증·변환한다.
-// 규칙은 workflow.js compileReviewedDecisions / maintenance-cli.js checkpointMaintenanceRun과 같다.
+// 규칙은 decision-compile.js compileReviewedDecisions / checkpoint.js checkpointMaintenanceRun과 같다.
 export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
   assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory",
     "유지관리 인벤토리가 아닙니다");
@@ -52,7 +55,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
     version: 1,
     kind: "reviewed-decisions",
     inventoryDigest: sha256(readFileSync(pointer.inventoryPath)),
-    receiptDir: join(pointer.runDir, "receipts"),
+    receiptDir: runFiles(pointer.runDir).receipts,
     decisions,
   };
 }
@@ -60,10 +63,10 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
 export function writeReviewedDecisions(workspace, dataDir, inputs, parking = null) {
   const pointer = readPointer(workspace, dataDir);
   assert(pointer, "먼저 새 대화 확인을 실행하세요");
-  assert(pointer.phase === "awaiting-proposal", "지금은 결정을 받을 단계가 아닙니다");
+  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 결정을 받을 단계가 아닙니다");
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
-  writeJsonAtomic(join(pointer.runDir, "reviewed-decisions.json"), decisions);
+  writeJsonAtomic(runFiles(pointer.runDir).decisions, decisions);
   writeParkingMeta(pointer, inventory, decisions, parking);
   return {
     ready: true,
@@ -74,8 +77,8 @@ export function writeReviewedDecisions(workspace, dataDir, inputs, parking = nul
 }
 
 // 삭제 후보를 임시 보관 프로젝트로 보내는 결정이면, 적용이 끝난 뒤 보관 목록에 남길 정보를 실행 폴더에 적어 둔다.
-export function writeParkingMeta(pointer, inventory, decisions, parking) {
-  const path = join(pointer.runDir, "parking-meta.json");
+function writeParkingMeta(pointer, inventory, decisions, parking) {
+  const path = runFiles(pointer.runDir).parkingMeta;
   if (!parking) { rmSync(path, { force: true }); return; }
   assert(typeof parking.project === "string" && parking.project.trim() === parking.project && parking.project,
     "임시 보관 프로젝트 이름이 올바르지 않습니다");
@@ -110,7 +113,7 @@ export function prepareParkingFollowUp(workspace, dataDir, inputs) {
     const parked = parkedById.get(input.conversationId);
     assert(parked, "검토 대기 목록에 없는 대화입니다");
     const current = stateById.get(input.conversationId);
-    assert(current, `기준선에 없는 대화입니다(이미 삭제됐으면 전체 스캔으로 기준선을 갱신하세요): ${parked.title}`);
+    assert(current, `기준선에 없는 대화입니다(이미 삭제됐으면 고급 메뉴의 ‘ChatGPT 상태 다시 맞추기’로 기록을 갱신하세요): ${parked.title}`);
     return { ...parked.record, ...current, reasons: ["parking-review"],
       backupFile: parked.record.backupFile, backupSha256: parked.record.backupSha256,
       backupBytes: parked.record.backupBytes, contentSha256: parked.record.contentSha256,
@@ -118,7 +121,7 @@ export function prepareParkingFollowUp(workspace, dataDir, inputs) {
   });
   const runDir = join(runsDir(dataDir), `parking-${runId()}`);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const catalogPath = join(runDir, "catalog.json");
+  const catalogPath = runFiles(runDir).catalog;
   writeJsonAtomic(catalogPath, { ...state, kind: "conversation-maintenance-catalog" });
   const inventory = {
     version: 1, kind: "conversation-maintenance-inventory", generatedAt: new Date().toISOString(), runRoot: runDir,
@@ -128,17 +131,17 @@ export function prepareParkingFollowUp(workspace, dataDir, inputs) {
     warnings: [], removedConversationIds: [], confirmedUnavailableConversationIds: [], heldConversationIds: [],
     projects: state.projects, conversations,
   };
-  const inventoryPath = join(runDir, "inventory.json");
+  const inventoryPath = runFiles(runDir).inventory;
   writeJsonAtomic(inventoryPath, inventory);
-  const pointer = { version: 1, phase: "ready-to-apply", runDir, inventoryPath, reviewPath: null,
-    proposalPath: join(runDir, "proposal.json"), result: { counts: { candidates: conversations.length }, warnings: [] } };
+  const pointer = { version: 1, phase: PHASE.READY_TO_APPLY, runDir, inventoryPath, reviewPath: null,
+    proposalPath: runFiles(runDir).proposal, result: { counts: { candidates: conversations.length }, warnings: [] } };
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs.map((input) => ({
     conversationId: input.conversationId, decision: input.decision === "delete" ? "delete" : "keep",
     projectName: input.decision === "delete" ? "" : (input.projectName || ""),
     ...(input.decision !== "delete" && input.newTitle ? { newTitle: input.newTitle } : {}),
   })));
-  writeJsonAtomic(join(runDir, "reviewed-decisions.json"), decisions);
-  writeJsonAtomic(join(runDir, "followup.json"), { version: 1, kind: "parking", project: parking.project,
+  writeJsonAtomic(runFiles(runDir).decisions, decisions);
+  writeJsonAtomic(runFiles(runDir).followUp, { version: 1, kind: "parking", project: parking.project,
     ids: conversations.map((item) => item.conversationId) });
   writePointer(workspace, pointer);
   const deletes = decisions.decisions.filter((item) => item.decision === "delete").length;
@@ -149,14 +152,14 @@ export function prepareParkingFollowUp(workspace, dataDir, inputs) {
 export function savePastedProposal(workspace, dataDir, proposalJson) {
   const pointer = readPointer(workspace, dataDir);
   assert(pointer, "먼저 새 대화 확인을 실행하세요");
-  assert(pointer.phase === "awaiting-proposal", "지금은 분류안을 받을 단계가 아닙니다");
+  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 분류안을 받을 단계가 아닙니다");
   assert(pointer.reviewPath, "이 실행에는 분류할 후보가 없습니다");
   let parsed;
   try { parsed = JSON.parse(typeof proposalJson === "string" ? proposalJson : ""); }
   catch { throw new Error("붙여넣은 분류안이 올바른 JSON이 아닙니다"); }
   assert(parsed && typeof parsed === "object" && !Array.isArray(parsed),
     "붙여넣은 분류안 형식이 올바르지 않습니다");
-  const proposalPath = pointer.proposalPath || join(pointer.runDir, "proposal.json");
+  const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   writeJsonAtomic(proposalPath, parsed);
   return proposalData(workspace, dataDir);
 }
@@ -166,7 +169,7 @@ export function buildReviewedDecisions(pointer, proposal) {
     version: 1,
     kind: "reviewed-decisions",
     inventoryDigest: proposal.inventoryDigest,
-    receiptDir: join(pointer.runDir, "receipts"),
+    receiptDir: runFiles(pointer.runDir).receipts,
     decisions: proposal.items.map((item) => {
       assert(item.suggestedDecision !== "undecided", "undecided 항목은 승인 전에 해결해야 합니다");
       if (item.suggestedDecision === "delete") {

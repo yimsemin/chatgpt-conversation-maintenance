@@ -1,28 +1,18 @@
 // 유지관리 웹앱 공용: 파일 읽기·쓰기, 작업 폴더 검증, 현재 실행 포인터, 안전한 오류 진단.
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assert } from "./assert.js";
+import { runFiles } from "./run-files.js";
+import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { resolveDataDir, runsDir, stateFilePath } from "./data-dir.js";
 import { explainError } from "./errors.js";
 
 export const APP_ROOT = dirname(fileURLToPath(import.meta.url));
 
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
-
-export function readJson(path, label = "JSON") {
-  try { return JSON.parse(readFileSync(path, "utf8")); }
-  catch { throw new Error(`${label}을 읽을 수 없습니다: ${path}`); }
-}
-
-export function writeJsonAtomic(path, value) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const partial = `${path}.partial-${randomUUID()}`;
-  writeFileSync(partial, JSON.stringify(value, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" });
-  renameSync(partial, path);
-}
 
 export function jsonResponse(res, status, value) {
   res.writeHead(status, {
@@ -45,12 +35,12 @@ export async function readRequestJson(req) {
   catch { throw new Error("요청 본문이 올바른 JSON이 아닙니다"); }
 }
 
-export function isInside(root, path) {
+function isInside(root, path) {
   const rel = relative(resolve(root), resolve(path));
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
 }
 
-export function validateMaintenanceWorkspace(value) {
+export function validateMaintenanceWorkspace(value, { requireState = true } = {}) {
   assert(typeof value === "string" && value.trim(), "작업 폴더를 선택하세요");
   const workspace = resolve(value.trim());
   const packagePath = join(workspace, "package.json");
@@ -59,6 +49,7 @@ export function validateMaintenanceWorkspace(value) {
   assert(pkg.name === "chatgpt-conversation-maintenance", "대화 유지관리 프로젝트 폴더가 아닙니다");
   const dataDir = resolveDataDir({ appRoot: workspace });
   const statePath = stateFilePath(dataDir);
+  if (!requireState && !existsSync(statePath)) return { workspace, dataDir, statePath, state: null };
   assert(existsSync(statePath), `데이터 폴더에 state.json이 없습니다: ${statePath}`);
   const state = readJson(statePath, "기준선");
   assert(state.kind === "conversation-maintenance-state", "state.json 형식이 올바르지 않습니다");
@@ -93,13 +84,13 @@ export function publicPointer(pointer) {
     runDir: pointer.runDir,
     inventoryPath: pointer.inventoryPath,
     reviewPath: pointer.reviewPath || null,
-    proposalPath: pointer.proposalPath || join(pointer.runDir, "proposal.json"),
+    proposalPath: pointer.proposalPath || runFiles(pointer.runDir).proposal,
     updatedAt: pointer.updatedAt,
     result: pointer.result || null,
   };
 }
 
-export function safeText(value, workspace = "") {
+function safeText(value, workspace = "") {
   let text = String(value || "알 수 없는 오류");
   if (workspace) text = text.split(resolve(workspace)).join("<workspace>");
   text = text
@@ -109,7 +100,7 @@ export function safeText(value, workspace = "") {
   return text.slice(0, 3000);
 }
 
-export function errorCode(message) {
+function errorCode(message) {
   const value = String(message).toLowerCase();
   if (value.includes("session") || value.includes("accesstoken") || value.includes("http 401")) return "AUTH_INVALID";
   if (value.includes("lock")) return "LOCK_UNAVAILABLE";

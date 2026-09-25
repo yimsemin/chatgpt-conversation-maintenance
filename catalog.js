@@ -1,11 +1,11 @@
-// 대화 카탈로그 수집: 프로젝트를 순회하는 전체 수집(crawl), 목록 응답의 gizmo_id 로 소속을 알아내는 빠른 수집,
-// 최근 수정 순 목록의 앞부분만 읽는 증분 수집, 그리고 빠른 수집이 crawl 과 같은 결과인지 재는 검증(probe).
+// 대화 카탈로그 수집: 프로젝트를 순회하며 모든 활성·보관 대화를 읽는 전체 수집(crawl).
+// 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, API_COMPATIBILITY.md) 목록만으로는 완전하지 않다.
 import { assert } from "./assert.js";
 import { CONVERSATION_ID } from "./ids.js";
 
 export const PAGE_SIZE = 100;
-export const PROJECT_PAGE_SIZE = 20;
-export const PROJECT_CONVERSATION_PAGE_SIZE = 50;
+const PROJECT_PAGE_SIZE = 20;
+const PROJECT_CONVERSATION_PAGE_SIZE = 50;
 
 // 같은 시각이 엔드포인트에 따라 ISO 문자열이나 epoch 초 실수로 오므로 정수 밀리초로 맞춘다.
 // Date.parse 는 밀리초 아래를 버리므로 실수 쪽도 내림해야 같은 값이 된다.
@@ -67,7 +67,7 @@ export function unwrapSidebarGizmo(entry) {
 }
 
 // 소유 프로젝트(ID·이름)를 모두 찾는다.
-export async function discoverProjects(api) {
+async function discoverProjects(api) {
   const projects = [];
   let projectCursor = null;
   const seenProjectCursors = new Set();
@@ -171,7 +171,7 @@ export async function collectConversationCatalog(api, now = () => new Date(), on
   })) });
 }
 
-export function buildCatalog({ projects, conversations, now = () => new Date() }) {
+function buildCatalog({ projects, conversations, now = () => new Date() }) {
   conversations = [...conversations].sort((left, right) => left.conversationId.localeCompare(right.conversationId));
   const projectContext = projectCatalog(projects, conversations);
 
@@ -210,140 +210,4 @@ export function catalogFrom(base, conversations, now) {
     projects: projectCatalog(base.projects, conversations),
     conversations,
   };
-}
-
-
-// ---- 빠른 수집 ----
-
-export class FastCatalogUnsupported extends Error {
-  constructor(message) { super(message); this.name = "FastCatalogUnsupported"; }
-}
-
-function listItemToConversation(item, projectById, isArchived) {
-  const project = PROJECT_ID_PREFIX.test(item.gizmo_id || "") ? projectById.get(item.gizmo_id) || null : null;
-  return {
-    conversationId: item.id,
-    title: typeof item.title === "string" && item.title.trim() ? item.title : "Untitled",
-    createTime: item.create_time ?? null,
-    updateTime: item.update_time ?? null,
-    isArchived: item.is_archived === true || isArchived,
-    projectName: project,
-  };
-}
-const PROJECT_ID_PREFIX = /^g-p-/;
-
-// 목록 응답에 gizmo_id 가 있어야 프로젝트 소속을 알 수 있다. 필드 자체가 없으면 지원하지 않는 것이다.
-function assertHasGizmoField(items) {
-  if (items.length && !items.some((item) => Object.hasOwn(item, "gizmo_id"))) {
-    throw new FastCatalogUnsupported("대화 목록 응답에 gizmo_id 가 없어 프로젝트 소속을 알 수 없습니다");
-  }
-}
-
-// 프로젝트를 돌지 않고 목록의 gizmo_id 로 소속을 정한다. 요청 수가 프로젝트 수만큼 줄어든다.
-export async function collectFastCatalog(api, now = () => new Date(), onProgress = () => {}) {
-  onProgress({ phase: "projects", index: 0, total: null });
-  const projects = await discoverProjects(api);
-  const projectById = new Map(projects.map((project) => [project.projectId, project.projectName]));
-  const byId = new Map();
-  for (const isArchived of [false, true]) {
-    let offset = 0;
-    const seenPages = new Set();
-    while (true) {
-      const data = unwrap(await api.listConversations({ archived: isArchived, offset, limit: PAGE_SIZE }),
-        `${isArchived ? "Archived" : "Active"} conversation discovery`);
-      const items = data.items || [];
-      if (!items.length) break;
-      assertHasGizmoField(items);
-      const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
-      assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
-      seenPages.add(pageKey);
-      for (const item of items) {
-        if (CONVERSATION_ID.test(item.id || "")) byId.set(item.id, listItemToConversation(item, projectById, isArchived));
-      }
-      offset += items.length;
-      const total = Number.isFinite(data.total) ? data.total : null;
-      onProgress({ phase: isArchived ? "archived" : "active", index: offset, total });
-      const hasNext = data.has_next ?? data.has_more;
-      if (hasNext === false) break;
-      if (hasNext !== true && total !== null && offset >= total) break;
-      if (hasNext !== true && total === null && items.length < PAGE_SIZE) break;
-    }
-  }
-  return buildCatalog({ projects, conversations: [...byId.values()], now });
-}
-
-// ---- 증분 수집 ----
-// 최근 수정 순 목록에서 기준선과 같은 항목이 stopAfterUnchanged 개 연속되면 멈춘다. 그 뒤의 항목은
-// 더 오래전에 마지막으로 수정됐으므로 기준선과 같다고 본다. 삭제된 대화는 이 방식으로 알 수 없다.
-export async function collectIncrementalCatalog({ api, baseline, now = () => new Date(), onProgress = () => {},
-  stopAfterUnchanged = 30, maxPages = 30 }) {
-  onProgress({ phase: "projects", index: 0, total: null });
-  const projects = await discoverProjects(api);
-  const projectById = new Map(projects.map((project) => [project.projectId, project.projectName]));
-  const known = new Map(baseline.conversations.map((item) => [item.conversationId, item]));
-  const merged = new Map(known);
-  let changed = 0;
-  let pages = 0;
-
-  const sameAsKnown = (entry, previous) => Boolean(previous)
-    && previous.title === entry.title
-    && sameTime(previous.updateTime, entry.updateTime)
-    && previous.isArchived === entry.isArchived
-    && (previous.projectName || null) === (entry.projectName || null);
-
-  for (const isArchived of [false, true]) {
-    let unchangedRun = 0;
-    for (let page = 0; page < (isArchived ? 1 : maxPages); page++) {
-      const data = unwrap(await api.listConversations({ archived: isArchived, offset: page * PAGE_SIZE, limit: PAGE_SIZE }),
-        `${isArchived ? "Archived" : "Recent"} conversation discovery`);
-      const items = data.items || [];
-      pages += 1;
-      onProgress({ phase: "recent", index: page + 1, total: null });
-      if (!items.length) break;
-      assertHasGizmoField(items);
-      for (const item of items) {
-        if (!CONVERSATION_ID.test(item.id || "")) continue;
-        const entry = listItemToConversation(item, projectById, isArchived);
-        if (sameAsKnown(entry, known.get(entry.conversationId))) { unchangedRun += 1; }
-        else { merged.set(entry.conversationId, entry); changed += 1; unchangedRun = 0; }
-        if (unchangedRun >= stopAfterUnchanged) break;
-      }
-      if (unchangedRun >= stopAfterUnchanged) break;
-      if (data.has_next === false || items.length < PAGE_SIZE) break;
-    }
-  }
-  const catalog = buildCatalog({ projects, conversations: [...merged.values()], now });
-  return { catalog, changed, pages };
-}
-
-// ---- 검증(probe): 빠른 수집이 전체 수집과 같은 결과를 내는가 ----
-export async function probeFastCatalog(api, { now = () => new Date(), onProgress = () => {} } = {}) {
-  const crawl = await collectConversationCatalog(api, now, onProgress);
-  let fast;
-  try {
-    fast = await collectFastCatalog(api, now, (info) => onProgress({ ...info, phase: `fast-${info.phase}` }));
-  } catch (error) {
-    if (error instanceof FastCatalogUnsupported) {
-      return { ok: false, reason: "unsupported", message: error.message, total: crawl.conversations.length,
-        checkedAt: now().toISOString() };
-    }
-    throw error;
-  }
-  const crawlById = new Map(crawl.conversations.map((item) => [item.conversationId, item]));
-  const fastById = new Map(fast.conversations.map((item) => [item.conversationId, item]));
-  const samples = [];
-  const counts = { missingInFast: 0, missingInCrawl: 0, project: 0, title: 0, archived: 0 };
-  for (const [id, item] of crawlById) {
-    const other = fastById.get(id);
-    if (!other) { counts.missingInFast += 1; samples.push({ id, kind: "missingInFast" }); continue; }
-    if ((item.projectName || null) !== (other.projectName || null)) {
-      counts.project += 1; samples.push({ id, kind: "project", crawl: item.projectName, fast: other.projectName });
-    }
-    if (item.title !== other.title) counts.title += 1;
-    if (item.isArchived !== other.isArchived) counts.archived += 1;
-  }
-  for (const id of fastById.keys()) if (!crawlById.has(id)) counts.missingInCrawl += 1;
-  const ok = counts.missingInFast === 0 && counts.missingInCrawl === 0 && counts.project === 0;
-  return { ok, reason: ok ? null : "mismatch", total: crawl.conversations.length, counts,
-    samples: samples.slice(0, 10), checkedAt: now().toISOString() };
 }

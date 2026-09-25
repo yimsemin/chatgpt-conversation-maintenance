@@ -5,21 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  catalogItemDifferences,
-  checkpointMaintenanceRun,
-  describeMetadataDrift,
-  sameTime,
-  timeMilliseconds,
-  unwrapSidebarGizmo,
-  collectConversationCatalog,
-  diagnoseReadAccess,
-  isNormalizedTitle,
-  scanMaintenanceRun,
-  seedMaintenanceRun,
-  selectMaintenanceCandidates,
-  synchronizeMaintenanceStateAfterProjectRouting,
-} from "../maintenance-cli.js";
+import { catalogItemDifferences, describeMetadataDrift } from "../catalog-diff.js";
+import { checkpointMaintenanceRun, synchronizeMaintenanceStateAfterProjectRouting } from "../checkpoint.js";
+import { sameTime, timeMilliseconds, unwrapSidebarGizmo, collectConversationCatalog } from "../catalog.js";
+import { isNormalizedTitle } from "../title-rules.js";
+import { scanMaintenanceRun, selectMaintenanceCandidates } from "../scan.js";
 import { holdEntry, readHoldList, writeHoldList } from "../hold-list.js";
 import { projectRoutingStatus } from "../project-routing.js";
 
@@ -267,91 +257,7 @@ test("scan prunes a hold entry once the conversation reappears as a candidate", 
   }
 });
 
-test("seed accepts the completed cleanup as baseline and downloads only new or invalid-title candidates", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-seed-test-"));
-  try {
-    const previousDir = join(root, "previous");
-    mkdirSync(previousDir);
-    const previousBackup = join(previousDir, `${ID1}.json`);
-    const old = conversation(ID1, "이전 제목", 1, "same");
-    writeFileSync(previousBackup, JSON.stringify(old));
-    const previousInventory = join(root, "previous-inventory.json");
-    writeFileSync(previousInventory, JSON.stringify({
-      version: 1,
-      kind: "conversation-inventory",
-      warnings: [],
-      conversations: [{
-        conversationId: ID1,
-        backupFile: previousBackup,
-        backupSha256: createHash("sha256").update(readFileSync(previousBackup)).digest("hex"),
-      }],
-    }));
-    const sameContent = conversation(ID1, "대상 — 작업", 5, "changed after export but already reviewed");
-    const newlyCreated = conversation(ID2, "새 대화", 6, "new");
-    const api = catalogApi({
-      active: [sameContent, newlyCreated],
-      projects: [{ id: "g-p-one", name: "Project A" }],
-      projectConversations: { "g-p-one": [sameContent] },
-      details: { [ID1]: sameContent, [ID2]: newlyCreated },
-    });
-    let downloads = 0;
-    const getConversation = api.getConversation;
-    api.getConversation = async (id) => {
-      downloads++;
-      return getConversation(id);
-    };
-    const result = await seedMaintenanceRun({
-      previousInventoryPath: previousInventory,
-      runDir: join(root, "run"),
-      api,
-      now: () => new Date("2026-08-10T00:00:00Z"),
-    });
-    assert.equal(result.inventory.counts.catalogConversations, 2);
-    assert.equal(result.inventory.counts.candidates, 1);
-    assert.deepEqual(result.inventory.projects, [{
-      projectName: "Project A",
-      conversationCount: 1,
-      sampleTitles: ["대상 — 작업"],
-    }]);
-    assert.equal(result.inventory.conversations[0].conversationId, ID2);
-    assert.deepEqual(result.inventory.conversations[0].reasons,
-      ["new", "title-format"]);
-    assert.equal(downloads, 1);
-    assert.equal(existsSync(join(root, "run", "all-inventory.json")), false);
-    assert.equal(result.inventory.source.baselinePolicy,
-      "accept-current-catalog-after-completed-cleanup");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
-test("seed can continue from a prior catalog after a concurrent conversation appears", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-followup-seed-test-"));
-  try {
-    const known = conversation(ID1, "대상 — 작업", 2);
-    const previousCatalog = join(root, "catalog.json");
-    writeFileSync(previousCatalog, JSON.stringify(catalog([catalogItem(known)])));
-    const newlyCreated = conversation(ID2, "후속 대화", 3, "new");
-    const api = catalogApi({
-      active: [known, newlyCreated],
-      projects: [{ id: "g-p-one", name: "Project A" }],
-      projectConversations: { "g-p-one": [known] },
-      details: { [ID2]: newlyCreated },
-    });
-    const result = await seedMaintenanceRun({
-      previousInventoryPath: previousCatalog,
-      runDir: join(root, "run"),
-      api,
-      now: () => new Date("2026-08-10T00:00:00Z"),
-    });
-    assert.equal(result.inventory.counts.candidates, 1);
-    assert.equal(result.inventory.conversations[0].conversationId, ID2);
-    assert.equal(result.inventory.source.previousBaselineKind,
-      "conversation-maintenance-catalog");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test("an empty recurring scan advances the lightweight checkpoint", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-scan-test-"));
@@ -715,42 +621,7 @@ test("routing synchronization accepts only receipt-proven moves without unrelate
   }
 });
 
-test("read diagnostics separate a working read from a failing endpoint", async () => {
-  const api = {
-    listConversations: async () => ({ ok: true, status: 200, data: { items: [{ id: "x" }] } }),
-    listProjectSidebar: async () => ({
-      ok: false,
-      status: 403,
-      data: { detail: { message: "Forbidden" } },
-      contentType: "application/json",
-      bodySnippet: '{"detail":{"message":"Forbidden"}}',
-    }),
-  };
-  const { checks } = await diagnoseReadAccess({ api });
-  assert.deepEqual(checks, [
-    { name: "conversations", status: 200, ok: true, items: 1 },
-    {
-      name: "projects-sidebar",
-      status: 403,
-      ok: false,
-      items: null,
-      contentType: "application/json",
-      detail: "Forbidden",
-      bodySnippet: '{"detail":{"message":"Forbidden"}}',
-    },
-  ]);
-});
 
-test("read diagnostics record a thrown request without leaking the session", async () => {
-  const api = {
-    listConversations: async () => { throw new Error("network down"); },
-    listProjectSidebar: async () => ({ ok: true, status: 200, data: { list: { items: [] } } }),
-  };
-  const { checks } = await diagnoseReadAccess({ api });
-  assert.equal(checks[0].ok, false);
-  assert.equal(checks[0].error, "network down");
-  assert.deepEqual(checks[1], { name: "projects-sidebar", status: 200, ok: true, items: 0 });
-});
 
 // 드리프트 오류가 대화 ID만 알려주면 원격에서 무엇이 바뀐 것인지 알 수 없다(2026-09-12 실측).
 test("metadata drift names the fields that changed without leaking their values", () => {
@@ -961,4 +832,31 @@ test("quiet checkpoint tolerates a planned project move that already happened", 
       api: catalogApi({ active: [movedRemotely] }) });
     assert.equal(result.state.counts.conversations, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("rebaseline accepts the user's manual cleanup for known conversations and defers new ones", async () => {
+  const { rebaselineState } = await import("../baseline.js");
+  const kept = conversation(ID1, "대상 — 작업", 2);
+  const renamed = conversation(ID2, "이전 — 제목", 2);
+  const gone = conversation(ID3, "사라질 — 대화", 2);
+  const state = {
+    version: 1, kind: "conversation-maintenance-state",
+    conversations: [catalogItem(kept, "Project A"), catalogItem(renamed), catalogItem(gone, "Project A")],
+  };
+  const newcomer = conversation("44444444-4444-4444-8444-444444444444", "새 — 대화", 5);
+  const currentCatalog = catalog([
+    catalogItem(kept, "Project B"),
+    catalogItem({ ...renamed, title: "바뀐 — 제목" }),
+    catalogItem(newcomer),
+  ]);
+  const { diff, state: next } = rebaselineState({ state, catalog: currentCatalog, now: () => new Date("2026-09-25T00:00:00Z") });
+  assert.equal(diff.moved.length, 1);
+  assert.equal(diff.moved[0].to, "Project B");
+  assert.equal(diff.renamed.length, 1);
+  assert.equal(diff.removed.length, 1);
+  assert.deepEqual(diff.newConversationIds, ["44444444-4444-4444-8444-444444444444"]);
+  assert.equal(next.conversations.length, 2);
+  assert.equal(next.source.verification, "full");
+  assert.deepEqual(next.source.deferredNewConversationIds, ["44444444-4444-4444-8444-444444444444"]);
+  assert.equal(next.conversations.find((item) => item.conversationId === ID2).title, "바뀐 — 제목");
 });

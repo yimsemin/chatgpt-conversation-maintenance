@@ -33,7 +33,7 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 3. npm test 와 npm run repo:check 가 통과하는지 확인한다.
 4. 데이터 폴더 위치를 알려준다. 기본값(<저장소>/data/)을 그대로 쓸지,
    내 백업 프로그램이 감시하는 폴더로 바꿀지 물어봐.
-5. npm run app 으로 로컬 화면을 띄우고, 내가 북마클릿을 설치·클릭하는 순서를 안내해줘.
+5. npm run app 으로 로컬 화면을 띄우고, 화면의 "처음 시작하기" 순서(북마클릿 설치·클릭 → 기준선 만들기)를 내가 따라 할 수 있게 안내해줘.
 
 하지 말아야 할 일:
 - 내 ChatGPT 세션 JSON 이나 토큰을 요구하거나 대화에 남기지 마. 그건 내가 브라우저에서
@@ -45,9 +45,7 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 
 ## 첫 실행이 막히는 가장 흔한 두 가지
 
-**기준선이 없다.** 이 도구는 기존 기준선(`state.json`)을 증분 갱신하는 것만 한다. 데이터
-폴더에 기준선이 없으면 `데이터 폴더에 state.json이 없습니다`로 멈춘다. 기준선을 처음
-만들어 주는 기능은 아직 없다([README.md](../README.md) "현재 제한: 최초 기준선").
+**기준선이 없다.** 처음에는 데이터 폴더에 `state.json`이 없다. 화면이 **"처음 시작하기"**를 보여 주며, 사용자가 북마클릿으로 연결한 뒤 화면에서 기준선을 만든다(읽기 전용). 에이전트가 대신 만들지 않는다([README.md](../README.md) "처음 시작: 기준선").
 
 **계정 ID가 없다.** 세션 토큰에 ChatGPT 계정 ID가 있어야 한다. 없으면 인증 단계에서
 `account ID` 오류가 난다. 실제로 확인된 동작 범위는 Business 워크스페이스 한 곳뿐이다.
@@ -62,8 +60,10 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 CLASSIFICATION_WORKFLOW.md 를 먼저 끝까지 읽어. 그리고 데이터 폴더의 분류체계
 (classification-taxonomy.md)가 있으면 그것도 읽어 — 내가 정한 프로젝트 정의다.
 
-현재 실행의 inventory.json 과 review.json 만 사용하고, 제안을 proposal.json 으로
-작성한 다음 node workflow.js validate-proposal 로 검증해줘.
+`npm run brief`가 가리키는 현재 실행의 inventory.json 과 review.json 만 사용하고, 제안을
+proposal.json 으로 작성한 다음 node workflow.js validate-proposal 로 검증해줘.
+(맞는 프로젝트가 없으면 suggestedProjectName 을 null 로 두고, 확신이 없는 삭제 후보는
+내가 임시 보관으로 직접 확인할 수 있게 그대로 delete 로 제안해줘.)
 
 제안은 승인이 아니다. 내가 확인할 때까지 reviewed: true 를 만들거나 적용을 실행하지 마.
 ```

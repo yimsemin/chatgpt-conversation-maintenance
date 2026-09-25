@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
 
 // The data folder holds everything specific to one user's ChatGPT account:
-// the incremental baseline (state.json), per-run artifacts (runs/) and the
+// the baseline (state.json), per-run artifacts (runs/) and the
 // local maintenance lock. It never belongs in Git. The location defaults to
 // <appRoot>/data but can be redirected so the user can point it at a synced
 // folder (iCloud/Drive/Dropbox) of their choice.

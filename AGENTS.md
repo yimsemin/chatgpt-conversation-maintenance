@@ -11,13 +11,13 @@
 1. 코드를 탐색하기 전에 `npm run brief`를 실행한다. 기준선·잠금·최근 실행과 **다음 행동(사용자 / 에이전트)** 이 몇 줄로 나온다.
 2. 아래 표에서 이번 일에 맞는 문서만 읽는다. 전부 읽지 않는다.
 3. 코드·문서를 바꿨으면 `npm test`, `npm run repo:check`, `git diff --check`로 검증한다.
-4. 기준선을 갱신하는 스캔·동기화나 실제 원격 변경은 먼저 `node maintenance-lock.js acquire`로 잠금을 잡고, 끝나면 `release`한다.
+4. 스캔·적용·기준선 갱신은 사용자가 화면에서 시작하며 앱이 스스로 잠금을 잡고 푼다. 에이전트는 스캔·적용을 실행하지 않는다. 비정상 종료로 남은 잠금만 `node maintenance-lock.js status|release`로 다룬다.
 
 | 문서 | 언제 읽나 |
 | --- | --- |
 | `docs/GOALS.md` | 무엇을 위해 정리하는지 판단이 갈릴 때 (원본·프로젝트·대화 기록의 역할) |
-| `docs/OVERHAUL.md` | 전수 재정비(2026-09)의 절차와 결과 요약. 카드·조각·조립으로 대량 재분류할 때 |
-| `docs/REDESIGN.md` | **개편(정기 증분 정리 중심) 진행 중일 때 — 화면·세션·작업 구조를 바꾸기 전에** |
+| `docs/OVERHAUL.md` | 전수 재정비 절차와 카드 도구 사용법. 카드·조각·조립으로 대량 재분류할 때 |
+| `docs/REDESIGN.md` | 화면·세션·작업 구조를 바꾸기 전에 (수용 기준·설계 원칙) |
 | `CLASSIFICATION_WORKFLOW.md` | 분류 제안을 만들 때 (기준이 모호할 때의 정본) |
 | `docs/GIT.md` | 커밋·푸시·병합 직전 (PR 없이 로컬 `--ff-only` 병합, **푸시는 명시적 승인 시에만**) |
 | `docs/PITFALLS.md` | 릴레이·북마클릿·재시도·`server.js`를 고칠 때 |
@@ -45,7 +45,7 @@
 
 ## 데이터와 민감정보
 
-- Git에는 코드, 테스트, 운영 문서만 둔다. `state.json`(기준선), `runs/`, 잠금, `hold-list.json`, `classification-taxonomy.md`, 대화 본문·첨부 참조는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 둔다. 새 실행 산출물은 `runs/<고유-run-id>/` 아래에만 만든다.
+- Git에는 코드, 테스트, 운영 문서만 둔다. `state.json`(기준선), `runs/`(결과 보고서 포함), `jobs/`(작업 로그), `parking.json`(검토 대기), 잠금, `hold-list.json`, `classification-taxonomy.md`, 대화 본문·첨부 참조는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 둔다. 새 실행 산출물은 `runs/<고유-run-id>/` 아래에만 만든다.
 - 세션 JSON, 액세스 토큰, 쿠키, Chrome 프로필, 환경 파일과 개인키를 저장·출력·커밋하지 않는다. 로그에 토큰·쿠키·대화 본문을 남기지 않는다.
 - GitHub Actions, Secrets, 아티팩트에 ChatGPT 인증정보를 넣지 않는다.
 - 백업·동기화는 사용자의 백업 프로그램이 한다. **Git·GitHub는 그 경로에 쓰지 않는다.** ChatGPT 관련 파일을 저장소로 끌어오지 않는다.
@@ -61,11 +61,11 @@
 ## 분류와 적용
 
 - 화면(`/`, `public/app.html` + `public/assets/`)은 **확인 → 제안 → 검토 → 적용 → 결과** 다섯 단계다. 전체 목록을 직접 고치는 이전 화면은 `/legacy`(고급)에 남아 있다. 화면 결정은 `POST /maintenance/decisions`가 검증해 `reviewed-decisions.json`으로 기록한다.
-- 서버는 `maintenance-web.js`(라우터)와 `web-common/jobs/views/decisions/workflows.js`로 나뉜다. 화면이 읽는 상태는 `GET /maintenance/session` 하나로 모이고, 작업 로그는 `data/jobs/*.jsonl`에 남아 화면·서버가 죽어도 복원된다.
+- 서버는 `maintenance-web.js`(라우트 표)와 `web-common/jobs/views/decisions/workflows.js`로 나뉘고, 의존 방향은 `test/architecture.test.js`가 지킨다(구조·파일 계약은 `docs/ARCHITECTURE.md`). 화면이 읽는 상태는 `GET /maintenance/session` 하나로 모이고, 작업 로그는 `data/jobs/*.jsonl`에 남아 화면·서버가 죽어도 복원된다.
 - 보존 대화의 프로젝트는 **선택**이다. 맞는 프로젝트가 없으면 프로젝트 없음이 정상이다. 이미 프로젝트 안에 있는 대화를 프로젝트 없음으로 만들 수는 없어(`gizmo_id: null` 무효) 제안 조치 `manual-remove`로 표시하고 결과 화면이 사용자에게 직접 하실 일로 알려 준다. 프로젝트 간 이동은 실계정에서 검증됐다(2026-09-25).
 - 모든 보존 후보는 표준 제목(`핵심 대상·주제 — 실제 작업 또는 결과`)을 갖는다. 예외는 **임시 보관**(`parked`) 결정뿐이다.
 - **검토 대기(임시 보관)**: 삭제 후보를 지정한 프로젝트로 옮겨 두고 사용자가 ChatGPT에서 직접 확인한 뒤 화면에서 삭제·복원을 확정한다(`data/parking.json`, 후속 실행 `runs/parking-*`).
-- 적용은 버튼 한 번이다. 25건 단위 배치 분할, 429·무응답 자동 재개, 빠른 검증(전체 재수집 생략, `state.json`의 `verification: assume-quiet`)이 기본이며, 기준선은 가끔 전체 스캔으로 확정한다. 증분 스캔은 `fast-scan-probe.json` 검증을 통과했을 때만 쓴다.
+- 적용은 버튼 한 번이다. 25건 단위 배치 분할, 429·무응답 자동 재개, 빠른 검증(전체 재수집 생략, `state.json`의 `verification: assume-quiet`)이 기본이며, 기준선은 가끔 전체 스캔으로 확정한다.
 - `review.json`은 토큰 절감용 발췌본이다. 판단이 불분명한 항목만 원본 JSON을 추가 확인한다. 유일 사유가 `title-format`인 대화는 1회 제안 후 `hold-list.json`으로 파킹된다.
 - 카드·조각·조립 도구(`overhaul.js`)는 수백 건을 병렬 에이전트로 재분류할 때 쓴다(`docs/OVERHAUL.md`). 조각은 프로젝트가 아니라 무작위·균등으로 나눈다.
 

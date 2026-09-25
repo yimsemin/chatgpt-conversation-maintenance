@@ -1,6 +1,6 @@
 # ChatGPT 비공식 API 호환성 기록
 
-마지막 검토일: 2026-09-11
+마지막 검토일: 2026-09-25
 
 이 저장소는 로그인한 사용자의 ChatGPT 데이터를 `https://chatgpt.com/backend-api`로 다룬다. 이는 ChatGPT 웹 앱의 비공개 계약이며 문서화되거나 지원되는 OpenAI API가 아니다. 공식 OpenAI Platform의 [Projects API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/projects)는 `organization.project`를 관리하며, 대화·파일·지침을 묶는 [ChatGPT 프로젝트](https://help.openai.com/en/articles/10169521-using-projects-in-chatgpt)를 생성하거나 정리하는 API가 아니다.
 
@@ -65,6 +65,8 @@
 - **변경 응답 `200`이 반영을 뜻하지 않는다.** 변경 후 재조회 검증을 생략할 수 없다.
 
 **`create_time`은 수집 경로에 따라 다르다 (2026-09-12 관측).** 같은 대화의 `create_time`이 주 목록 경유와 프로젝트 목록 경유에서 47초 차이로 보고됐다. 생성 시각은 불변이므로 실제 변경이 아니다. 따라서 **`create_time`을 변경 감지 신호로 쓰지 않는다** — 동일성은 `conversationId`로 확정하고, 변경 감지는 `title`·`update_time`·`is_archived`·`gizmo_id`로 한다.
+
+**전체 목록은 프로젝트 대화를 다 주지 않는다 (2026-09-25 실측).** `GET /conversations` 항목에는 프로젝트 소속(`gizmo_id`)이 들어 있고 목록에 나온 대화의 소속은 프로젝트 순회 결과와 일치했다. 그러나 대화 410건 중 84건(프로젝트 대화, 약 20%)이 이 목록에 아예 없었다. 그래서 목록만 읽는 빠른·증분 수집은 폐기했고, 항상 프로젝트를 순회하는 전체 수집(`collectConversationCatalog`)을 쓴다. 측정: 대화 410건·프로젝트 37개 계정에서 전체 수집 410건 대비 목록은 326건(84건 누락), 목록에 나온 대화의 프로젝트 소속 불일치는 0건.
 
 **페이징 주의.** 주 대화 목록은 **수정시각 순**이고 `offset`으로 페이지를 넘긴다. 대량 쓰기 직후 재조회하면 항목이 페이지 사이로 이동해 주 목록에서 밀릴 수 있다. 프로젝트별 목록 병합이 누락을 메우지만, 대량 변경 직후의 재조회 결과를 그 자체로 완전하다고 가정하지 않는다.
 

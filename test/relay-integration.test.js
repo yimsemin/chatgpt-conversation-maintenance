@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { scanMaintenanceRun } from "../maintenance-cli.js";
+import { scanMaintenanceRun } from "../scan.js";
 import { createRelayApi, createRelayBroker } from "../relay-api.js";
 import { describeRemoteRequest } from "../remote-ops.js";
 

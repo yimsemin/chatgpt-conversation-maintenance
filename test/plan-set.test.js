@@ -9,7 +9,7 @@ import {
   applyPlanSet,
   loadPlanSet,
   preparePlanSet,
-} from "../management-cli.js";
+} from "../plan-set.js";
 import { managementManifestDigest } from "../management.js";
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";

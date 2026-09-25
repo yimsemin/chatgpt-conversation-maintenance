@@ -11,6 +11,8 @@ test("the step follows the running job first, then the run files", () => {
   assert.equal(deriveStep({ hasRun: true, phase: "awaiting-proposal", hasProposal: true }), "review");
   assert.equal(deriveStep({ hasRun: true, phase: "complete", hasReport: true }), "result");
   assert.equal(deriveStep({ hasRun: true, phase: "complete", hasReport: false }), "scan");
+  // 검증·기준선 확정처럼 결과 뒤에 끝난 읽기 전용 작업이 있으면 지난 결과 화면으로 돌아가지 않는다.
+  assert.equal(deriveStep({ hasRun: true, phase: "complete", hasReport: true, resultSuperseded: true }), "scan");
 });
 
 test("relay status becomes a sentence with a next action", () => {

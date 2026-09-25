@@ -8,19 +8,17 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assert } from "./assert.js";
+import { readJson } from "./fs-json.js";
 import { sha256 } from "./content-hash.js";
 import { isNormalizedTitle } from "./title-rules.js";
-import { classificationReviewConversation, validateClassificationProposals } from "./workflow.js";
+import { classificationReviewConversation } from "./classification-review.js";
+import { validateClassificationProposals } from "./proposal-validation.js";
 
 const CARD_STATES = new Set(["active", "done", "superseded", "oneoff", "test"]);
 const CARD_VALUES = new Set(["high", "mid", "low", "none"]);
 const CARD_HARMS = new Set(["none", "stale", "conflicts-with-source"]);
 const VERDICTS = new Set(["keep", "delete", "undecided"]);
 const CONFIDENCE = new Set(["high", "medium", "low"]);
-
-function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
-}
 
 function loadInventory(path) {
   const raw = readFileSync(path);

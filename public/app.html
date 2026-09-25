@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="app-release" content="__APP_RELEASE__">
 <meta name="relay-protocol" content="__RELAY_PROTOCOL_VERSION__">
-<title>대화 정리</title>
+<title>대화 정리 · 작업 창</title>
 <script src="/assets/theme.js"></script>
 <link rel="stylesheet" href="/assets/app.css">
 </head>
@@ -18,6 +18,12 @@
   </div>
 </header>
 <p class="relay-hint" id="relay-hint" hidden></p>
+<p class="relay-note" id="relay-note" hidden></p>
+<section class="relay-window-card" id="relay-window" hidden>
+  <h2>🔒 ChatGPT 연결 창</h2>
+  <p>이 창은 ChatGPT와의 연결을 유지하는 통로입니다. <strong>닫거나 최소화하지 마세요.</strong> 정리 작업은 탭 제목이 ‘대화 정리 · 작업 창’인 곳에서 하며, 작업 창은 닫아도 됩니다.</p>
+  <p><a class="btn" href="/" target="chatgptWork" rel="noopener">작업 화면 열기</a></p>
+</section>
 
 <main>
   <section class="failure" id="failure" hidden></section>
@@ -31,6 +37,7 @@
       <label class="field">작업 폴더 <input id="workspace" type="text" spellcheck="false" autocomplete="off"></label>
       <label class="check"><input type="checkbox" id="quiet" checked> 빠른 검증 — 수집 이후 다른 대화를 만들거나 고치지 않았다고 가정하고 전체 재수집을 생략합니다</label>
       <div class="row">
+        <button class="btn ghost" id="rebaseline" type="button">기준선 확정(전체 스캔)</button>
         <button class="btn ghost" id="probe" type="button">빠른 스캔 검증(읽기 전용)</button>
         <button class="btn ghost" id="full-scan" type="button">전체 스캔(삭제된 대화까지 확인)</button>
         <button class="btn ghost" id="collect" type="button">전수 수집 (전체 본문 받기)</button>

@@ -5,7 +5,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { assert } from "./assert.js";
 import { ACCOUNT_ID, CONVERSATION_ID } from "./ids.js";
 
-const DECISIONS = new Set(["keep", "archive", "delete"]);
+const DECISIONS = new Set(["keep", "delete"]);
 const ACTION_KEYS = new Set(["conversationId", "expectedTitle", "decision", "approved", "backupFile", "backupSha256", "newTitle"]);
 const MANIFEST_KEYS = new Set(["version", "workspace", "receiptDir", "source", "actions"]);
 const DIGEST = /^[0-9a-f]{64}$/;
@@ -34,7 +34,7 @@ export function validateManagementManifest(input) {
     assert(CONVERSATION_ID.test(raw.conversationId || ""), `${label}.conversationId is invalid`);
     assert(!seen.has(raw.conversationId), `${label}.conversationId is duplicated`);
     seen.add(raw.conversationId);
-    assert(DECISIONS.has(raw.decision), `${label}.decision must be keep, archive, or delete`);
+    assert(DECISIONS.has(raw.decision), `${label}.decision must be keep or delete`);
     assert(raw.approved === true, `${label}.approved must be true`);
     assert(typeof raw.backupFile === "string" && raw.backupFile.trim(), `${label}.backupFile is required`);
     assert(isAbsolute(raw.backupFile), `${label}.backupFile must be an absolute path`);
@@ -176,15 +176,6 @@ async function verifyRename(api, action) {
   assert(response.data?.title === action.newTitle, `Rename verification failed for ${action.conversationId}`);
 }
 
-async function verifyArchive(api, action, expectedTitle) {
-  const response = await api.getConversation(action.conversationId);
-  assert(response.ok, `Could not verify archived conversation ${action.conversationId}: HTTP ${response.status}`);
-  const id = response.data?.conversation_id || response.data?.id;
-  assert(id === action.conversationId, `Archive verification returned a different conversation ID`);
-  assert(response.data?.title === expectedTitle, `Archive verification title mismatch for ${action.conversationId}`);
-  assert(response.data?.is_archived === true, `Archive verification failed for ${action.conversationId}`);
-}
-
 async function verifyDelete(api, action) {
   const response = await api.getConversation(action.conversationId);
   if (!response.ok && (response.status === 404 || response.status === 410)) return "not-found";
@@ -309,12 +300,7 @@ export async function runManagementWorkflow({ mode, manifest: rawManifest, accou
         await verifyRename(api, action);
       }
 
-      if (action.decision === "archive") {
-        await api.patchConversation(action.conversationId, { is_archived: true });
-        result.mutations.push({ type: "archive" });
-        await verifyArchive(api, action, action.newTitle || action.expectedTitle);
-        result.verification = "archived";
-      } else if (action.decision === "delete") {
+      if (action.decision === "delete") {
         await api.patchConversation(action.conversationId, { is_visible: false });
         result.mutations.push({ type: "delete" });
         result.verification = await verifyDelete(api, action);

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { PHASE } from "./phases.js";
+import { runFiles } from "./run-files.js";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,21 +28,21 @@ function countFiles(dir) {
 function describeRun(pointer) {
   if (!pointer || typeof pointer.runDir !== "string") return null;
   const runDir = pointer.runDir;
-  const inventory = readJsonOrNull(join(runDir, "inventory.json"));
+  const inventory = readJsonOrNull(runFiles(runDir).inventory);
   return {
     runId: basename(runDir),
     phase: pointer.phase || "unknown",
     updatedAt: pointer.updatedAt || null,
     candidates: inventory?.counts?.candidates ?? null,
     held: inventory?.counts?.held ?? null,
-    hasReview: existsSync(join(runDir, "review.json")),
-    reviewPath: join(runDir, "review.json"),
-    inventoryPath: join(runDir, "inventory.json"),
-    promptPath: join(runDir, "classification-prompt.md"),
-    hasProposal: existsSync(join(runDir, "proposal.json")),
-    proposalPath: join(runDir, "proposal.json"),
-    hasDecisions: existsSync(join(runDir, "reviewed-decisions.json")),
-    receipts: countFiles(join(runDir, "receipts")),
+    hasReview: existsSync(runFiles(runDir).review),
+    reviewPath: runFiles(runDir).review,
+    inventoryPath: runFiles(runDir).inventory,
+    promptPath: runFiles(runDir).prompt,
+    hasProposal: existsSync(runFiles(runDir).proposal),
+    proposalPath: runFiles(runDir).proposal,
+    hasDecisions: existsSync(runFiles(runDir).decisions),
+    receipts: countFiles(runFiles(runDir).receipts),
     result: pointer.result || null,
   };
 }
@@ -53,13 +55,13 @@ export function nextAction({ hasBaseline, lock, run }) {
   if (lock?.locked && !lock.stale) {
     return { actor: "user", text: "다른 실행이 잠금을 잡고 있다. 그 실행이 끝났는지 확인 후 node maintenance-lock.js release" };
   }
-  if (!run || run.phase === "complete") {
+  if (!run || run.phase === PHASE.COMPLETE) {
     return { actor: "user", text: "화면에서 '새 대화 확인'을 누른다(에이전트는 스캔하지 않는다)" };
   }
-  if (run.phase === "ready-to-apply") {
+  if (run.phase === PHASE.READY_TO_APPLY) {
     return { actor: "user", text: "화면에서 검토가 끝난 결정의 '적용 시작'을 누른다" };
   }
-  if (run.phase === "awaiting-proposal" && !run.hasProposal) {
+  if (run.phase === PHASE.AWAITING_PROPOSAL && !run.hasProposal) {
     return {
       actor: "agent",
       text: `AI 분류: node workflow.js claude-prompt "${run.reviewPath}" "${run.promptPath}" "${run.inventoryPath}" "${run.proposalPath}" 로 요청문을 만들고, 그 지시대로 proposal.json 을 쓴 뒤 validate-proposal 로 검증한다`,

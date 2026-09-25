@@ -15,7 +15,7 @@ import {
   planReuseDecision,
   validateMaintenanceWorkspace,
 } from "../maintenance-web.js";
-import { compileProjectRouting, compileReviewedDecisions } from "../workflow.js";
+import { compileProjectRouting, compileReviewedDecisions } from "../decision-compile.js";
 
 function inventoryFixture(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), "maintenance-web-inv-"));

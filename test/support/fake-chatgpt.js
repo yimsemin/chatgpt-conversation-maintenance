@@ -18,7 +18,7 @@ export function fakeProjectId(n) {
   return `g-p-${String(n).padStart(32, "0")}`;
 }
 
-export function createFakeChatGPT({ conversations = [], projects = [], accountId = ACCOUNT, clock = null, listIncludesGizmo = true } = {}) {
+export function createFakeChatGPT({ conversations = [], projects = [], accountId = ACCOUNT, clock = null } = {}) {
   let tick = 1_800_000_000;
   const time = clock || (() => (tick += 1));
   const convs = new Map();
@@ -37,7 +37,7 @@ export function createFakeChatGPT({ conversations = [], projects = [], accountId
   function touch(conv) { conv.update_time = time(); }
   function summary(conv) {
     return { id: conv.id, title: conv.title, create_time: conv.create_time, update_time: conv.update_time,
-      is_archived: conv.is_archived, ...(listIncludesGizmo ? { gizmo_id: conv.gizmo_id } : {}) };
+      is_archived: conv.is_archived, gizmo_id: conv.gizmo_id };
   }
   function detail(conv) {
     return {

@@ -8,9 +8,9 @@ const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
 const READ_OPS = new Set(["getConversation", "listConversations", "listProjects", "listProjectConversations"]);
 
 // timeoutMs: 한 요청의 왕복 제한. 대화 본문은 수 MB 라 목록 조회보다 오래 걸린다.
-// livenessMs: 유지관리 창이 살아있다고 볼 기간. 둘을 묶으면 왕복 제한을 늘릴 때
+// livenessMs: 유지관리 창이 살아있다고 볼 기간(백그라운드 탭은 타이머가 분 단위로 늦어지므로 넉넉히 둔다). 둘을 묶으면 왕복 제한을 늘릴 때
 // "페이지가 연결되지 않았습니다" 판정이 같이 둔해진다.
-export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
+export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000,
   now = () => Date.now(), trace = createRelayTrace({ now }) } = {}) {
   const queue = [];
   const pending = new Map();
@@ -29,7 +29,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
     }
     if (clientId && clientId !== id) {
       trace.record("connect-replaced", { clientId, note: `stale; taken over by ${id.slice(0, 8)}` });
-      for (const requestId of [...pending.keys()]) cancel(requestId, "Relay client was replaced");
+      for (const requestId of [...pending.keys()]) cancel(requestId, "Relay client was replaced", { retryable: true });
       queue.length = 0;
     }
     clientId = id;
@@ -113,14 +113,15 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
     entry.resolve(validated);
     return { accepted: true };
   }
-  function cancel(requestId, message = "Remote operation was cancelled") {
+  // retryable: 연결 창이 바뀌거나 끊겨서 취소된 요청은 새 연결로 다시 보낼 수 있다. 사용자 취소는 다시 보내지 않는다.
+  function cancel(requestId, message = "Remote operation was cancelled", { retryable = false } = {}) {
     const entry = pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
     pending.delete(requestId);
     trace.record("cancel", { op: entry.operation.op, requestId, note: message });
     const error = new Error(message);
-    error.retryable = false;
+    error.retryable = retryable;
     entry.reject(error);
     return true;
   }
@@ -128,7 +129,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
     if (id !== clientId) return { disconnected: false };
     trace.record("disconnect", { clientId: id });
     clientId = null;
-    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected");
+    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected", { retryable: true });
     queue.length = 0;
     return { disconnected: true };
   }
@@ -149,10 +150,14 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
 
 // 읽기 요청 간격을 429 이력에 맞춰 조절한다. 성공이 이어지면 간격이 min 쪽으로 줄고, 429 를 만나면
 // 두 배로(최대 max) 늘어난다. 여러 작업이 같은 상태를 공유하도록 밖에서 만들어 넘긴다.
-export function createPacer({ min = 300, start = 600, max = 4000 } = {}) {
+// 429 쿨다운 종료 시각도 함께 들고 있어, 작업이 끝나고 새 작업이 시작돼도 대기가 이어진다(서버 프로세스 안에서).
+export function createPacer({ min = 300, start = 600, max = 4000, now = () => Date.now() } = {}) {
   let delay = start;
+  let cooldownUntil = 0;
   return {
     current: () => Math.round(delay),
+    cooldownLeft: () => Math.max(0, cooldownUntil - now()),
+    coolDown(waitMs) { cooldownUntil = Math.max(cooldownUntil, now() + waitMs); },
     success() { delay = Math.max(min, delay * 0.92); },
     throttled() { delay = Math.min(max, Math.max(delay, min) * 2); },
   };
@@ -167,7 +172,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
   async function call(op, params, retry = true) {
     const retryLimit = retry ? maxRetries : 0;
     for (let attempt = 0; attempt <= retryLimit; attempt++) {
-      const cooldown = Math.max(0, cooldownUntil - now());
+      const cooldown = Math.max(0, cooldownUntil - now(), pacer?.cooldownLeft() || 0);
       if (cooldown) await sleep(cooldown);
       metrics.requests++;
       onRequest({ op, attempt, count: metrics.requests });
@@ -188,7 +193,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
       }
       const waitMs = Math.min(backoffBaseMs * (2 ** attempt), backoffCapMs);
       metrics.retries++; metrics.retryWaitMs += waitMs;
-      if (result.status === 429) { metrics.rateLimits++; cooldownUntil = Math.max(cooldownUntil, now() + waitMs); }
+      if (result.status === 429) { metrics.rateLimits++; cooldownUntil = Math.max(cooldownUntil, now() + waitMs); pacer?.coolDown(waitMs); }
       onRetry({ type: "http", status: result.status, attempt: attempt + 1, waitMs });
       await sleep(waitMs);
     }

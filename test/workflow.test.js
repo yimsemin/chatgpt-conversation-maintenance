@@ -5,16 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  buildClaudePrompt,
-  buildInventory,
-  CLASSIFICATION_CRITERIA,
-  compileProjectRouting,
-  compileReviewedDecisions,
-  validateClassificationProposals,
-  writeClassificationReview,
-  writeRemainingManifest,
-} from "../workflow.js";
+import { buildClaudePrompt, writeClassificationReview } from "../classification-review.js";
+import { CLASSIFICATION_CRITERIA } from "../classification-criteria.js";
+import { compileProjectRouting, compileReviewedDecisions, writeRemainingManifest } from "../decision-compile.js";
+import { validateClassificationProposals } from "../proposal-validation.js";
+import { buildInventory } from "./support/export-inventory.js";
 import { managementManifestDigest } from "../management.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
@@ -54,48 +49,6 @@ function fixture() {
   }));
   return root;
 }
-
-test("inventory joins project metadata and conversation backups", () => {
-  const root = fixture();
-  try {
-    const inventory = buildInventory(root, () => new Date("2026-08-04T00:00:00Z"));
-    assert.deepEqual(inventory.counts, {
-      conversations: 2,
-      general: 1,
-      project: 1,
-      archived: 1,
-      projects: 1,
-      attachmentReferences: 0,
-    });
-    assert.equal(inventory.warnings.length, 0);
-    const project = inventory.conversations.find((item) => item.conversationId === ID2);
-    assert.equal(project.projectName, "Project A");
-    assert.match(project.projectMetadataFile, /project-info\.md$/);
-    assert.match(project.backupSha256, /^[0-9a-f]{64}$/);
-    assert.match(project.contentSha256, /^[0-9a-f]{64}$/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("inventory excludes backups not present in a bound completed snapshot", () => {
-  const root = fixture();
-  try {
-    const extraId = "33333333-3333-4333-8333-333333333333";
-    writeConversation(join(root, "json", "old-extra.json"), extraId, "Old extra");
-    const summaryPath = join(root, "export-summary.json");
-    const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
-    summary.skipped = 1;
-    writeFileSync(summaryPath, JSON.stringify(summary));
-
-    const inventory = buildInventory(root);
-    assert.equal(inventory.warnings.length, 0);
-    assert.equal(inventory.counts.conversations, 2);
-    assert.deepEqual(inventory.excludedConversationBackups.map((item) => item.conversationId), [extraId]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test("classification review keeps only the current user and final-assistant path", () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-review-test-"));
@@ -289,7 +242,7 @@ test("reviewed decisions compile to small, source-bound management manifests", (
   const root = fixture();
   try {
     const inventoryPath = join(root, "inventory.json");
-    const inventory = buildInventory(root);
+    const inventory = { ...buildInventory(root), kind: "conversation-maintenance-inventory" };
     writeFileSync(inventoryPath, JSON.stringify(inventory, null, 2));
     const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
     const decisionsPath = join(root, "decisions.json");
@@ -299,8 +252,8 @@ test("reviewed decisions compile to small, source-bound management manifests", (
       inventoryDigest,
       receiptDir: join(root, "receipts"),
       decisions: [
-        { conversationId: ID1, decision: "keep", reviewed: true },
-        { conversationId: ID2, decision: "archive", reviewed: true, rationale: "preserve" },
+        { conversationId: ID1, decision: "keep", parked: true, reviewed: true },
+        { conversationId: ID2, decision: "delete", reviewed: true, rationale: "cleanup" },
       ],
     }, null, 2));
 
@@ -587,7 +540,7 @@ test("compiler rejects AI-style decisions that were not user-reviewed", () => {
   const root = fixture();
   try {
     const inventoryPath = join(root, "inventory.json");
-    writeFileSync(inventoryPath, JSON.stringify(buildInventory(root), null, 2));
+    writeFileSync(inventoryPath, JSON.stringify({ ...buildInventory(root), kind: "conversation-maintenance-inventory" }, null, 2));
     const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
     const decisionsPath = join(root, "decisions.json");
     writeFileSync(decisionsPath, JSON.stringify({
@@ -607,7 +560,7 @@ test("compiler refuses an inventory with export completeness warnings", () => {
   const root = fixture();
   try {
     const inventoryPath = join(root, "inventory.json");
-    const inventory = buildInventory(root);
+    const inventory = { ...buildInventory(root), kind: "conversation-maintenance-inventory" };
     inventory.warnings.push("Export used a date filter and is not a full snapshot");
     writeFileSync(inventoryPath, JSON.stringify(inventory, null, 2));
     const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
@@ -617,7 +570,7 @@ test("compiler refuses an inventory with export completeness warnings", () => {
       kind: "reviewed-decisions",
       inventoryDigest,
       receiptDir: join(root, "receipts"),
-      decisions: [{ conversationId: ID1, decision: "archive", reviewed: true }],
+      decisions: [{ conversationId: ID1, decision: "delete", reviewed: true }],
     }));
     assert.throws(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")),
       /Inventory is not safe to compile/);
@@ -636,7 +589,7 @@ test("remaining manifest excludes actions already completed in a matching receip
       workspace: "business",
       receiptDir: join(root, "receipts"),
       actions: [
-        { conversationId: ID1, expectedTitle: "General", decision: "archive", approved: true, backupFile: backup1 },
+        { conversationId: ID1, expectedTitle: "General", decision: "delete", approved: true, backupFile: backup1 },
         { conversationId: ID2, expectedTitle: "Project chat", decision: "delete", approved: true, backupFile: backup2 },
       ],
     };

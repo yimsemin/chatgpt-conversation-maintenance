@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { listUnassignedConversations } from "../project-cli.js";
 import {
   listOwnedProjects,
   prepareProjectPlacement,
@@ -89,59 +88,6 @@ test("owned-project discovery accepts sidebar wrappers and cursors", async () =>
     { projectId: `g-p-${"2".repeat(32)}`, projectName: "Writing" },
   ]);
   assert.deepEqual(cursors, ["", "next"]);
-});
-
-test("unassigned discovery excludes conversations found in owned projects", async () => {
-  const api = {
-    listProjectSidebar: ({ cursor = "" } = {}) => api.getJson(
-      `gizmos/snorlax/sidebar?owned_only=true&conversations_per_gizmo=0&limit=20`
-      + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "")),
-    listProjectConversations: (projectId, { cursor = "" } = {}) => api.getJson(
-      `gizmos/${encodeURIComponent(projectId)}/conversations?limit=50`
-      + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "")),
-    listConversations: ({ archived = false, offset = 0 } = {}) => api.getJson(
-      `conversations?offset=${offset}&limit=100&is_archived=${archived === true}`),
-    getJson: async (path) => {
-      if (path.startsWith("gizmos/snorlax/sidebar?")) {
-        return {
-          ok: true,
-          status: 200,
-          data: { items: [{ id: PROJECT_ID, display: { name: "Research" } }] },
-        };
-      }
-      if (path.startsWith(`gizmos/${PROJECT_ID}/conversations?`)) {
-        return {
-          ok: true,
-          status: 200,
-          data: { items: [{ id: PROJECT_CONVERSATION_ID, title: "Project chat" }] },
-        };
-      }
-      if (path.includes("is_archived=false")) {
-        return {
-          ok: true,
-          status: 200,
-          data: {
-            items: [
-              { id: CONVERSATION_ID, title: "Unassigned chat", is_archived: false },
-              { id: PROJECT_CONVERSATION_ID, title: "Project chat", is_archived: false },
-            ],
-            has_next: false,
-          },
-        };
-      }
-      if (path.includes("is_archived=true")) {
-        return { ok: true, status: 200, data: { items: [], has_next: false } };
-      }
-      throw new Error(`Unexpected path: ${path}`);
-    },
-  };
-  assert.deepEqual(await listUnassignedConversations(api), [{
-    conversationId: CONVERSATION_ID,
-    title: "Unassigned chat",
-    isArchived: false,
-    createTime: null,
-    updateTime: null,
-  }]);
 });
 
 test("apply reconciles mutation-then-HTTP-500 responses by reading remote state", async () => {

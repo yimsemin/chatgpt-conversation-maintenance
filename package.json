@@ -11,11 +11,9 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "start": "node server.js",
     "app": "node launcher.js",
+    "dev:fake": "node dev/fake-server.js",
     "brief": "node brief.js",
     "lock": "node maintenance-lock.js",
-    "manage": "node management-cli.js",
-    "maintenance": "node maintenance-cli.js",
-    "projects": "node project-cli.js",
     "test": "node --test",
     "repo:check": "node repo-check.js"
   },

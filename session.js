@@ -1,15 +1,17 @@
 // 화면이 "지금 어느 단계이고 다음에 무엇을 하면 되는가"를 판단하는 순수 함수들.
-
-export const STEPS = ["scan", "proposal", "review", "apply", "result"];
+import { PHASE } from "./phases.js";
 
 // 진행 중인 작업이 있으면 그 단계, 없으면 실행 파일 상태로 단계를 정한다.
-export function deriveStep({ activeJobKind = null, phase = "", hasProposal = false, hasReport = false, hasRun = false }) {
+// resultSuperseded: 결과 보고서보다 나중에 읽기 전용 작업(확인·검증·기준선 확정)이 끝났다면 그 결과는 지난 일이다.
+export function deriveStep({ activeJobKind = null, phase = "", hasProposal = false, hasReport = false, hasRun = false, hasBaseline = true,
+  resultSuperseded = false }) {
+  if (!hasBaseline && !activeJobKind) return "setup";
   if (activeJobKind === "apply") return "apply";
   if (activeJobKind === "scan") return "scan";
   if (!hasRun) return "scan";
-  if (phase === "ready-to-apply") return "apply";
-  if (phase === "awaiting-proposal") return hasProposal ? "review" : "proposal";
-  if (phase === "complete") return hasReport ? "result" : "scan";
+  if (phase === PHASE.READY_TO_APPLY) return "apply";
+  if (phase === PHASE.AWAITING_PROPOSAL) return hasProposal ? "review" : "proposal";
+  if (phase === PHASE.COMPLETE) return hasReport && !resultSuperseded ? "result" : "scan";
   return "scan";
 }
 

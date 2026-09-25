@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // 실계정 없이 화면·흐름 전체를 시험하는 개발용 서버. 모의 ChatGPT 계정을 만들고 릴레이 브로커에 붙인다.
 // 실제 데이터 폴더를 건드리지 않고 임시 작업 폴더를 새로 만든다. 사용: node dev/fake-server.js [--slow] [--rate-limit]
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { collectConversationCatalog } from "../maintenance-cli.js";
+import { collectConversationCatalog } from "../catalog.js";
 import { assembleProposal } from "../overhaul.js";
 import { createRelayApi } from "../relay-api.js";
 import { relayBroker } from "../remote-relay.js";
@@ -14,6 +14,10 @@ import { attachFakePage, createFakeChatGPT, fakeConversationId, fakeProjectId } 
 process.argv.push("--no-open");
 const slow = process.argv.includes("--slow");
 const rateLimited = process.argv.includes("--rate-limit");
+const noRelay = process.argv.includes("--no-relay");
+const noBaseline = process.argv.includes("--no-baseline");
+// 제안이 만들어진 직후 후보 하나의 제목을 ChatGPT 쪽에서 바꿔, 적용이 "제목 불일치"로 멈추는 상황을 만든다.
+const renameAfterProposal = process.argv.includes("--rename-after-proposal");
 
 const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-dev-"));
 mkdirSync(join(root, ".local"), { recursive: true });
@@ -40,7 +44,7 @@ for (const arg of process.argv.filter((item) => item.startsWith("--inject="))) {
 // 기준선: 지금 상태를 수집해 state.json 으로 저장한다.
 const directApi = createRelayApi({ broker: { request: async ({ op, params }) => fake.handle({ op, params }) }, requestDelayMs: 0 });
 const base = await collectConversationCatalog(directApi);
-writeFileSync(join(root, "data", "state.json"), JSON.stringify({
+if (!noBaseline) writeFileSync(join(root, "data", "state.json"), JSON.stringify({
   version: 1, kind: "conversation-maintenance-state", generatedAt: base.generatedAt, scope: base.scope,
   counts: base.counts, projects: base.projects, conversations: base.conversations,
 }, null, 2));
@@ -53,7 +57,22 @@ const news = [
 news.forEach(([title], i) => fake.addConversation({ id: fakeConversationId(100 + i), title }));
 
 process.chdir(root);
-attachFakePage(relayBroker, fake);
+// --drop-relay-after=N: N번째 요청에서 연결 창이 바뀐 것처럼 끊고 새 창을 붙인다(중단 복구 시험).
+const dropArg = process.argv.find((item) => item.startsWith("--drop-relay-after="));
+if (dropArg && !noRelay) {
+  let left = Number(dropArg.split("=")[1]);
+  const realHandle = fake.handle.bind(fake);
+  let page = null;
+  fake.handle = async (request) => {
+    if (left-- === 0) {
+      const old = page;
+      setTimeout(() => { relayBroker.disconnect(old.clientId); page = attachFakePage(relayBroker, fake); }, 0);
+      return undefined;
+    }
+    return realHandle(request);
+  };
+  page = attachFakePage(relayBroker, fake);
+} else if (!noRelay) attachFakePage(relayBroker, fake);
 
 // 에이전트 역할: 분류 요청 상태가 되면 규칙으로 제안 파일을 만든다.
 setInterval(() => {
@@ -75,6 +94,14 @@ setInterval(() => {
     writeFileSync(join(verdictsDir, "v.json"), JSON.stringify(verdicts));
     assembleProposal(pointer.inventoryPath, verdictsDir, pointer.proposalPath);
     console.log("[dev] 모의 에이전트가 proposal.json 을 만들었습니다");
+    if (renameAfterProposal) {
+      const target = verdicts.find((v) => v.title);
+      if (target) {
+        const conv = fake.conversations.get(target.id);
+        conv.title = `${conv.title} (밖에서 바꿈)`;
+        conv.update_time += 5;
+      }
+    }
   } catch (error) { if (!/already exists/.test(String(error.message))) console.log("[dev]", error.message); }
 }, 1500);
 

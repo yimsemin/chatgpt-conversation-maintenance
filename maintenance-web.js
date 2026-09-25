@@ -6,151 +6,128 @@ import { APP_ROOT, createSafeDiagnostic, jsonResponse, readRequestJson, validate
 import { createJob, jobLogFor, jobs, publicJob, relayAccountId, relayApi, startAsyncJob } from "./web-jobs.js";
 import { catalogData, proposalData, reportData, reviewedDecisionsData, sessionData, summaryData, workspaceStatus } from "./web-views.js";
 import { prepareParkingFollowUp, savePastedProposal, writeReviewedDecisions } from "./web-decisions.js";
-import { applyWorkflow, probeWorkflow, scanWorkflow } from "./web-workflows.js";
+import { applyWorkflow, initialBaselineWorkflow, rebaselineWorkflow, scanWorkflow } from "./web-workflows.js";
 
 export { jobEvent, formatScanProgress, reportProgress } from "./web-jobs.js";
 export { createSafeDiagnostic, validateMaintenanceWorkspace } from "./web-common.js";
 export { buildReviewedDecisionsFromInputs, buildReviewedDecisions } from "./web-decisions.js";
 export { planReuseDecision, assertApplyablePhase } from "./web-workflows.js";
-export { shouldScanIncrementally } from "./web-views.js";
+
+const RELAY_REQUIRED = "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요";
+
+// ---- 라우트 정의 ----
+// 각 라우트는 (ctx) => 값 을 돌려준다. ctx 에는 검증된 작업 폴더(workspace, dataDir, state)와 요청 본문·쿼리가 있다.
+// state: "required"(기본) | "optional"(기준선이 없어도 됨). 작업을 시작하는 라우트는 startJob() 결과(202)를 돌려준다.
+
+const ROUTES = new Map();
+function route(method, path, options, handler) {
+  if (typeof options === "function") { handler = options; options = {}; }
+  ROUTES.set(`${method} ${path}`, { options, handler });
+}
+const get = (path, options, handler) => route("GET", path, options, handler);
+const post = (path, options, handler) => route("POST", path, options, handler);
+
+// 릴레이 연결을 확인하고 작업을 만들어 백그라운드로 시작한다. 응답은 작업 ID 하나다.
+function startJob(ctx, { kind = "scan", stage = kind, requestDelayMs, run }) {
+  assert(relayBroker.status().connected, RELAY_REQUIRED);
+  const job = createJob(kind, ctx.workspace, ctx.dataDir);
+  const api = relayApi(job, requestDelayMs);
+  startAsyncJob(job, stage, () => run(api, job));
+  return { status: 202, value: { jobId: job.id } };
+}
+
+get("/maintenance/status", { workspace: "raw" }, (ctx) => workspaceStatus(ctx.workspaceValue));
+get("/maintenance/session", { state: "optional" }, (ctx) => sessionData(ctx.workspace, ctx.dataDir));
+get("/maintenance/proposal", (ctx) => proposalData(ctx.workspace, ctx.dataDir));
+get("/maintenance/summary", (ctx) => summaryData(ctx.workspace, ctx.dataDir));
+get("/maintenance/report", (ctx) => reportData(ctx.workspace, ctx.dataDir));
+get("/maintenance/catalog", (ctx) => catalogData(ctx.workspace, ctx.dataDir));
+get("/maintenance/decisions", (ctx) => reviewedDecisionsData(ctx.workspace, ctx.dataDir));
+
+get("/maintenance/parking", (ctx) => {
+  const parking = readParking(ctx.dataDir);
+  const present = new Map(ctx.state.conversations.map((item) => [item.conversationId, item]));
+  return {
+    project: parking.project,
+    items: parking.items.map((item) => ({
+      conversationId: item.conversationId, title: present.get(item.conversationId)?.title || item.title,
+      fromProject: item.fromProject, reason: item.reason, intendedTarget: item.intendedTarget, parkedAt: item.parkedAt,
+      inBaseline: present.has(item.conversationId),
+    })),
+  };
+});
+post("/maintenance/parking/prepare", (ctx) => prepareParkingFollowUp(ctx.workspace, ctx.dataDir, ctx.body.decisions));
+post("/maintenance/proposal", (ctx) => savePastedProposal(ctx.workspace, ctx.dataDir, ctx.body.proposalJson));
+post("/maintenance/decisions", (ctx) =>
+  writeReviewedDecisions(ctx.workspace, ctx.dataDir, ctx.body.decisions, ctx.body.parking || null));
+
+get("/maintenance/jobs", { state: "optional" }, (ctx) => {
+  const active = [...jobs.values()].filter((job) => job.workspace === ctx.workspace && !job.done).map(publicJob);
+  const recent = jobLogFor(ctx.dataDir).recent(10).filter((item) => !active.some((job) => job.id === item.id));
+  return { active, recent };
+});
+post("/maintenance/cancel", { workspace: "none" }, (ctx) => {
+  const job = jobs.get(ctx.body.jobId);
+  if (!job || job.done) return { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: "진행 중인 작업이 없습니다" } } };
+  job.cancelled = true;
+  return { cancelling: true };
+});
+
+post("/maintenance/scan", (ctx) => startJob(ctx, {
+  run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job),
+}));
+post("/maintenance/collect", (ctx) => startJob(ctx, {
+  run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { full: true }),
+}));
+post("/maintenance/rebaseline", (ctx) => startJob(ctx, {
+  stage: "rebaseline", run: (api, job) => rebaselineWorkflow(ctx.workspace, ctx.dataDir, api, job),
+}));
+post("/maintenance/baseline", { state: "optional" }, (ctx) => {
+  assert(!ctx.state, "이미 기록이 있습니다. 다시 맞추려면 고급 메뉴의 ‘ChatGPT 상태 다시 맞추기’를 쓰세요");
+  assert(["accept", "empty"].includes(ctx.body.mode), "기준선 방식이 올바르지 않습니다");
+  return startJob(ctx, {
+    stage: "baseline", run: (api, job) => initialBaselineWorkflow(ctx.workspace, ctx.dataDir, api, job, { mode: ctx.body.mode }),
+  });
+});
+post("/maintenance/apply", (ctx) => startJob(ctx, {
+  kind: "apply", requestDelayMs: 2000,
+  run: async (api, job) => applyWorkflow(ctx.workspace, ctx.dataDir, api, await relayAccountId(api),
+    ctx.body.confirmDeletes === true, job, { quiet: ctx.body.quiet === true }),
+}));
+
+function jobStatus(jobId) {
+  const job = jobs.get(jobId);
+  return job ? { value: publicJob(job) }
+    : { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: "작업 상태를 찾을 수 없습니다" } } };
+}
 
 export async function handleMaintenanceWebRequest(req, res) {
   const url = new URL(req.url, "http://127.0.0.1");
   if (!url.pathname.startsWith("/maintenance/")) return false;
   try {
-    if (req.method === "GET" && url.pathname === "/maintenance/status") {
-      jsonResponse(res, 200, workspaceStatus(url.searchParams.get("workspace") || APP_ROOT));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/proposal") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, proposalData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/session") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, sessionData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/parking") {
-      const { dataDir, state } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      const parking = readParking(dataDir);
-      const present = new Map(state.conversations.map((item) => [item.conversationId, item]));
-      jsonResponse(res, 200, { project: parking.project, items: parking.items.map((item) => ({
-        conversationId: item.conversationId, title: present.get(item.conversationId)?.title || item.title,
-        fromProject: item.fromProject, reason: item.reason, intendedTarget: item.intendedTarget, parkedAt: item.parkedAt,
-        inBaseline: present.has(item.conversationId),
-      })) });
-      return true;
-    }
-    if (req.method === "POST" && url.pathname === "/maintenance/parking/prepare") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      jsonResponse(res, 200, prepareParkingFollowUp(workspace, dataDir, body.decisions));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/summary") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, summaryData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/report") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, reportData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/catalog") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, catalogData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/decisions") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      jsonResponse(res, 200, reviewedDecisionsData(workspace, dataDir));
-      return true;
-    }
-    if (req.method === "POST" && url.pathname === "/maintenance/proposal") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      jsonResponse(res, 200, savePastedProposal(workspace, dataDir, body.proposalJson));
-      return true;
-    }
-    if (req.method === "POST" && url.pathname === "/maintenance/decisions") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      jsonResponse(res, 200, writeReviewedDecisions(workspace, dataDir, body.decisions, body.parking || null));
-      return true;
-    }
-    if (req.method === "GET" && url.pathname === "/maintenance/jobs") {
-      const { workspace, dataDir } = validateMaintenanceWorkspace(url.searchParams.get("workspace") || APP_ROOT);
-      const active = [...jobs.values()].filter((job) => job.workspace === workspace && !job.done).map(publicJob);
-      const recent = jobLogFor(dataDir).recent(10).filter((item) => !active.some((job) => job.id === item.id));
-      jsonResponse(res, 200, { active, recent });
-      return true;
-    }
     if (req.method === "GET" && url.pathname.startsWith("/maintenance/job/")) {
-      const id = url.pathname.slice("/maintenance/job/".length);
-      const job = jobs.get(id);
-      if (!job) jsonResponse(res, 404, { error: { code: "JOB_NOT_FOUND", message: "작업 상태를 찾을 수 없습니다" } });
-      else jsonResponse(res, 200, publicJob(job));
+      const { status = 200, value } = jobStatus(url.pathname.slice("/maintenance/job/".length));
+      jsonResponse(res, status, value);
       return true;
     }
-    if (req.method === "POST" && url.pathname === "/maintenance/scan") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      assert(relayBroker.status().connected, "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요");
-      const job = createJob("scan", workspace, dataDir);
-      const api = relayApi(job);
-      startAsyncJob(job, "scan", () => scanWorkflow(workspace, dataDir, api, job, { forceFull: body.full === true }));
-      jsonResponse(res, 202, { jobId: job.id });
+    const entry = ROUTES.get(`${req.method} ${url.pathname}`);
+    if (!entry) {
+      jsonResponse(res, 404, { error: { code: "NOT_FOUND", message: "지원하지 않는 유지관리 요청입니다" } });
       return true;
     }
-    if (req.method === "POST" && url.pathname === "/maintenance/probe") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      assert(relayBroker.status().connected, "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요");
-      const job = createJob("scan", workspace, dataDir);
-      const api = relayApi(job);
-      startAsyncJob(job, "probe", () => probeWorkflow(workspace, dataDir, api, job));
-      jsonResponse(res, 202, { jobId: job.id });
-      return true;
+    const body = req.method === "POST" ? await readRequestJson(req) : {};
+    const workspaceValue = (req.method === "POST" ? body.workspace : url.searchParams.get("workspace")) || APP_ROOT;
+    const ctx = { url, body, workspaceValue };
+    if (entry.options.workspace !== "raw" && entry.options.workspace !== "none") {
+      Object.assign(ctx, validateMaintenanceWorkspace(workspaceValue, { requireState: entry.options.state !== "optional" }));
     }
-    if (req.method === "POST" && url.pathname === "/maintenance/cancel") {
-      const body = await readRequestJson(req);
-      const job = jobs.get(body.jobId);
-      if (!job || job.done) jsonResponse(res, 404, { error: { code: "JOB_NOT_FOUND", message: "진행 중인 작업이 없습니다" } });
-      else {
-        job.cancelled = true;
-        jsonResponse(res, 200, { cancelling: true });
-      }
-      return true;
-    }
-    if (req.method === "POST" && url.pathname === "/maintenance/collect") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      assert(relayBroker.status().connected, "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요");
-      const job = createJob("scan", workspace, dataDir);
-      const api = relayApi(job);
-      startAsyncJob(job, "scan", () => scanWorkflow(workspace, dataDir, api, job, { full: true }));
-      jsonResponse(res, 202, { jobId: job.id });
-      return true;
-    }
-    if (req.method === "POST" && url.pathname === "/maintenance/apply") {
-      const body = await readRequestJson(req);
-      const { workspace, dataDir } = validateMaintenanceWorkspace(body.workspace || APP_ROOT);
-      assert(relayBroker.status().connected, "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요");
-      const job = createJob("apply", workspace, dataDir);
-      const api = relayApi(job, 2000);
-      startAsyncJob(job, "apply", async () => applyWorkflow(workspace, dataDir, api,
-        await relayAccountId(api), body.confirmDeletes === true, job, { quiet: body.quiet === true }));
-      jsonResponse(res, 202, { jobId: job.id });
-      return true;
-    }
-    jsonResponse(res, 404, { error: { code: "NOT_FOUND", message: "지원하지 않는 유지관리 요청입니다" } });
+    const result = entry.handler(ctx);
+    const { status = 200, value } = result && typeof result === "object" && "value" in result && "status" in result
+      ? result : { value: result };
+    jsonResponse(res, status, value);
     return true;
   } catch (error) {
-    const workspace = url.searchParams.get("workspace") || APP_ROOT;
-    jsonResponse(res, 400, { error: createSafeDiagnostic("request", error, workspace) });
+    jsonResponse(res, 400, { error: createSafeDiagnostic("request", error, url.searchParams.get("workspace") || APP_ROOT) });
     return true;
   }
 }

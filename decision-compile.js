@@ -1,0 +1,197 @@
+// 사용자가 검토한 결정을 실행 계획(제목·삭제 배치, 프로젝트 배치)으로 컴파일한다.
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import { assert } from "./assert.js";
+import { readJson, writeJsonAtomic } from "./fs-json.js";
+import { sha256 } from "./content-hash.js";
+import { managementManifestDigest, validateManagementManifest } from "./management.js";
+import { projectRoutingDigest, validateProjectRouting } from "./project-routing.js";
+import { isNormalizedTitle } from "./title-rules.js";
+
+const MAINTENANCE_DECISIONS = new Set(["keep", "delete"]);
+
+// 보존 대화의 프로젝트는 선택이다(프로젝트 없음이 정상). 값이 있으면 다듬어진 이름이어야 한다.
+export function assertOptionalProjectName(value, label) {
+  if (value === undefined || value === null) return;
+  assert(typeof value === "string" && value.trim() === value && value.length > 0,
+    `${label} must be empty or a trimmed project name`);
+}
+
+export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir) {
+  const inventoryRaw = readFileSync(inventoryPath);
+  const decisionsRaw = readFileSync(decisionsPath);
+  const inventory = readJson(inventoryPath, "Inventory");
+  const decisions = readJson(decisionsPath, "Reviewed decisions");
+  const inventoryDigest = sha256(inventoryRaw);
+  const decisionsDigest = sha256(decisionsRaw);
+
+  assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory", "Unsupported inventory format");
+  assert(Array.isArray(inventory.warnings) && inventory.warnings.length === 0,
+    `Inventory is not safe to compile: ${(inventory.warnings || ["missing warnings field"]).join("; ")}`);
+  assert(decisions?.version === 1 && decisions.kind === "reviewed-decisions", "Unsupported reviewed decisions format");
+  assert(decisions.inventoryDigest === inventoryDigest, "Reviewed decisions do not match the inventory digest");
+  assert(isAbsolute(decisions.receiptDir || ""), "Reviewed decisions require an absolute receiptDir");
+  assert(Array.isArray(decisions.decisions), "Reviewed decisions are missing");
+
+  const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
+  const seen = new Set();
+  const actions = [];
+  for (const [index, decision] of decisions.decisions.entries()) {
+    const label = `decisions[${index}]`;
+    assert(decision && typeof decision === "object", `${label} must be an object`);
+    assert(decision.reviewed === true, `${label} was not reviewed by the user`);
+    assert(!seen.has(decision.conversationId), `${label}.conversationId is duplicated`);
+    seen.add(decision.conversationId);
+    assert(MAINTENANCE_DECISIONS.has(decision.decision), `${label}.decision must be keep or delete`);
+    const source = inventoryById.get(decision.conversationId);
+    assert(source, `${label}.conversationId is not present in the inventory`);
+    const newTitle = decision.newTitle;
+    if (newTitle !== undefined) assert(typeof newTitle === "string" && newTitle.trim(), `${label}.newTitle is invalid`);
+    assert(!(decision.decision === "delete" && newTitle), `${label} cannot rename a conversation that will be deleted`);
+    if (decision.decision !== "delete") {
+      // 임시 보관(parked) 결정은 삭제 후보라 표준 제목 규칙에서 제외한다.
+      assert(decision.parked === true || isNormalizedTitle(newTitle || source.title),
+        `${label} must preserve or set the exact "topic — work/result" title form`);
+      assertOptionalProjectName(decision.projectName, `${label}.projectName`);
+      // A move between two already-existing projects is handled by
+      // compileProjectRouting()/runProjectRouting(), not here — this
+      // compiler only builds title/delete batches, so it no longer needs to
+      // reject a decision.projectName that differs from source.projectName.
+    }
+    if (decision.decision === "keep" && !newTitle) continue;
+    actions.push({
+      conversationId: source.conversationId,
+      expectedTitle: source.title,
+      decision: decision.decision,
+      approved: true,
+      backupFile: source.backupFile,
+      backupSha256: source.backupSha256,
+      ...(newTitle ? { newTitle } : {}),
+    });
+  }
+  const outDir = resolve(outputDir);
+  mkdirSync(outDir, { recursive: true });
+  assert(readdirSync(outDir).length === 0, `Output directory is not empty: ${outDir}`);
+
+  const manifests = [];
+  for (let offset = 0; offset < actions.length; offset += 25) {
+    const manifest = validateManagementManifest({
+      version: 1,
+      workspace: "business",
+      receiptDir: resolve(decisions.receiptDir),
+      source: { inventoryDigest, decisionsDigest },
+      actions: actions.slice(offset, offset + 25),
+    });
+    const number = String(manifests.length + 1).padStart(3, "0");
+    const path = join(outDir, `batch-${number}.json`);
+    writeJsonAtomic(path, manifest, { exclusive: true });
+    manifests.push({ path, actions: manifest.actions.length, digest: managementManifestDigest(manifest) });
+  }
+  return { inventoryDigest, decisionsDigest, skippedKeep: decisions.decisions.length - actions.length, manifests };
+}
+
+export function compileProjectRouting(inventoryPath, decisionsPath, outputPath) {
+  const inventoryRaw = readFileSync(inventoryPath);
+  const decisionsRaw = readFileSync(decisionsPath);
+  const inventory = readJson(inventoryPath, "Inventory");
+  const decisions = readJson(decisionsPath, "Reviewed decisions");
+  const inventoryDigest = sha256(inventoryRaw);
+  assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory",
+    "Project routing requires a maintenance inventory");
+  assert(Array.isArray(inventory.warnings) && inventory.warnings.length === 0,
+    `Inventory is not safe to compile: ${(inventory.warnings || ["missing warnings field"]).join("; ")}`);
+  assert(decisions?.version === 1 && decisions.kind === "reviewed-decisions",
+    "Unsupported reviewed decisions format");
+  assert(decisions.inventoryDigest === inventoryDigest,
+    "Reviewed decisions do not match the inventory digest");
+  assert(isAbsolute(decisions.receiptDir || ""), "Reviewed decisions require an absolute receiptDir");
+  assert(Array.isArray(decisions.decisions), "Reviewed decisions are missing");
+
+  const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
+  const seen = new Set();
+  const targetsByName = new Map();
+  for (const [index, decision] of decisions.decisions.entries()) {
+    const label = `decisions[${index}]`;
+    assert(decision && typeof decision === "object", `${label} must be an object`);
+    assert(decision.reviewed === true, `${label} was not reviewed by the user`);
+    assert(!seen.has(decision.conversationId), `${label}.conversationId is duplicated`);
+    seen.add(decision.conversationId);
+    const source = inventoryById.get(decision.conversationId);
+    assert(source, `${label}.conversationId is not present in the inventory`);
+    assert(MAINTENANCE_DECISIONS.has(decision.decision), `${label}.decision must be keep or delete`);
+    if (decision.decision === "delete") {
+      assert(decision.projectName === undefined || decision.projectName === null,
+        `${label}.projectName must be empty for a deleted conversation`);
+      continue;
+    }
+    assertOptionalProjectName(decision.projectName, `${label}.projectName`);
+    // 프로젝트 없음이면 옮길 곳이 없다. 이미 프로젝트 안이면 사용자가 수동으로 뺀다.
+    if (decision.projectName === undefined || decision.projectName === null) continue;
+    if (source.projectName && decision.projectName === source.projectName) {
+      continue;
+    }
+    const entry = targetsByName.get(decision.projectName) || { actions: [], sourceProjectNames: {} };
+    entry.actions.push({
+      conversationId: source.conversationId,
+      expectedTitle: decision.newTitle || source.title,
+      expectedSourceProjectId: null,
+      approved: true,
+    });
+    if (source.projectName) {
+      entry.sourceProjectNames[source.conversationId] = source.projectName;
+    }
+    targetsByName.set(decision.projectName, entry);
+  }
+  assert(seen.size === inventory.conversations.length,
+    "Every maintenance candidate must have exactly one reviewed routing decision");
+
+  if (targetsByName.size === 0) {
+    return { inventoryDigest, decisionsDigest: sha256(decisionsRaw), routingRequired: false };
+  }
+  const routing = validateProjectRouting({
+    version: 1,
+    kind: "chatgpt-project-routing",
+    workspace: "business",
+    receiptDir: resolve(decisions.receiptDir),
+    // 배치 계획 하나는 25건까지다. 큰 프로젝트는 같은 프로젝트를 가리키는 타깃 여러 개로 나눈다.
+    targets: [...targetsByName.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([name, entry]) => {
+        const chunks = [];
+        for (let offset = 0; offset < entry.actions.length; offset += 25) {
+          const actions = entry.actions.slice(offset, offset + 25);
+          const ids = new Set(actions.map((action) => action.conversationId));
+          chunks.push({
+            project: { name, instructions: "", createIfMissing: true, approved: true },
+            actions,
+            sourceProjectNames: Object.fromEntries(
+              Object.entries(entry.sourceProjectNames).filter(([id]) => ids.has(id))),
+          });
+        }
+        return chunks;
+      }),
+  });
+  writeJsonAtomic(resolve(outputPath), routing, { exclusive: true });
+  return {
+    inventoryDigest,
+    decisionsDigest: sha256(decisionsRaw),
+    routingRequired: true,
+    routingPath: resolve(outputPath),
+    routingDigest: projectRoutingDigest(routing),
+    targetCount: routing.targets.length,
+    conversationCount: routing.targets.reduce((sum, target) => sum + target.actions.length, 0),
+  };
+}
+
+export function writeRemainingManifest(manifestPath, receiptPath, outputPath) {
+  const manifest = validateManagementManifest(readJson(manifestPath, "Manifest"));
+  const receipt = readJson(receiptPath, "Receipt");
+  const digest = managementManifestDigest(manifest);
+  assert(receipt.manifestDigest === digest, "Receipt does not match the manifest digest");
+  const completed = new Set((receipt.results || []).filter((item) => item.ok === true).map((item) => item.conversationId));
+  const remaining = manifest.actions.filter((action) => !completed.has(action.conversationId));
+  assert(remaining.length > 0, "No remaining actions");
+  const next = validateManagementManifest({ ...manifest, actions: remaining });
+  writeJsonAtomic(resolve(outputPath), next, { exclusive: true });
+  return next;
+}

@@ -90,18 +90,22 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     assert.ok(jobs.recent.length >= 2);
     assert.equal(jobs.recent.every((job) => job.done), true);
 
-    // 빠른 방식이 검증되면 다음 확인은 증분이고, 방금 적용한 기준선과 어긋나는 후보가 없어야 한다.
-    assert.equal(session.fastScan.verified, false);
-    const probed = await dev.waitJob((await dev.call("/maintenance/probe", {})).jobId);
-    assert.equal(probed.ok, true, JSON.stringify(probed.error));
-    assert.equal(probed.result.probe.ok, true);
+    // 기준선 확정: 하네스가 기준선 이후 만든 새 대화는 넣지 않고 후보로 남긴다(적용을 거친 뒤라 모두 반영되어 있어야 한다).
+    const rebase = await dev.waitJob((await dev.call("/maintenance/rebaseline", {})).jobId);
+    assert.equal(rebase.ok, true, JSON.stringify(rebase.error));
+    // 빠른 검증으로 만든 기준선이 실제 계정과 정확히 같다는 뜻이다(이동·제목·삭제 차이 0).
+    assert.deepEqual([rebase.result.rebaseline.removed, rebase.result.rebaseline.moved, rebase.result.rebaseline.renamed], [0, 0, 0]);
     session = await dev.get("/maintenance/session");
-    assert.equal(session.fastScan.nextScanIncremental, true);
+    assert.ok(session.lastRebaseline);
+    assert.equal(session.baseline.verification, "full");
+
+    // 확정한 기준선으로 다시 확인하면 어긋나는 후보가 없어야 한다. 결과 보고서 뒤에 끝난 확인이라 결과 화면으로 되돌아가지 않는다.
     const again = await dev.waitJob((await dev.call("/maintenance/scan", {})).jobId);
     assert.equal(again.ok, true, JSON.stringify(again.error));
-    assert.ok(again.events.some((event) => /증분 스캔/.test(event.message)));
+    assert.ok(again.events.some((event) => /새 대화 확인/.test(event.message)));
     session = await dev.get("/maintenance/session");
     assert.equal(session.run.candidates, 0);
+    assert.equal(session.step, "scan", "a read-only check after the result must not bring the old result screen back");
   } finally { await dev.stop(); }
 });
 
@@ -116,6 +120,28 @@ test("a burst of 429 during apply is waited out and the run still finishes on it
     assert.equal(applied.ok, true, JSON.stringify(applied.error));
     assert.ok(applied.events.some((event) => event.stage === "rate-limit" || event.stage === "retry"),
       "the 429 wait should be visible in the log");
+  } finally { await dev.stop(); }
+});
+
+test("a relay window that is replaced mid-scan is recovered from automatically", async () => {
+  const dev = await startDev(18606, ["--drop-relay-after=5"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0" });
+  try {
+    const scanned = await dev.waitJob((await dev.call("/maintenance/scan", {})).jobId, 120000);
+    assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
+    await untilProposal(dev);
+  } finally { await dev.stop(); }
+});
+
+test("a second job is refused while one runs, and a cancelled scan can be started again", async () => {
+  const dev = await startDev(18607, ["--slow"], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
+  try {
+    const first = await dev.call("/maintenance/scan", {});
+    await assert.rejects(() => dev.call("/maintenance/scan", {}));
+    await dev.call("/maintenance/cancel", { jobId: first.jobId });
+    const cancelled = await dev.waitJob(first.jobId, 60000);
+    assert.equal(cancelled.ok, false);
+    const again = await dev.waitJob((await dev.call("/maintenance/scan", {})).jobId, 120000);
+    assert.equal(again.ok, true, JSON.stringify(again.error));
   } finally { await dev.stop(); }
 });
 
@@ -163,5 +189,41 @@ test("delete candidates can be parked in a project and later confirmed or restor
     const report = (await dev.get("/maintenance/report")).report;
     assert.deepEqual(report.mismatches, []);
     assert.equal(report.totals.delete, 1);
+  } finally { await dev.stop(); }
+});
+
+test("a first run without a baseline starts in setup and creates one on request", async () => {
+  const dev = await startDev(18604, ["--no-baseline"], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
+  try {
+    let session = await dev.get("/maintenance/session");
+    assert.equal(session.step, "setup");
+    assert.equal(session.baseline, null);
+    const made = await dev.waitJob((await dev.call("/maintenance/baseline", { mode: "accept" })).jobId);
+    assert.equal(made.ok, true, JSON.stringify(made.error));
+    assert.equal(made.result.baseline.conversations, 66);
+    session = await dev.get("/maintenance/session");
+    assert.equal(session.step, "scan");
+    assert.equal(session.baseline.counts.conversations, 66);
+    await assert.rejects(dev.call("/maintenance/baseline", { mode: "accept" }), /이미 기록이 있습니다/);
+  } finally { await dev.stop(); }
+});
+
+test("when a title changes after review, apply stops with a rescan recovery and a new scan picks it up again", async () => {
+  const dev = await startDev(18605, ["--rename-after-proposal"], { MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" });
+  try {
+    await dev.waitJob((await dev.call("/maintenance/scan", {})).jobId);
+    await untilProposal(dev);
+    const failed = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true, quiet: true })).jobId, 60000);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error.explain.recovery, "rescan");
+    assert.match(failed.error.explain.title, /제목이 바뀌어/);
+    let session = await dev.get("/maintenance/session");
+    assert.equal(session.recentJobs[0].error.explain.recovery, "rescan");
+
+    // 이미 적용된 부분은 남고, 새 확인이 남은 대화를 다시 후보로 만든다.
+    const again = await dev.waitJob((await dev.call("/maintenance/scan", {})).jobId);
+    assert.equal(again.ok, true, JSON.stringify(again.error));
+    session = await dev.get("/maintenance/session");
+    assert.ok(session.run.candidates >= 1);
   } finally { await dev.stop(); }
 });

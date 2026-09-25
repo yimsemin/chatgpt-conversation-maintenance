@@ -1,14 +1,18 @@
 // 화면이 읽는 데이터(세션·요약·보고서·분류안·카탈로그). 읽기 전용이다.
 import { existsSync, readFileSync } from "node:fs";
+import { runFiles } from "./run-files.js";
 import { basename, join } from "node:path";
 import { stateFilePath } from "./data-dir.js";
 import { lockStatus } from "./maintenance-lock.js";
 import { relayBroker } from "./remote-relay.js";
-import { buildClaudePrompt, CLASSIFICATION_CRITERIA, validateClassificationProposals } from "./workflow.js";
+import { buildClaudePrompt } from "./classification-review.js";
+import { CLASSIFICATION_CRITERIA } from "./classification-criteria.js";
+import { validateClassificationProposals } from "./proposal-validation.js";
 import { readParking } from "./parking.js";
 import { deriveStep, describeBaseline, describeRelay } from "./session.js";
 import { buildReviewSummary, rowsFromDecisions, rowsFromProposal } from "./summary.js";
-import { publicPointer, readJson, readPointer, validateMaintenanceWorkspace } from "./web-common.js";
+import { publicPointer, readPointer, validateMaintenanceWorkspace } from "./web-common.js";
+import { readJson } from "./fs-json.js";
 import { jobLogFor, jobs, publicJob } from "./web-jobs.js";
 
 export function workspaceStatus(workspaceValue) {
@@ -36,12 +40,12 @@ export function summaryData(workspace, dataDir) {
   if (!pointer || !existsSync(pointer.inventoryPath)) return { ready: false };
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const catalogPath = inventory.catalogFile && existsSync(inventory.catalogFile) ? inventory.catalogFile
-    : join(pointer.runDir, "catalog.json");
+    : runFiles(pointer.runDir).catalog;
   if (!existsSync(catalogPath)) return { ready: false };
   const catalog = readJson(catalogPath, "카탈로그");
-  const proposalPath = pointer.proposalPath || join(pointer.runDir, "proposal.json");
+  const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   const proposal = existsSync(proposalPath) ? readJson(proposalPath, "분류안") : null;
-  const decisionsPath = join(pointer.runDir, "reviewed-decisions.json");
+  const decisionsPath = runFiles(pointer.runDir).decisions;
   let rows;
   let source;
   if (existsSync(decisionsPath)) {
@@ -52,21 +56,6 @@ export function summaryData(workspace, dataDir) {
     source = "proposal";
   } else return { ready: false };
   return { ready: true, source, summary: buildReviewSummary({ catalog, rows }) };
-}
-
-export const PROBE_FILE = "fast-scan-probe.json";
-
-export const INCREMENTAL_MAX_BASELINE_DAYS = 30;
-
-export function readProbe(dataDir) {
-  try { return JSON.parse(readFileSync(join(dataDir, PROBE_FILE), "utf8")); } catch { return null; }
-}
-
-// 증분 스캔은 빠른 방식이 전체 방식과 같은 결과임이 검증되고, 기준선이 너무 오래되지 않았을 때만 쓴다.
-export function shouldScanIncrementally({ probe, baselineGeneratedAt, now = Date.now(), forceFull = false }) {
-  if (forceFull || !probe?.ok || !baselineGeneratedAt) return false;
-  const ageDays = (now - Date.parse(baselineGeneratedAt)) / 86400000;
-  return Number.isFinite(ageDays) && ageDays <= INCREMENTAL_MAX_BASELINE_DAYS;
 }
 
 // 화면 첫 진입에 필요한 모든 상태를 한 번에 준다: 연결, 기준선, 현재 실행, 작업, 단계.
@@ -84,34 +73,35 @@ export function sessionData(workspace, dataDir) {
   const recent = jobLogFor(dataDir).recent(3);
   let run = null;
   if (pointer) {
-    const proposalPath = pointer.proposalPath || join(pointer.runDir, "proposal.json");
+    const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
     run = {
       id: basename(pointer.runDir), phase: pointer.phase || "unknown", updatedAt: pointer.updatedAt || null,
       candidates: pointer.result?.counts?.candidates ?? null,
       hasProposal: existsSync(proposalPath),
-      hasDecisions: existsSync(join(pointer.runDir, "reviewed-decisions.json")),
-      hasReport: existsSync(join(pointer.runDir, "report.json")),
+      hasDecisions: existsSync(runFiles(pointer.runDir).decisions),
+      hasReport: existsSync(runFiles(pointer.runDir).report),
     };
   }
   let report = null;
   if (run?.hasReport) {
-    try { const data = readJson(join(pointer.runDir, "report.json"), "결과"); report = { headline: data.headline, finishedAt: data.finishedAt }; } catch {}
+    try { const data = readJson(runFiles(pointer.runDir).report, "결과"); report = { headline: data.headline, finishedAt: data.finishedAt }; } catch {}
   }
+  // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·빠른 검증·기준선 확정)이 있으면 결과 화면으로 되돌리지 않는다.
+  const reportAt = Date.parse(report?.finishedAt || "") || 0;
+  const resultSuperseded = jobLogFor(dataDir).recent(10).some((job) => job.kind === "scan" && job.ok && Date.parse(job.finishedAt || "") > reportAt);
   const lock = lockStatus({ dataDir });
   return {
     relay: { ...relay, ...describeRelay(relay) },
     baseline,
-    parking: (() => { const parking = readParking(dataDir); return { project: parking.project, count: parking.items.length }; })(),
-    fastScan: (() => {
-      const probe = readProbe(dataDir);
-      return { verified: probe?.ok === true, checkedAt: probe?.checkedAt || null, reason: probe?.reason || null,
-        message: probe?.message || null,
-        nextScanIncremental: shouldScanIncrementally({ probe, baselineGeneratedAt: baseline?.generatedAt }) };
+    lastRebaseline: (() => {
+      try { const last = JSON.parse(readFileSync(join(dataDir, "rebaseline-last.json"), "utf8")); return { at: last.at, summary: last.summary }; }
+      catch { return null; }
     })(),
+    parking: (() => { const parking = readParking(dataDir); return { project: parking.project, count: parking.items.length }; })(),
     run,
     report,
-    step: deriveStep({ activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
-      hasReport: run?.hasReport, hasRun: Boolean(run) }),
+    step: deriveStep({ hasBaseline: Boolean(baseline), activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
+      hasReport: run?.hasReport, hasRun: Boolean(run), resultSuperseded }),
     job: activeJob,
     recentJobs: recent,
     lock: lock.locked ? { device: lock.holder?.device || null, stale: lock.stale } : null,
@@ -120,7 +110,7 @@ export function sessionData(workspace, dataDir) {
 
 export function reportData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
-  const path = pointer ? join(pointer.runDir, "report.json") : null;
+  const path = pointer ? runFiles(pointer.runDir).report : null;
   if (!path || !existsSync(path)) return { ready: false };
   return { ready: true, report: readJson(path, "결과 보고서") };
 }
@@ -128,7 +118,7 @@ export function reportData(workspace, dataDir) {
 export function proposalData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   if (!pointer) return { ready: false, run: null };
-  const proposalPath = pointer.proposalPath || join(pointer.runDir, "proposal.json");
+  const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   if (!existsSync(proposalPath)) {
     return {
       ready: false,
@@ -156,8 +146,8 @@ export function proposalData(workspace, dataDir) {
 
 // 파일 접근이 가능한 에이전트(같은 저장소의 Codex/Claude Code)용. 규칙 문서를
 // 통째로 읽게 하지 않고 압축 기준을 프롬프트에 바로 넣는다.
-export function classificationPrompt(pointer) {
-  const proposalPath = pointer.proposalPath || join(pointer.runDir, "proposal.json");
+function classificationPrompt(pointer) {
+  const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   return [
     "이 작업공간에서 ChatGPT 대화 유지관리의 '분류' 단계를 수행해줘. 분류만 하고 승인 파일·실행 계획·원격 변경은 만들거나 실행하지 마.",
     "판단 기준은 아래에 모두 있으니 저장소 문서를 따로 읽지 않아도 돼.",
@@ -176,12 +166,12 @@ export function classificationPrompt(pointer) {
 }
 
 // claude.ai 등 파일 접근이 없는 곳에 그대로 붙여넣을 자립형 요청문.
-export function claudePrompt(pointer) {
+function claudePrompt(pointer) {
   if (!pointer.reviewPath || !existsSync(pointer.reviewPath)) return null;
   try {
     return buildClaudePrompt(readJson(pointer.reviewPath, "분류용 입력"), {
       inventoryPath: pointer.inventoryPath,
-      proposalPath: pointer.proposalPath || join(pointer.runDir, "proposal.json"),
+      proposalPath: pointer.proposalPath || runFiles(pointer.runDir).proposal,
     });
   } catch { return null; }
 }
@@ -190,7 +180,7 @@ export function claudePrompt(pointer) {
 // 대화 전체 목록을 만든다. 화면의 검색·필터·정렬은 클라이언트가 처리한다.
 export function catalogData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
-  const runCatalogPath = pointer ? join(pointer.runDir, "catalog.json") : null;
+  const runCatalogPath = pointer ? runFiles(pointer.runDir).catalog : null;
   const useRun = Boolean(runCatalogPath && existsSync(runCatalogPath));
   const catalog = useRun
     ? readJson(runCatalogPath, "카탈로그")
@@ -258,7 +248,7 @@ export function reviewedDecisionsSummary(inventory, decisions) {
 export function reviewedDecisionsData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   if (!pointer) return { ready: false, run: null };
-  const decisionsPath = join(pointer.runDir, "reviewed-decisions.json");
+  const decisionsPath = runFiles(pointer.runDir).decisions;
   if (!existsSync(decisionsPath)) return { ready: false, run: publicPointer(pointer) };
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const decisions = readJson(decisionsPath, "검토된 결정");

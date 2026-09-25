@@ -1,11 +1,10 @@
-#!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readdirSync, statSync } from "node:fs";
+import { basename, resolve } from "node:path";
 
 import { assert } from "./assert.js";
+import { readJson } from "./fs-json.js";
 import { ACCOUNT_ID } from "./ids.js";
 import {
   managementConfirmation,
@@ -17,12 +16,6 @@ import {
 
 try { process.umask(0o077); } catch {}
 
-const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
-
-function readJson(path, label) {
-  try { return JSON.parse(readFileSync(path, "utf8")); }
-  catch { throw new Error(`${label} is not valid JSON: ${path}`); }
-}
 
 function jsonFiles(path) {
   return readdirSync(path, { withFileTypes: true })
@@ -49,9 +42,6 @@ function resultMatchesAction(receipt, result, plan) {
   if (action.decision === "delete") {
     return mutations.some((mutation) => mutation?.type === "delete")
       && ["not-found", "not-visible"].includes(result.verification);
-  }
-  if (action.decision === "archive") {
-    return mutations.some((mutation) => mutation?.type === "archive") && result.verification === "archived";
   }
   return true;
 }
@@ -260,77 +250,4 @@ export async function applyPlanSet({
     if (batchDelayMs > 0 && selectedIndex + 1 < selectedPlans.length) await sleep(batchDelayMs);
   }
   return { ok: true, appliedBatches, summary: loadPlanSet(plansDir).summary };
-}
-
-function usage() {
-  return [
-    "Usage:",
-    "  node management-cli.js status <plans-dir>",
-    "  node management-cli.js prepare <plans-dir>",
-    "  원격 apply 명령은 폐기되었습니다. 로컬 앱을 사용하세요.",
-    "",
-    "Apply options:",
-    "  --data-dir <path>           Data folder holding the maintenance lock (default: <repo>/data)",
-    "  --account-id <uuid>          Override the account ID from the session JSON/JWT",
-    "  --max-batches <number>       Stop after this many pending batches",
-    "  --batch-delay-seconds <n>    Wait between completed batches",
-    "  --request-delay-seconds <n>  Wait after each completed HTTP request (default: 2)",
-  ].join("\n");
-}
-
-function parseApplyArgs(values) {
-  assert(values.length >= 1, usage());
-  const plansDir = values[0];
-  let confirmation = "";
-  let accountId = "";
-  let dataDir = "";
-  let maxBatches = Number.POSITIVE_INFINITY;
-  let batchDelayMs = 0;
-  let requestDelayMs = 2000;
-  for (let index = 1; index < values.length; index++) {
-    const option = values[index];
-    const value = values[++index];
-    assert(value !== undefined, `Missing value for ${option}`);
-    if (option === "--confirmation") confirmation = value;
-    else if (option === "--account-id") accountId = value;
-    else if (option === "--data-dir") dataDir = value;
-    else if (option === "--max-batches") {
-      maxBatches = Number(value);
-      assert(Number.isInteger(maxBatches) && maxBatches > 0, "--max-batches must be a positive integer");
-    } else if (option === "--batch-delay-seconds") {
-      const seconds = Number(value);
-      assert(Number.isFinite(seconds) && seconds >= 0, "--batch-delay-seconds must be non-negative");
-      batchDelayMs = Math.round(seconds * 1000);
-    } else if (option === "--request-delay-seconds") {
-      const seconds = Number(value);
-      assert(Number.isFinite(seconds) && seconds >= 0, "--request-delay-seconds must be non-negative");
-      requestDelayMs = Math.round(seconds * 1000);
-    } else throw new Error(`Unknown option: ${option}\n${usage()}`);
-  }
-  return { plansDir, confirmation, accountId, dataDir, maxBatches, batchDelayMs, requestDelayMs };
-}
-
-async function main(args) {
-  const [command, ...values] = args;
-  if (command === "status" && values.length === 1) {
-    console.log(JSON.stringify(loadPlanSet(values[0]).summary, null, 2));
-    return;
-  }
-  if (command === "prepare" && values.length === 1) {
-    const prepared = preparePlanSet(values[0]);
-    console.log(JSON.stringify({ summary: prepared.summary, pending: prepared.pending }, null, 2));
-    return;
-  }
-  if (command === "apply") {
-    throw new Error("원격 apply CLI는 폐기되었습니다. 로컬 앱을 사용하세요.");
-  }
-  throw new Error(usage());
-}
-
-const isDirect = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isDirect) {
-  main(process.argv.slice(2)).catch((error) => {
-    console.error(error.message);
-    process.exitCode = 1;
-  });
 }

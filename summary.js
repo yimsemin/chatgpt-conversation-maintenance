@@ -162,7 +162,7 @@ export function buildResultReport({ catalogBefore, catalogAfter, rows, verificat
       removeFromProject: plan.exceptions.manualRemoves,
     },
     note: verification === "assume-quiet"
-      ? "빠른 검증으로 확정한 결과입니다. 수집 이후 다른 대화가 바뀌지 않았다는 가정이 들어 있으므로 가끔 전체 확인으로 기준선을 확정하세요."
+      ? "간단 확인(빠른 검증)으로 확정한 결과입니다. 적용하는 동안 다른 대화가 바뀌지 않았다는 가정이 들어 있으므로 가끔 고급 메뉴의 ‘ChatGPT 상태 다시 맞추기’로 전체를 확인하세요."
       : "전체 재수집으로 검증한 결과입니다.",
   };
 }

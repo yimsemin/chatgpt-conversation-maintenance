@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { collectConversationCatalog } from "../maintenance-cli.js";
+import { collectConversationCatalog } from "../catalog.js";
 import { createPacer, createRelayApi, createRelayBroker } from "../relay-api.js";
 import { attachFakePage, createFakeChatGPT, fakeConversationId, fakeProjectId } from "./support/fake-chatgpt.js";
 
@@ -80,5 +80,25 @@ test("the read pacer slows down after a 429 and speeds up again on success", asy
     fake.inject({ op: "listConversations", status: 429, times: 1 });
     await api.listConversations({ archived: false, offset: 0, limit: 10 });
     assert.ok(waits.at(-1) > 5, `expected a slowed pacing wait after the 429, got ${waits}`);
+  } finally { await page.stop(); }
+});
+
+test("a 429 cooldown carries over to the next job through the shared pacer", async () => {
+  const { fake, broker, page } = world();
+  try {
+    let clock = 1000;
+    const shared = createPacer({ min: 5, start: 5, max: 50, now: () => clock });
+    const first = createRelayApi({ broker, requestDelayMs: 0, pacer: shared, backoffBaseMs: 4000, backoffCapMs: 4000,
+      now: () => clock, sleep: async (ms) => { clock += ms; } });
+    fake.inject({ op: "listConversations", status: 429, times: 1 });
+    await first.listConversations({ archived: false, offset: 0, limit: 10 });
+    assert.equal(shared.cooldownLeft(), 0, "the first job already waited the cooldown out");
+
+    shared.coolDown(3000);
+    const waits = [];
+    const second = createRelayApi({ broker, requestDelayMs: 0, pacer: shared, now: () => clock,
+      sleep: async (ms) => { waits.push(ms); clock += ms; } });
+    await second.listConversations({ archived: false, offset: 0, limit: 10 });
+    assert.equal(waits[0], 3000, `a new job should wait out the remaining cooldown, got ${waits}`);
   } finally { await page.stop(); }
 });
