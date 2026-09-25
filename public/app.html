@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-release" content="__APP_RELEASE__">
+<meta name="relay-protocol" content="__RELAY_PROTOCOL_VERSION__">
+<title>대화 정리</title>
+<script src="/assets/theme.js"></script>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header class="top">
+  <h1>대화 정리</h1>
+  <div class="top-right">
+    <button class="pill" id="relay-pill" type="button" aria-live="polite"><i class="dot"></i><span id="relay-label">연결 확인 중…</span></button>
+    <button class="icon" id="theme" type="button" title="테마 전환" aria-label="테마 전환">◐</button>
+  </div>
+</header>
+<p class="relay-hint" id="relay-hint" hidden></p>
+
+<main>
+  <section class="failure" id="failure" hidden></section>
+  <section class="now" id="now" aria-live="polite"></section>
+  <ol class="steps" id="steps"></ol>
+  <section class="panel" id="panel"></section>
+
+  <details class="advanced" id="advanced">
+    <summary>고급</summary>
+    <div class="adv-body">
+      <label class="field">작업 폴더 <input id="workspace" type="text" spellcheck="false" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" id="quiet" checked> 빠른 검증 — 수집 이후 다른 대화를 만들거나 고치지 않았다고 가정하고 전체 재수집을 생략합니다</label>
+      <div class="row">
+        <button class="btn ghost" id="probe" type="button">빠른 스캔 검증(읽기 전용)</button>
+        <button class="btn ghost" id="full-scan" type="button">전체 스캔(삭제된 대화까지 확인)</button>
+        <button class="btn ghost" id="collect" type="button">전수 수집 (전체 본문 받기)</button>
+        <a class="btn ghost" href="/legacy" target="_blank" rel="noopener">전체 목록 직접 편집(이전 화면)</a>
+        <a class="btn ghost" href="/auth/bookmarklet" target="_blank" rel="noopener">북마클릿 설치 안내</a>
+      </div>
+      <p class="muted small" id="fast-note"></p>
+      <h3>최근 작업</h3>
+      <div id="recent" class="recent"></div>
+    </div>
+  </details>
+</main>
+
+<dialog id="confirm"><form method="dialog" id="confirm-form"></form></dialog>
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="/assets/app.js"></script>
+</body>
+</html>

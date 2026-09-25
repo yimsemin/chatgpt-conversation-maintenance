@@ -16,6 +16,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
   const pending = new Map();
   let clientId = null;
   let lastSeenAt = 0;
+  const health = { lastResultAt: 0, lastStatus: null, consecutiveFailures: 0, timeouts: 0 };
 
   function connect(id) {
     assert(typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id), "Relay client ID is invalid");
@@ -53,6 +54,8 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
       const enqueuedAt = now();
       const timer = setTimeout(() => {
         pending.delete(id);
+        health.timeouts += 1;
+        health.consecutiveFailures += 1;
         trace.record("broker-timeout", { op: validated.op, requestId: id, elapsedMs: now() - enqueuedAt });
         const error = new Error(`ChatGPT page relay timed out: ${validated.op}`);
         error.retryable = false;
@@ -104,6 +107,9 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
     pending.delete(requestId);
     trace.record("result-accepted", { op: entry.operation.op, requestId,
       status: validated.status, elapsedMs: now() - entry.enqueuedAt });
+    health.lastResultAt = now();
+    health.lastStatus = validated.status;
+    health.consecutiveFailures = validated.status >= 500 || validated.status === 429 ? health.consecutiveFailures + 1 : 0;
     entry.resolve(validated);
     return { accepted: true };
   }
@@ -127,14 +133,34 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 30000,
     return { disconnected: true };
   }
   function status() {
-    return { connected: Boolean(clientId && now() - lastSeenAt <= livenessMs), pending: pending.size };
+    const connected = Boolean(clientId && now() - lastSeenAt <= livenessMs);
+    return {
+      connected,
+      pending: pending.size,
+      lastSeenAgoMs: lastSeenAt ? now() - lastSeenAt : null,
+      lastResultAgoMs: health.lastResultAt ? now() - health.lastResultAt : null,
+      lastStatus: health.lastStatus,
+      consecutiveFailures: health.consecutiveFailures,
+      timeouts: health.timeouts,
+    };
   }
   return { connect, request, next, complete, disconnect, status, trace };
 }
 
+// 읽기 요청 간격을 429 이력에 맞춰 조절한다. 성공이 이어지면 간격이 min 쪽으로 줄고, 429 를 만나면
+// 두 배로(최대 max) 늘어난다. 여러 작업이 같은 상태를 공유하도록 밖에서 만들어 넘긴다.
+export function createPacer({ min = 300, start = 600, max = 4000 } = {}) {
+  let delay = start;
+  return {
+    current: () => Math.round(delay),
+    success() { delay = Math.max(min, delay * 0.92); },
+    throttled() { delay = Math.min(max, Math.max(delay, min) * 2); },
+  };
+}
+
 export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(), maxRetries = 8, backoffBaseMs = 5000, backoffCapMs = 300000,
-  requestDelayMs = 1000, onRetry = () => {}, onRequest = () => {} } = {}) {
+  requestDelayMs = 1000, pacer = null, onRetry = () => {}, onRequest = () => {} } = {}) {
   assert(broker?.request, "Relay broker is required");
   let cooldownUntil = 0;
   const metrics = { requests: 0, retries: 0, rateLimits: 0, retryWaitMs: 0, pacingWaitMs: 0 };
@@ -153,8 +179,11 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
         metrics.retries++; metrics.retryWaitMs += waitMs; onRetry({ type: "network", attempt: attempt + 1, waitMs });
         await sleep(waitMs); continue;
       }
+      if (result.status === 429) pacer?.throttled();
+      else if (result.ok) pacer?.success();
       if (!(RETRYABLE.has(result.status) || (result.status === 599 && READ_OPS.has(op))) || attempt === retryLimit) {
-        if (requestDelayMs) { metrics.pacingWaitMs += requestDelayMs; await sleep(requestDelayMs); }
+        const delay = pacer && READ_OPS.has(op) ? pacer.current() : requestDelayMs;
+        if (delay) { metrics.pacingWaitMs += delay; await sleep(delay); }
         return result;
       }
       const waitMs = Math.min(backoffBaseMs * (2 ** attempt), backoffCapMs);

@@ -388,12 +388,15 @@
         if (!peer || peer.closed) throw new Error("ChatGPT 페이지 연결이 끊겼습니다");
         const startedAt = Date.now();
         const result = await new Promise((resolve, reject) => {
+          // 페이지가 응답하지 않아도 연결 루프는 유지한다. 그 요청만 599 로 실패시키면 읽기 op 는
+          // 자동으로 다시 시도되고, 사용자는 chatgpt.com 탭을 앞으로 가져오면 된다.
           const timer = setTimeout(() => {
             window.removeEventListener("message", receive);
             trace("page-timeout", { op: next.request.op, requestId: next.request.id,
               elapsedMs: Date.now() - startedAt });
-            reject(new Error("ChatGPT 페이지 응답 시간 초과"));
-          }, 90000);
+            resolve({ ok: false, status: 599, data: null, contentType: "",
+              bodySnippet: "ChatGPT 페이지 응답 시간 초과 — chatgpt.com 탭을 앞으로 가져오세요" });
+          }, 60000);
           function receive(event) {
             if (event.origin !== "https://chatgpt.com" || event.source !== peer
               || event.data?.id !== next.request.id) return;

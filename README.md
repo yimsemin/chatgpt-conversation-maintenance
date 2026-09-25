@@ -89,9 +89,12 @@ npm run app        # 127.0.0.1:8523 로컬 화면 열기
 | `project-cli.js` | 승인된 프로젝트 생성·배치 계획 적용 |
 | `data-dir.js` | 데이터 폴더 위치 해석 (기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`으로 재지정) |
 | `maintenance-lock.js` | 데이터 폴더 내 잠금 파일로 한 번에 한 컴퓨터만 스캔·변경하도록 직렬화 |
-| `maintenance-web.js` | 로컬 웹 화면과 워크플로 함수 사이의 상태·승인·오류 경계 |
+| `maintenance-web.js`, `web-*.js` | 로컬 웹 화면과 워크플로 함수 사이의 상태·승인·오류 경계(라우터·워크플로·결정·화면 데이터·작업·공용) |
+| `catalog.js`, `summary.js`, `session.js`, `jobs.js`, `errors.js`, `parking.js` | 카탈로그 수집(전체·빠른·증분), 검토 요약·결과 보고, 단계·연결 판정, 작업 로그·ETA, 오류 설명, 검토 대기 목록 |
+| `overhaul.js` | 대량 재분류용 카드·조각·조립 도구 |
+| `dev/fake-server.js`, `test/support/` | 실계정 없이 흐름을 시험하는 모의 ChatGPT와 개발용 서버 |
 | `launcher.js` | 실행 중인 로컬 서버를 재사용하거나 백그라운드로 시작 |
-| `server.js`, `public/` | 루프백 전용 웹 서버와 유지관리 화면, 북마클릿 페이지 실행기 |
+| `server.js`, `public/` | 루프백 전용 웹 서버와 화면(`app.html`·`assets/`, 이전 화면 `maintenance.html`), 북마클릿 페이지 실행기 |
 | `repo-check.js` | 민감정보·대용량 파일·플랫폼 비호환 경로 차단 |
 
 분류 규칙이나 API 계약을 다른 문서에 복사하지 않는다. 문서와 구현이 다르면 추측해서 실행하지 말고 코드·테스트와 현재 원격 상태를 대조해 해당 기준 문서를 함께 고친다.

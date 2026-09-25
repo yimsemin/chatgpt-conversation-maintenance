@@ -2,7 +2,7 @@
 /**
  * 로컬 대화 유지관리 웹앱 서버.
  *
- * `127.0.0.1:8523`에서만 동작하며 외부에 배포되지 않는다. 화면(`public/maintenance.html`)을
+ * `127.0.0.1:8523`에서만 동작하며 외부에 배포되지 않는다. 화면(`public/app.html`, 이전 화면 `public/maintenance.html`)을
  * 서빙하고, 유지관리 워크플로 API(`/maintenance/*`, maintenance-web.js)를 위임한다.
  * 비공개 ChatGPT API 호출은 이 파일에 없다. chatgpt.com 페이지의 릴레이 실행기가 수행한다.
  */
@@ -35,9 +35,32 @@ const MODULE_DIR = resolveModuleDir();
 const NO_OPEN = process.argv.includes("--no-open");
 
 const HOST = "127.0.0.1";
-const PORT = 8523;
+// 기본 포트는 고정이다. 자동 시험이 실제 앱과 겹치지 않도록 환경 변수로만 바꿀 수 있다.
+const PORT = Number(process.env.MAINTENANCE_PORT) || 8523;
 
-function serveLocalHtml(res, filename) {
+const STRICT_CSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
+// 화면이 쓰는 정적 자원. 파일 이름은 고정 목록/패턴만 허용하고 경로 이동은 받지 않는다.
+const ASSET_TYPES = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
+const SHARED_MODULES = new Set(["summary.js", "title-rules.js"]);
+
+function serveAsset(res, pathname) {
+  const match = pathname.match(/^\/assets\/(shared\/)?([a-z0-9-]+\.(?:js|css))$/);
+  if (!match || (match[1] && !SHARED_MODULES.has(match[2]))) {
+    res.writeHead(404); res.end(); return;
+  }
+  const base = match[1] ? [MODULE_DIR, match[2]] : [MODULE_DIR, "public", "assets", match[2]];
+  const type = ASSET_TYPES[match[2].slice(match[2].lastIndexOf("."))];
+  try {
+    const body = readFileSync(join(...base));
+    res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    res.end(body);
+  } catch {
+    res.writeHead(404); res.end();
+  }
+}
+
+function serveLocalHtml(res, filename, { strict = false } = {}) {
   const candidates = [
     join(MODULE_DIR, "public", filename),
     join(dirname(process.execPath), "public", filename),
@@ -54,7 +77,8 @@ function serveLocalHtml(res, filename) {
   }
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    "Content-Security-Policy": strict ? STRICT_CSP
+      : "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -105,7 +129,14 @@ const server = createServer(async (req, res) => {
 
   // 유지관리 화면
   if (req.method === "GET" && (req.url === "/" || req.url === "")) {
+    serveLocalHtml(res, "app.html", { strict: true });
+
+  // 전체 목록을 직접 편집하는 이전 화면(고급)
+  } else if (req.method === "GET" && req.url === "/legacy") {
     serveLocalHtml(res, "maintenance.html");
+
+  } else if (req.method === "GET" && req.url.startsWith("/assets/")) {
+    serveAsset(res, req.url.split("?")[0]);
 
   // 로컬 런처가 쓰는 준비 상태 확인
   } else if (req.method === "GET" && req.url === "/health") {

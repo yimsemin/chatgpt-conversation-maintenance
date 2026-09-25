@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { resolveDataDir, stateFilePath } from "./data-dir.js";
 import { lockStatus } from "./maintenance-lock.js";
+import { readParking } from "./parking.js";
 
 // 새 대화(에이전트)가 코드를 탐색하지 않고 현재 상태와 다음 할 일을 바로
 // 알도록 하는 읽기 전용 요약이다. ChatGPT에 요청하지 않고 파일만 읽는다.
@@ -55,6 +56,9 @@ export function nextAction({ hasBaseline, lock, run }) {
   if (!run || run.phase === "complete") {
     return { actor: "user", text: "화면에서 '새 대화 확인'을 누른다(에이전트는 스캔하지 않는다)" };
   }
+  if (run.phase === "ready-to-apply") {
+    return { actor: "user", text: "화면에서 검토가 끝난 결정의 '적용 시작'을 누른다" };
+  }
   if (run.phase === "awaiting-proposal" && !run.hasProposal) {
     return {
       actor: "agent",
@@ -92,6 +96,7 @@ export function buildBrief({ appRoot, dataDir = "", now = () => Date.now() } = {
       : null,
     lock: lock.locked ? { device: lock.holder?.device || null, stale: lock.stale } : null,
     run,
+    parking: (() => { const parking = readParking(dir); return parking.items.length ? { project: parking.project, count: parking.items.length } : null; })(),
     next: nextAction({ hasBaseline, lock, run }),
   };
 }
@@ -117,6 +122,7 @@ export function formatBrief(brief) {
   } else {
     lines.push("최근 실행: 없음");
   }
+  if (brief.parking) lines.push(`검토 대기: ${brief.parking.count}건 (ChatGPT 프로젝트 「${brief.parking.project}」) — 화면의 '검토 대기 열기'에서 사용자가 확정한다`);
   lines.push(`다음: [${brief.next.actor === "agent" ? "에이전트" : "사용자"}] ${brief.next.text}`);
   return lines.join("\n");
 }

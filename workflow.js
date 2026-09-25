@@ -679,7 +679,8 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
     if (newTitle !== undefined) assert(typeof newTitle === "string" && newTitle.trim(), `${label}.newTitle is invalid`);
     assert(!(decision.decision === "delete" && newTitle), `${label} cannot rename a conversation that will be deleted`);
     if (inventory.kind === "conversation-maintenance-inventory" && decision.decision !== "delete") {
-      assert(isNormalizedTitle(newTitle || source.title),
+      // 임시 보관(parked) 결정은 삭제 후보라 표준 제목 규칙에서 제외한다.
+      assert(decision.parked === true || isNormalizedTitle(newTitle || source.title),
         `${label} must preserve or set the exact "topic — work/result" title form`);
       assertOptionalProjectName(decision.projectName, `${label}.projectName`);
       // A move between two already-existing projects is handled by
