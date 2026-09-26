@@ -103,7 +103,7 @@ export function formatBrief(brief) {
 
 const isDirect = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isDirect) {
-  const appRoot = fileURLToPath(new URL(".", import.meta.url));
+  const appRoot = fileURLToPath(new URL("..", import.meta.url));
   const brief = buildBrief({ appRoot });
   console.log(process.argv.includes("--json") ? JSON.stringify(brief, null, 2) : formatBrief(brief));
 }

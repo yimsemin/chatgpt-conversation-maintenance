@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
+const MODULE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // The data folder holds everything specific to one user's ChatGPT account:
 // per-run artifacts and receipts (runs/), the trash-project list (trash.json), the job log (jobs/) and the

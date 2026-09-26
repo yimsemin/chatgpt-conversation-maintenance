@@ -9,7 +9,7 @@ if errorlevel 1 (
   exit /b 1
 )
 cd /d "%SCRIPT_DIR%"
-node "%SCRIPT_DIR%launcher.js"
+node "%SCRIPT_DIR%src/launcher.js"
 echo.
 echo The app has stopped. You can close this window.
 pause

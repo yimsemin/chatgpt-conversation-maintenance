@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const files = readdirSync(ROOT).filter((name) => name.endsWith(".js"));
+const SRC = join(ROOT, "src");
+const files = readdirSync(SRC).filter((name) => name.endsWith(".js"));
 
 function importsOf(name) {
-  const source = readFileSync(join(ROOT, name), "utf8");
+  const source = readFileSync(join(SRC, name), "utf8");
   return [...source.matchAll(/(?:from|import\()\s*"(\.\/[^"]+)"/g)].map((match) => normalize(match[1]));
 }
 
@@ -65,6 +66,6 @@ test("screen scripts import only screen modules or the shared pure modules", () 
 test("environment variables are read only in config.js", () => {
   for (const name of files) {
     if (["config.js", "repo-check.js", "launcher.js", "data-dir.js", "app-version.js"].includes(name)) continue;
-    assert.doesNotMatch(readFileSync(join(ROOT, name), "utf8"), /process\.env\./, `${name} reads process.env directly`);
+    assert.doesNotMatch(readFileSync(join(SRC, name), "utf8"), /process\.env\./, `${name} reads process.env directly`);
   }
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildResultReport, buildReviewSummary, reportMarkdown, rowsFromProposal } from "../summary.js";
+import { buildResultReport, buildReviewSummary, reportMarkdown, rowsFromProposal } from "../src/summary.js";
 
 const catalog = {
   projects: [{ projectName: "A" }, { projectName: "B" }, { projectName: "Empty" }],

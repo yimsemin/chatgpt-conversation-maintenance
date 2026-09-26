@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { CONFIG } from "./config.js";
 
 // 어디서 실행하든(더블클릭·다른 폴더의 터미널) 앱의 작업 폴더는 이 저장소 폴더다.
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 process.chdir(ROOT);
 
 const URL = `http://127.0.0.1:${CONFIG.port}`;

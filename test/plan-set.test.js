@@ -9,8 +9,8 @@ import {
   applyPlanSet,
   loadPlanSet,
   preparePlanSet,
-} from "../plan-set.js";
-import { managementManifestDigest } from "../management.js";
+} from "../src/plan-set.js";
+import { managementManifestDigest } from "../src/management.js";
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const IDS = [

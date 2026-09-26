@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildClaudePrompt, writeClassificationReview } from "../classification-review.js";
-import { CLASSIFICATION_CRITERIA } from "../classification-criteria.js";
-import { compileProjectRouting, compileReviewedDecisions } from "../decision-compile.js";
-import { validateClassificationProposals } from "../proposal-validation.js";
+import { buildClaudePrompt, writeClassificationReview } from "../src/classification-review.js";
+import { CLASSIFICATION_CRITERIA } from "../src/classification-criteria.js";
+import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
+import { validateClassificationProposals } from "../src/proposal-validation.js";
 import { buildInventory } from "./support/export-inventory.js";
-import { managementManifestDigest } from "../management.js";
+import { managementManifestDigest } from "../src/management.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";

@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildAfterCatalog, finalizeMaintenanceRun } from "../finalize.js";
-import { collectConversationCatalog, timeMilliseconds, unwrapSidebarGizmo } from "../catalog.js";
-import { isNormalizedTitle } from "../title-rules.js";
-import { scanMaintenanceRun } from "../scan.js";
+import { buildAfterCatalog, finalizeMaintenanceRun } from "../src/finalize.js";
+import { collectConversationCatalog, timeMilliseconds, unwrapSidebarGizmo } from "../src/catalog.js";
+import { isNormalizedTitle } from "../src/title-rules.js";
+import { scanMaintenanceRun } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";

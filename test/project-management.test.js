@@ -9,7 +9,7 @@ import {
   projectPlacementConfirmation,
   runProjectPlacementWorkflow,
   validateProjectPlacementPlan,
-} from "../project-management.js";
+} from "../src/project-management.js";
 
 // 계획을 검증해 승인 확인 문구를 만든다(적용 시험용).
 function prepare(plan) {

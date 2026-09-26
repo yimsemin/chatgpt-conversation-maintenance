@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildBrief, formatBrief, nextAction } from "../brief.js";
+import { buildBrief, formatBrief, nextAction } from "../src/brief.js";
 
 function fixture({ pointer = null, files = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "brief-"));

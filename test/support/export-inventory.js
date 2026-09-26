@@ -3,8 +3,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { assert } from "../../assert.js";
-import { attachmentReferenceCount, contentSha256, sha256 } from "../../content-hash.js";
+import { assert } from "../../src/assert.js";
+import { attachmentReferenceCount, contentSha256, sha256 } from "../../src/content-hash.js";
 
 function readJson(path, label) {
   try { return JSON.parse(readFileSync(path, "utf8")); }

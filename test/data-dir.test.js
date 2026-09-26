@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_TRASH_PROJECT, configuredDataDir, configuredTrash, lockFilePath, resolveDataDir, runsDir } from "../data-dir.js";
+import { DEFAULT_TRASH_PROJECT, configuredDataDir, configuredTrash, lockFilePath, resolveDataDir, runsDir } from "../src/data-dir.js";
 
 function appRootFixture() {
   return mkdtempSync(join(tmpdir(), "data-dir-"));

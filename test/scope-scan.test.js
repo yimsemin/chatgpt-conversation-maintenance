@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { collectScopedCatalog } from "../catalog.js";
-import { orderOldestFirst } from "../decision-compile.js";
-import { checkRenameOrder } from "../finalize.js";
-import { scanMaintenanceRun, validateScope } from "../scan.js";
+import { collectScopedCatalog } from "../src/catalog.js";
+import { orderOldestFirst } from "../src/decision-compile.js";
+import { checkRenameOrder } from "../src/finalize.js";
+import { scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";

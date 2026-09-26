@@ -5,11 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { appFolders, createSafeDiagnostic } from "../web-common.js";
-import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../web-decisions.js";
-import { formatScanProgress, jobEvent } from "../web-jobs.js";
-import { assertApplyablePhase, planReuseDecision } from "../web-workflows.js";
-import { compileProjectRouting, compileReviewedDecisions } from "../decision-compile.js";
+import { appFolders, createSafeDiagnostic } from "../src/web-common.js";
+import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
+import { formatScanProgress, jobEvent } from "../src/web-jobs.js";
+import { assertApplyablePhase, planReuseDecision } from "../src/web-workflows.js";
+import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
 
 function inventoryFixture(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), "maintenance-web-inv-"));

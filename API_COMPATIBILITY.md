@@ -4,7 +4,7 @@
 
 이 저장소는 로그인한 사용자의 ChatGPT 데이터를 `https://chatgpt.com/backend-api`로 다룬다. 이는 ChatGPT 웹 앱의 비공개 계약이며 문서화되거나 지원되는 OpenAI API가 아니다. 공식 OpenAI Platform의 [Projects API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/projects)는 `organization.project`를 관리하며, 대화·파일·지침을 묶는 [ChatGPT 프로젝트](https://help.openai.com/en/articles/10169521-using-projects-in-chatgpt)를 생성하거나 정리하는 API가 아니다.
 
-이 문서는 비공식 API 표면의 단일 호환성 기록이다. 엔드포인트나 페이로드가 바뀌면 `remote-ops.js`, 페이지 실행기(`public/bookmarklet.html`), 릴레이 어댑터 테스트와 이 문서의 마지막 검토일을 함께 고친다. 사용 방법은 `README.md`, 에이전트 안전 경계는 `AGENTS.md`에 둔다.
+이 문서는 비공식 API 표면의 단일 호환성 기록이다. 엔드포인트나 페이로드가 바뀌면 `src/remote-ops.js`, 페이지 실행기(`public/bookmarklet.html`), 릴레이 어댑터 테스트와 이 문서의 마지막 검토일을 함께 고친다. 사용 방법은 `README.md`, 에이전트 안전 경계는 `AGENTS.md`에 둔다.
 
 ## 인증 경계
 

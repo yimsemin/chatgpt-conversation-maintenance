@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { projectIdFromLink } from "../project-link.js";
-import { readKnownProjects, sortByRecency, writeKnownProjects } from "../known-projects.js";
-import { addTrashed, readTrash, removeTrashed } from "../trash.js";
+import { projectIdFromLink } from "../src/project-link.js";
+import { readKnownProjects, sortByRecency, writeKnownProjects } from "../src/known-projects.js";
+import { addTrashed, readTrash, removeTrashed } from "../src/trash.js";
 
 test("trashed conversations are remembered with their reason and can be released", () => {
   const dir = mkdtempSync(join(tmpdir(), "trash-"));

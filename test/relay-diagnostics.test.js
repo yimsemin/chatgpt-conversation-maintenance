@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRelayTrace } from "../relay-trace.js";
+import { createRelayTrace } from "../src/relay-trace.js";
 
 test("the trace keeps only fixed diagnostic fields and truncates identifiers", () => {
   const trace = createRelayTrace({ now: () => 1000 });
@@ -34,8 +34,8 @@ test("the trace caps its buffer", () => {
   assert.equal(trace.list().at(-1).seq, 10);
 });
 
-import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "../app-version.js";
-import { validateRelayVersion } from "../remote-relay.js";
+import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "../src/app-version.js";
+import { validateRelayVersion } from "../src/remote-relay.js";
 
 test("relay connection accepts only the current release and protocol", () => {
   assert.doesNotThrow(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION));

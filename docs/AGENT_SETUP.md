@@ -62,7 +62,7 @@ CLASSIFICATION_WORKFLOW.md 를 먼저 끝까지 읽어. 그리고 데이터 폴�
 (classification-taxonomy.md)가 있으면 그것도 읽어 — 내가 정한 프로젝트 정의다.
 
 `npm run brief`가 가리키는 현재 실행의 inventory.json 과 review.json 만 사용하고, 제안을
-proposal.json 으로 작성한 다음 node workflow.js validate-proposal 로 검증해줘.
+proposal.json 으로 작성한 다음 node src/workflow.js validate-proposal 로 검증해줘.
 (맞는 프로젝트가 없으면 suggestedProjectName 을 null 로 두고, 확신이 없는 삭제 후보는
 내가 삭제후보 프로젝트에서 직접 확인할 수 있게 그대로 delete 로 제안하고, 표준 제목이 아니면 삭제 후보에도 표준 제목을 suggestedNewTitle 로 제안해줘.)
 

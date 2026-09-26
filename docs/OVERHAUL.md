@@ -47,9 +47,9 @@
 ## 카드 도구 사용
 
 ```bash
-node overhaul.js slice <inventory.json> <runs/id/slices> --parts N [--seed S]   # 무작위·균등 조각
-node overhaul.js validate-cards <inventory.json> <runs/id/cards>               # 카드 형식·커버리지
-node overhaul.js assemble <inventory.json> <runs/id/verdicts> <proposal.json>  # 판정 → proposal.json + 기존 검증
+node src/overhaul.js slice <inventory.json> <runs/id/slices> --parts N [--seed S]   # 무작위·균등 조각
+node src/overhaul.js validate-cards <inventory.json> <runs/id/cards>               # 카드 형식·커버리지
+node src/overhaul.js assemble <inventory.json> <runs/id/verdicts> <proposal.json>  # 판정 → proposal.json + 기존 검증
 ```
 
 카드 파일은 조각마다 카드 배열(JSON), 판정 파일은 `{id, decision, title|null, project|null, confidence, why, projectWhy?}` 배열이다.

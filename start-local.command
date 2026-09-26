@@ -27,7 +27,7 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 cd "$SCRIPT_DIR" || exit 1
-"$NODE_BIN" "$SCRIPT_DIR/launcher.js"
+"$NODE_BIN" "$SCRIPT_DIR/src/launcher.js"
 STATUS=$?
 echo
 if [ "$STATUS" -eq 0 ]; then

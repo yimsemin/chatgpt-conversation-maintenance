@@ -9,15 +9,15 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
-    "start": "node launcher.js",
-    "app": "node launcher.js",
+    "start": "node src/launcher.js",
+    "app": "node src/launcher.js",
     "dev:fake": "node dev/fake-server.js",
-    "brief": "node brief.js",
-    "lock": "node maintenance-lock.js",
+    "brief": "node src/brief.js",
+    "lock": "node src/maintenance-lock.js",
     "test": "node --test",
-    "repo:check": "node repo-check.js",
-    "stop": "node launcher.js stop",
-    "status": "node launcher.js status"
+    "repo:check": "node src/repo-check.js",
+    "stop": "node src/launcher.js stop",
+    "status": "node src/launcher.js status"
   },
   "engines": {
     "node": ">=24"

@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { scanMaintenanceRun } from "../scan.js";
-import { createRelayApi, createRelayBroker } from "../relay-api.js";
-import { describeRemoteRequest } from "../remote-ops.js";
+import { scanMaintenanceRun } from "../src/scan.js";
+import { createRelayApi, createRelayBroker } from "../src/relay-api.js";
+import { describeRemoteRequest } from "../src/remote-ops.js";
 
 const PROJECT_ID = `g-p-${"a".repeat(32)}`;
 // 실제 ChatGPT 대화 ID 모양을 쓴다(버전 니블이 RFC 4122 범위 밖). 합성 UUID 만 쓰면

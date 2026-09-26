@@ -99,7 +99,7 @@ Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 4
 
 ## 데이터와 백업
 
-Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`), 작업 로그(`jobs/`), 삭제후보 목록(`trash.json`), 알려진 프로젝트 이름(`known-projects.json`), 잠금, 분류체계(`classification-taxonomy.md`, 형식은 [templates/](templates/classification-taxonomy.example.md))는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 두며 `.gitignore`와 `npm run repo:check`가 막는다. 세션·쿠키·환경 파일은 어디에도 저장하지 않는다.
+Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`), 작업 로그(`jobs/`), 삭제후보 목록(`src/trash.json`), 알려진 프로젝트 이름(`src/known-projects.json`), 잠금, 분류체계(`classification-taxonomy.md`, 형식은 [templates/](templates/classification-taxonomy.example.md))는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 두며 `.gitignore`와 `npm run repo:check`가 막는다. 세션·쿠키·환경 파일은 어디에도 저장하지 않는다.
 
 정리는 **한 컴퓨터에서만** 한다. 백업·동기화는 사용자의 백업 프로그램이 하고 GitHub는 그 경로에 쓰지 않는다. 공개 전 점검은 [docs/PRIVACY.md](docs/PRIVACY.md).
 
@@ -111,11 +111,11 @@ Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`),
 
 ```text
 npm run brief                                        # 최근 실행·삭제후보 현황과 다음 행동(사용자/에이전트) 요약
-node maintenance-lock.js status|release              # 잠금 확인·해제(비정상 종료 뒤에만)
-node workflow.js validate-proposal <inventory.json> <proposal.json>
+node src/maintenance-lock.js status|release              # 잠금 확인·해제(비정상 종료 뒤에만)
+node src/workflow.js validate-proposal <inventory.json> <proposal.json>
 curl -s http://127.0.0.1:8523/relay/trace            # 릴레이 경계 진단
 node dev/fake-server.js                              # 모의 ChatGPT로 흐름 시험(실제 데이터 미사용)
-node overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 카드 도구
+node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 카드 도구
 ```
 
 ## 문서 안내

@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { assembleProposal } from "../overhaul.js";
-import { relayBroker } from "../remote-relay.js";
+import { assembleProposal } from "../src/overhaul.js";
+import { relayBroker } from "../src/remote-relay.js";
 import { attachFakePage, createFakeChatGPT, fakeConversationId, fakeProjectId } from "../test/support/fake-chatgpt.js";
 
 process.argv.push("--no-open");
@@ -95,6 +95,6 @@ setInterval(() => {
   } catch (error) { if (!/already exists/.test(String(error.message))) console.log("[dev]", error.message); }
 }, 1500);
 
-const { startServer } = await import("../server.js");
+const { startServer } = await import("../src/server.js");
 startServer();
 console.log(`[dev] 모의 ChatGPT 서버: 임시 앱 폴더 ${root}`);

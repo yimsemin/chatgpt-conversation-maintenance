@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { basename } from "node:path";
 
-import { findRepoIssues, personalPathPatterns } from "../repo-check.js";
+import { findRepoIssues, personalPathPatterns } from "../src/repo-check.js";
 
 const FAKE_STAT = { isFile: () => true, size: 12 };
 function checkOne(path, text, options = {}) {

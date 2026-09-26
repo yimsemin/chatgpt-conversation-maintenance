@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeRemoteRequest, PROJECT_ID, validateRemoteOperation, validateRemoteResult } from "../remote-ops.js";
+import { describeRemoteRequest, PROJECT_ID, validateRemoteOperation, validateRemoteResult } from "../src/remote-ops.js";
 
 const CID = "11111111-1111-4111-8111-111111111111";
 const PID = `g-p-${"a".repeat(32)}`;

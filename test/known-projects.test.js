@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { readKnownProjects, rememberProjects } from "../known-projects.js";
+import { readKnownProjects, rememberProjects } from "../src/known-projects.js";
 
 test("known projects accept the old names-only file and remember newly used projects without dropping others", () => {
   const dir = mkdtempSync(join(tmpdir(), "known-projects-"));

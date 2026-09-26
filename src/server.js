@@ -26,6 +26,7 @@ import { MAX_BODY_BYTES, appFolders, jsonResponse, readRequestJson } from "./web
 try { process.umask(0o077); } catch {}
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const APP_DIR = dirname(MODULE_DIR);
 
 const NO_OPEN = process.argv.includes("--no-open");
 
@@ -43,7 +44,7 @@ function serveAsset(res, pathname) {
   if (!match || (match[1] && !SHARED_MODULES.has(match[2]))) {
     res.writeHead(404); res.end(); return;
   }
-  const base = match[1] ? [MODULE_DIR, match[2]] : [MODULE_DIR, "public", "assets", match[2]];
+  const base = match[1] ? [MODULE_DIR, match[2]] : [APP_DIR, "public", "assets", match[2]];
   const type = ASSET_TYPES[match[2].slice(match[2].lastIndexOf("."))];
   try {
     const body = readFileSync(join(...base));
@@ -56,7 +57,7 @@ function serveAsset(res, pathname) {
 
 function serveLocalHtml(res, filename, { strict = false } = {}) {
   let html = null;
-  try { html = readFileSync(join(MODULE_DIR, "public", filename), "utf8"); } catch {}
+  try { html = readFileSync(join(APP_DIR, "public", filename), "utf8"); } catch {}
   if (!html) {
     res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(`Could not find public/${filename}`);
@@ -104,7 +105,7 @@ const server = createServer(async (req, res) => {
   // 로컬 런처가 쓰는 준비 상태 확인
   } else if (req.method === "GET" && req.url === "/health") {
     jsonResponse(res, 200, { ok: true, service: "chatgpt-conversation-maintenance",
-      relayProtocolVersion: RELAY_PROTOCOL_VERSION, ...appStatus(MODULE_DIR) });
+      relayProtocolVersion: RELAY_PROTOCOL_VERSION, ...appStatus(APP_DIR) });
 
   // 앱 종료. 실행 중인 작업이 있으면 force 없이는 거절한다(작업이 도중에 끊기지 않게).
   } else if (req.method === "POST" && req.url === "/app/shutdown") {

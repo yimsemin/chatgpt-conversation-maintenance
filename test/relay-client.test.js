@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRelayApi, createRelayBroker } from "../relay-api.js";
+import { createRelayApi, createRelayBroker } from "../src/relay-api.js";
 
 function fakeWindow() {
   const listeners = new Set();

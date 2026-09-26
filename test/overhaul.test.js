@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { assembleProposal, sliceInventory, validateCards } from "../overhaul.js";
+import { assembleProposal, sliceInventory, validateCards } from "../src/overhaul.js";
 import { buildInventory } from "./support/export-inventory.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";

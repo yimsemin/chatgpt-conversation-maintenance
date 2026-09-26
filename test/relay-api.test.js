@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRelayApi, createRelayBroker } from "../relay-api.js";
+import { createRelayApi, createRelayBroker } from "../src/relay-api.js";
 
 test("broker queues one validated operation and resolves its result", async () => {
   const broker = createRelayBroker({ timeoutMs: 1000 });

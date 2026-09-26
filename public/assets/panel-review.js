@@ -19,7 +19,8 @@ export async function loadReview() {
   } catch (e) { fail(e); }
 }
 
-function effectiveRows() {
+// ignoreSkips: 이동·제목 변경 목록은 "적용 안 함"으로 해제한 항목도 계속 보여 줘야 다시 켤 수 있다.
+function effectiveRows(ignoreSkips = false) {
   const rows = rowsFromProposal(S.proposal, { conversations: [] });
   return rows.map((row) => {
     const o = S.overrides.get(row.conversationId); if (!o) return row;
@@ -28,6 +29,8 @@ function effectiveRows() {
     if (o.title !== undefined) next.newTitle = o.title;
     if (o.project !== undefined) next.project = o.project || null;
     if (o.decision === "keep" && o.project === undefined && !row.project) next.project = row.currentProject;
+    if (!ignoreSkips && o.skipMove) next.project = row.currentProject || null;
+    if (!ignoreSkips && o.skipTitle) next.newTitle = row.title;
     return next;
   }).map((row) => {
     if (row.decision !== "delete" || S.trash.permanent) return row;
@@ -46,7 +49,34 @@ function loadOverrides() {
   try { S.overrides = new Map(JSON.parse(localStorage.getItem(overrideKey()) || "[]")); } catch { S.overrides = new Map(); }
 }
 
-const patch = (id, changes) => { S.overrides.set(id, { ...(S.overrides.get(id) || {}), ...changes }); saveOverrides(); drawReview(); };
+// 화면을 다시 그릴 때 펼침 상태·스크롤·입력 위치를 보존한다(항목 하나를 고칠 때마다 목록이 닫히지 않게).
+// change 는 포커스가 옮겨 가기 전에 오므로 다음 틱에 그려야 사용자가 옮겨 간 칸을 기억할 수 있다.
+let redrawTimer = null;
+function redraw() {
+  if (redrawTimer) return;
+  redrawTimer = setTimeout(() => {
+    redrawTimer = null;
+    const panel = $("panel"); if (!panel) return;
+    const open = new Set([...panel.querySelectorAll("details[data-key][open]")].map((d) => d.dataset.key));
+    const known = new Set([...panel.querySelectorAll("details[data-key]")].map((d) => d.dataset.key));
+    const active = document.activeElement; const focusKey = active?.dataset?.fk || null;
+    const caret = focusKey && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
+    const { scrollX, scrollY } = window;
+    drawReview();
+    for (const d of $("panel").querySelectorAll("details[data-key]")) if (known.has(d.dataset.key)) d.open = open.has(d.dataset.key);
+    if (focusKey) {
+      const next = [...$("panel").querySelectorAll("[data-fk]")].find((el) => el.dataset.fk === focusKey);
+      if (next) { next.focus({ preventScroll: true }); if (caret && typeof next.setSelectionRange === "function") try { next.setSelectionRange(...caret); } catch {} }
+    }
+    window.scrollTo(scrollX, scrollY);
+  }, 0);
+}
+
+const patchMany = (ids, changes) => {
+  for (const id of ids) S.overrides.set(id, { ...(S.overrides.get(id) || {}), ...changes });
+  saveOverrides(); redraw();
+};
+const patch = (id, changes) => patchMany([id], changes);
 
 export function projectNames() {
   const names = new Set((S.catalog?.projects || []).map((p) => p.projectName));
@@ -54,8 +84,8 @@ export function projectNames() {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-function projectSelect(value, onchange) {
-  const select = h("select", { onchange: (e) => onchange(e.target.value) }, h("option", { value: "", text: "프로젝트 없음" }),
+function projectSelect(value, onchange, fk) {
+  const select = h("select", { "data-fk": fk, onchange: (e) => onchange(e.target.value) }, h("option", { value: "", text: "프로젝트 없음" }),
     ...projectNames().map((n) => h("option", { value: n, text: n })));
   select.value = value || ""; return select;
 }
@@ -68,7 +98,11 @@ function drawReview() {
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
   if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — 아래 목록에서 제목을 고쳐 주세요`);
-  const moveList = ex.moves.slice(0, 200);
+  const listed = buildReviewSummary({ catalog: S.catalog, rows: effectiveRows(true) }).exceptions;
+  const moveList = listed.moves.slice(0, 200);
+  const renameList = listed.renames.slice(0, 200);
+  const movesOff = listed.moves.filter((m) => S.overrides.get(m.conversationId)?.skipMove).length;
+  const renamesOff = listed.renames.filter((r) => S.overrides.get(r.conversationId)?.skipTitle).length;
   const panel = $("panel");
   fill(panel, 
     h("h2", { text: "3. 바뀌는 내용 검토" }),
@@ -85,9 +119,12 @@ function drawReview() {
     section("결정이 필요한 항목(미결정)", ex.undecided.length, ex.undecided.map((d) => item(d.title, d.why || "판단 근거 없음", [
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, "보존"),
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "delete" }) }, "삭제")])), true),
-    section("프로젝트 이동", ex.moves.length, moveList.map((m) => item(m.title, `${m.from || "프로젝트 없음"} → ${m.to}`, [
-      projectSelect(m.to, (v) => patch(m.conversationId, { project: v }))])), false, ex.moves.length > 200 ? `처음 200건만 표시(전체 ${ex.moves.length}건)` : ""),
-    section("제목 변경", ex.renames.length, ex.renames.slice(0, 200).map((r) => titleItem(r)), false),
+    section("프로젝트 이동", listed.moves.length, [
+      bulkBar(listed.moves, "skipMove", "이동", movesOff, listed.moves.length > 200 ? `처음 200건만 표시(전체 ${listed.moves.length}건). 전체 적용·해제는 200건 밖의 항목에도 적용됩니다.` : ""),
+      moveList.map((m) => moveItem(m))], false, "", "건", `${listed.moves.length - movesOff}건 적용`),
+    section("제목 변경", listed.renames.length, [
+      bulkBar(listed.renames, "skipTitle", "제목 변경", renamesOff, listed.renames.length > 200 ? `처음 200건만 표시(전체 ${listed.renames.length}건). 전체 적용·해제는 200건 밖의 항목에도 적용됩니다.` : ""),
+      renameList.map((r) => titleItem(r))], false, "", "건", `${listed.renames.length - renamesOff}건 적용`),
     section("확신이 낮은 항목", ex.lowConfidence.length, ex.lowConfidence.map((d) => item(d.title, d.why || "", [])), false),
     c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true, "", "개") : null,
     ex.manualRemoves.length ? section("직접 빼야 하는 대화", ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, `현재 프로젝트: ${m.project} — 앱은 프로젝트에서 뺄 수 없어 결과 화면에 안내합니다`, [])), false) : null,
@@ -130,7 +167,7 @@ const REVISE_FILL = "바꾸고 싶은 내용을 여기에 적으세요. 예) 「
 const REVISE_PROMPT = `${REVISE_HEAD}\n- ${REVISE_FILL}`;
 
 function reviseGuide() {
-  return h("details", {}, h("summary", { text: "제안이 마음에 들지 않으면" }), h("div", { class: "body" },
+  return h("details", { "data-key": "제안 수정 안내" }, h("summary", { text: "제안이 마음에 들지 않으면" }), h("div", { class: "body" },
     h("p", { class: "small", text: "작은 수정은 위 목록에서 직접 고치세요. 제안 자체를 바꾸고 싶으면 아래 요청문을 복사해 회색 이탤릭 부분을 지우고 바꿀 내용을 적어 에이전트에게 전달한 뒤 ‘제안 다시 불러오기’를 누르세요." }),
     h("div", { class: "callout" }, h("div", { text: REVISE_HEAD }), h("div", {}, "- ", h("em", { class: "fill", text: REVISE_FILL }))),
     h("div", { class: "row" },
@@ -140,7 +177,7 @@ function reviseGuide() {
 
 function trashControl(candidates) {
   if (!candidates) return null;
-  const set = (changes) => { Object.assign(S.trash, changes); saveTrash(); drawReview(); };
+  const set = (changes) => { Object.assign(S.trash, changes); saveTrash(); redraw(); };
   const radio = (value) => h("input", { type: "radio", name: "trash-mode", checked: S.trash.mode === value && !S.trash.permanent ? true : null,
     onchange: () => set({ mode: value, permanent: false }) });
   // 정해 둔 프로젝트는 이름을 손으로 쓰지 않고 목록에서 고른다. 목록에 없으면 새 이름으로 만들거나 프로젝트 링크를 붙여 넣는다.
@@ -178,15 +215,39 @@ function trashControl(candidates) {
 function trashItem(d, rows) {
   const row = rows.find((r) => r.conversationId === d.conversationId);
   const title = (row?.newTitle || row?.title || d.title).trim();
-  const input = h("input", { class: `title-input${isNormalizedTitle(title) ? "" : " invalid"}`, type: "text", value: title,
+  const input = h("input", { class: `title-input${isNormalizedTitle(title) ? "" : " invalid"}`, type: "text", value: title, "data-fk": `t:${d.conversationId}`,
     onchange: (e) => patch(d.conversationId, { title: e.target.value.trim() }) });
   return h("div", { class: "item" }, h("div", { class: "t", text: d.title }),
     h("div", { class: "m", text: `${d.project || "프로젝트 없음"} · ${d.why || ""}` }), input);
 }
 
-function section(title, count, items, open, note = "", unit = "건") {
+function section(title, count, items, open, note = "", unit = "건", extra = "") {
   if (!count) return null;
-  return h("details", { open: open || null }, h("summary", { text: `${title} (${count}${unit})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, items));
+  return h("details", { open: open || null, "data-key": title }, h("summary", { text: `${title} (${count}${unit}${extra ? ` · ${extra}` : ""})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, [items].flat(2)));
+}
+
+// 목록의 모든 항목을 한 번에 적용하거나(체크) 적용 안 함(해제)으로 바꾼다.
+function bulkBar(list, flag, label, off, note) {
+  const ids = list.map((x) => x.conversationId);
+  return h("div", { class: "bulk" },
+    h("button", { class: "btn ghost", type: "button", disabled: off === 0 ? true : null, onclick: () => patchMany(ids, { [flag]: false }) }, `${label} 전체 적용`),
+    h("button", { class: "btn ghost", type: "button", disabled: off === ids.length ? true : null, onclick: () => patchMany(ids, { [flag]: true }) }, `${label} 전체 해제`),
+    note ? h("span", { class: "muted small", text: note }) : null);
+}
+
+// 적용 체크 상자. 해제하면 그 항목은 바꾸지 않는다(원래 프로젝트·제목 그대로).
+function applyToggle(id, flag) {
+  const off = !!S.overrides.get(id)?.[flag];
+  return h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:${flag}:${id}`, checked: off ? null : true,
+    onchange: (e) => patch(id, { [flag]: !e.target.checked }) }), "적용");
+}
+
+function moveItem(m) {
+  const off = !!S.overrides.get(m.conversationId)?.skipMove;
+  const el = item(m.title, `${m.from || "프로젝트 없음"} → ${m.to}`, [applyToggle(m.conversationId, "skipMove"),
+    projectSelect(m.to, (v) => patch(m.conversationId, { project: v, skipMove: false }), `m:${m.conversationId}`)]);
+  if (off) el.classList.add("off");
+  return el;
 }
 
 export function item(title, meta, controls) {
@@ -194,16 +255,18 @@ export function item(title, meta, controls) {
 }
 
 function titleItem(r) {
-  const input = h("input", { class: "title-input", type: "text", value: r.to });
-  const apply = () => { const v = input.value.trim(); input.classList.toggle("invalid", !isNormalizedTitle(v)); patch(r.conversationId, { title: v }); };
+  const off = !!S.overrides.get(r.conversationId)?.skipTitle;
+  const input = h("input", { class: "title-input", type: "text", value: S.overrides.get(r.conversationId)?.title ?? r.to, "data-fk": `t:${r.conversationId}` });
+  const apply = () => { const v = input.value.trim(); input.classList.toggle("invalid", !isNormalizedTitle(v)); patch(r.conversationId, { title: v, skipTitle: false }); };
   input.addEventListener("change", apply);
-  return h("div", { class: "item" }, h("div", { class: "t", text: r.from }), h("div", { class: "m", text: "→ 새 제목 (주제 — 작업/결과)" }), input);
+  return h("div", { class: `item${off ? " off" : ""}` }, h("div", { class: "t", text: r.from }), h("div", { class: "ctl" }, applyToggle(r.conversationId, "skipTitle")),
+    h("div", { class: "m", text: "→ 새 제목 (주제 — 작업/결과)" }), input);
 }
 
 function projectTable(summary) {
   const rows = summary.projects.filter((p) => p.delta !== 0 || p.isNew);
   if (!rows.length) return null;
-  return h("details", { open: true }, h("summary", { text: `프로젝트별 변화 (${rows.length}개)` }), h("div", { class: "body" },
+  return h("details", { open: true, "data-key": "프로젝트별 변화" }, h("summary", { text: `프로젝트별 변화 (${rows.length}개)` }), h("div", { class: "body" },
     h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "프로젝트" }), h("th", { class: "num", text: "이전" }), h("th", { class: "num", text: "이후" }), h("th", { class: "num", text: "변화" }))),
       h("tbody", {}, rows.map((p) => h("tr", {}, h("td", { text: `${p.name}${p.isNew ? " (신규)" : ""}` }), h("td", { class: "num", text: p.before ?? "—" }), h("td", { class: "num", text: p.after ?? "—" }),
         h("td", { class: `num ${p.delta > 0 ? "up" : "down"}`, text: `${p.delta > 0 ? "+" : ""}${p.delta}` })))))));

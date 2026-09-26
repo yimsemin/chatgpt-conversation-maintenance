@@ -4,7 +4,7 @@ import { appendFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { explainError } from "../errors.js";
+import { explainError } from "../src/errors.js";
 
 test("known failures become an explanation with a next action", () => {
   assert.match(explainError("Backup title does not match abc").title, /제목이 바뀌어/);
@@ -21,7 +21,7 @@ test("unknown errors keep their first line and ask for the copied diagnostics", 
   assert.match(explained.action, /오류 복사/);
 });
 
-import { computeEta, createJobLog, formatDuration, trackProgress } from "../jobs.js";
+import { computeEta, createJobLog, formatDuration, trackProgress } from "../src/jobs.js";
 
 test("eta is estimated from the rate since the phase started", () => {
   assert.equal(computeEta({ startedAtMs: 0, nowMs: 10000, index: 10, total: 110 }), 100);
@@ -68,7 +68,7 @@ test("job logs restore a finished job and close an interrupted one", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-import { deriveStep, describeRelay } from "../session.js";
+import { deriveStep, describeRelay } from "../src/session.js";
 
 test("the step follows the running job first, then the run files", () => {
   assert.equal(deriveStep({ activeJobKind: "apply", hasRun: true }), "apply");

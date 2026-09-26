@@ -9,8 +9,8 @@ import {
   acquireLock,
   lockStatus,
   releaseLock,
-} from "../maintenance-lock.js";
-import { lockFilePath } from "../data-dir.js";
+} from "../src/maintenance-lock.js";
+import { lockFilePath } from "../src/data-dir.js";
 
 function dataDirFixture() {
   return mkdtempSync(join(tmpdir(), "maintenance-lock-"));

@@ -10,7 +10,7 @@
 
 **있어야 하는 것**: 코드, 테스트, `docs/`, 기준 문서(`AGENTS.md`, `README.md`, `API_COMPATIBILITY.md`, `CLASSIFICATION_WORKFLOW.md`), `templates/`, `.gitignore`의 `/data/`
 
-**없어야 하는 것**: `data/`, `.local/`, 세션·쿠키·브라우저 프로필 파일, 대화 제목·프로젝트명이 담긴 파일, ChatGPT 프로젝트 주소·ID(데이터 폴더의 `known-projects.json`은 Git 밖이라 예외)
+**없어야 하는 것**: `data/`, `.local/`, 세션·쿠키·브라우저 프로필 파일, 대화 제목·프로젝트명이 담긴 파일, ChatGPT 프로젝트 주소·ID(데이터 폴더의 `src/known-projects.json`은 Git 밖이라 예외)
 
 ## 공개 직전 확인
 
@@ -22,7 +22,7 @@
 
 ## 이미 처리한 것
 
-- **개인 정보 하드코딩** — `repo-check.js`가 `os.homedir()` 기준으로 개인 절대경로를 동적 검사한다. 추적 코드·테스트 픽스처 전수 검색 결과 개인 절대경로·실제 대화 제목·프로젝트명 없음(합성 데이터만 사용).
+- **개인 정보 하드코딩** — `src/repo-check.js`가 `os.homedir()` 기준으로 개인 절대경로를 동적 검사한다. 추적 코드·테스트 픽스처 전수 검색 결과 개인 절대경로·실제 대화 제목·프로젝트명 없음(합성 데이터만 사용).
 - **사용자 데이터 격리** — 실행 산출물·삭제후보 목록·분류체계는 데이터 폴더에만 있고 `.gitignore`와 `npm run repo:check`가 이중으로 막는다.
 - **사용자 안내** — [GETTING_STARTED.md](GETTING_STARTED.md), [AGENT_SETUP.md](AGENT_SETUP.md), README에 데이터 폴더 규약·계정 요건·비공식 API 한계를 담았다.
 

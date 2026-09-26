@@ -10,12 +10,12 @@ import test from "node:test";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function run(port, ...args) {
-  return spawnSync(process.execPath, [join(ROOT, "launcher.js"), ...args, "--no-open"], {
+  return spawnSync(process.execPath, [join(ROOT, "src", "launcher.js"), ...args, "--no-open"], {
     cwd: ROOT, env: { ...process.env, MAINTENANCE_PORT: String(port) }, encoding: "utf8", timeout: 15000 });
 }
 
 async function startApp(port, cwd = ROOT) {
-  const child = spawn(process.execPath, [join(ROOT, "launcher.js"), "--no-open"], {
+  const child = spawn(process.execPath, [join(ROOT, "src", "launcher.js"), "--no-open"], {
     cwd, env: { ...process.env, MAINTENANCE_PORT: String(port) }, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", (chunk) => { output += chunk; });
@@ -67,7 +67,7 @@ test("closing the terminal window (SIGHUP) or pressing Ctrl+C ends the app", { s
 });
 
 test("the app status flags code that changed after the process started", async () => {
-  const { appStatus } = await import("../app-status.js");
+  const { appStatus } = await import("../src/app-status.js");
   const root = mkdtempSync(join(tmpdir(), "app-status-"));
   try {
     writeFileSync(join(root, "old.js"), "");
@@ -90,7 +90,7 @@ test("starting from another folder (double-click, a terminal elsewhere) still se
   } finally { run(port, "stop"); app.child.kill("SIGKILL"); }
 });
 
-import { bodyLimitForPath } from "../server.js";
+import { bodyLimitForPath } from "../src/server.js";
 
 // 릴레이 결과에는 대화 본문 전체가 실린다. 2MB 한도로는 실제 대화가 거부되고,
 // 결과가 브로커에 도달하지 못해 스캔이 "relay timed out"으로 실패했다(2026-09-12 실측).

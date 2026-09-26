@@ -11,7 +11,7 @@ import { resolveDataDir, runsDir } from "./data-dir.js";
 import { CONFIG } from "./config.js";
 import { explainError } from "./errors.js";
 
-export const APP_ROOT = dirname(fileURLToPath(import.meta.url));
+export const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
 

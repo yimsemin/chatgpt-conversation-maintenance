@@ -12,7 +12,7 @@ import {
   prepareManagementWorkflow,
   runManagementWorkflow,
   validateManagementManifest,
-} from "../management.js";
+} from "../src/management.js";
 
 const ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379345";
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
