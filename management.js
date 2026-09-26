@@ -174,6 +174,8 @@ async function verifyRename(api, action) {
   const id = response.data?.conversation_id || response.data?.id;
   assert(id === action.conversationId, `Rename verification returned a different conversation ID`);
   assert(response.data?.title === action.newTitle, `Rename verification failed for ${action.conversationId}`);
+  // 제목 변경은 수정 시각을 바꾼다. 바꾼 대화끼리의 목록 순서를 나중에 확인할 수 있게 그 시각을 영수증에 남긴다.
+  return response.data?.update_time ?? null;
 }
 
 async function verifyDelete(api, action) {
@@ -296,8 +298,9 @@ export async function runManagementWorkflow({ mode, manifest: rawManifest, accou
 
       if (action.newTitle) {
         await api.patchConversation(action.conversationId, { title: action.newTitle });
-        result.mutations.push({ type: "rename", title: action.newTitle });
-        await verifyRename(api, action);
+        const rename = { type: "rename", title: action.newTitle };
+        result.mutations.push(rename);
+        rename.updateTime = await verifyRename(api, action);
       }
 
       if (action.decision === "delete") {

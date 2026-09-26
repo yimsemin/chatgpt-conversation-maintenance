@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const bookmarklet = readFileSync(new URL("../public/bookmarklet.html", import.meta.url), "utf8");
-const maintenance = readFileSync(new URL("../public/maintenance.html", import.meta.url), "utf8");
+// 유지관리 화면 쪽 릴레이 코드: 화면 페이지와 릴레이 클라이언트 스크립트.
+const maintenance = readFileSync(new URL("../public/app.html", import.meta.url), "utf8")
+  + readFileSync(new URL("../public/assets/relay-client.js", import.meta.url), "utf8")
+  + readFileSync(new URL("../public/assets/app.js", import.meta.url), "utf8");
 
 test("page executor keeps session credentials inside chatgpt.com and authenticates backend calls", () => {
   assert.match(bookmarklet, /fetch\("\/api\/auth\/session"/);
@@ -15,9 +18,9 @@ test("page executor keeps session credentials inside chatgpt.com and authenticat
 
 test("both browser surfaces display and exchange the same relay version", () => {
   assert.match(bookmarklet, /앱 버전 <code>__APP_RELEASE__<\/code>/);
-  assert.match(maintenance, /앱 버전 <code>__APP_RELEASE__<\/code>/);
+  assert.match(maintenance, /<meta name="app-release" content="__APP_RELEASE__">/);
   assert.match(bookmarklet, /type: "chatgpt-relay-v2-ready", release: R, protocolVersion: V/);
-  assert.match(maintenance, /release: APP_RELEASE, protocolVersion: RELAY_PROTOCOL_VERSION/);
+  assert.match(maintenance, /JSON\.stringify\(\{ clientId, release, protocolVersion \}\)/);
   assert.match(maintenance, /북마클릿 업데이트 필요/);
   assert.match(bookmarklet, /chatgpt-relay-v2-request/);
   assert.match(maintenance, /chatgpt-relay-v2-request/);

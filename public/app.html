@@ -37,26 +37,13 @@
   <details class="advanced" id="advanced">
     <summary>고급 — 자주 쓰지 않는 작업</summary>
     <div class="body">
-      <p class="muted small">평소에는 위의 ‘새 대화 확인’만 쓰면 됩니다. 아래는 특별한 경우에만 필요합니다.</p>
+      <p class="muted small">평소에는 위의 ‘이 범위 확인’만 쓰면 됩니다. 아래는 특별한 경우에만 필요합니다. (전체를 처음부터 다시 정리하려면 조사 범위에서 ‘모든 대화’를 고르세요.)</p>
       <div class="acts">
-        <div class="act">
-          <button class="btn ghost" id="rebaseline" type="button">ChatGPT 상태 다시 맞추기</button>
-          <p class="muted small">ChatGPT에서 직접 대화를 옮기거나 지운 뒤 누르세요. 이 도구의 기록(기준선)을 지금 ChatGPT와 똑같이 맞춥니다. 읽기만 하며 2~3분 걸립니다.</p>
-        </div>
-        <div class="act">
-          <button class="btn ghost" id="collect" type="button">모든 대화 본문 받기</button>
-          <p class="muted small">전체 대화를 처음부터 다시 분류하고 싶을 때만 쓰세요. 대화 본문을 전부 내려받아 수 분~수 시간 걸립니다. ChatGPT는 바뀌지 않으며 끊기면 이어받습니다.</p>
-        </div>
         <div class="act">
           <a class="btn ghost" href="/auth/bookmarklet" target="_blank" rel="noopener">ChatGPT 연결 방법</a>
           <p class="muted small">연결이 끊겼거나 처음 설치할 때 봅니다. 북마클릿을 만들고 chatgpt.com 탭에서 누르는 방법을 안내합니다.</p>
         </div>
-        <div class="act">
-          <a class="btn ghost" href="/legacy" target="_blank" rel="noopener">전체 목록 직접 편집(이전 화면)</a>
-          <p class="muted small">모든 대화를 표로 보며 하나씩 고치는 예전 화면입니다. 위의 5단계 흐름으로 안 되는 예외 처리용입니다.</p>
-        </div>
       </div>
-      <label class="check"><input type="checkbox" id="quiet" checked> 적용 뒤 간단히 확인하기(권장) — 적용하는 동안 다른 대화를 만들거나 고치지 않았다고 보고, 최근 수정된 대화만 다시 확인해 마무리합니다. 끄면 전체를 다시 읽어 확인해 시간이 더 걸립니다.</label>
       <label class="field">작업 폴더 <input id="workspace" type="text" spellcheck="false" autocomplete="off"></label>
       <h3>최근 작업</h3>
       <div id="recent" class="recent"></div>

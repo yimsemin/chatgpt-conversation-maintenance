@@ -1,5 +1,8 @@
-// 대화 카탈로그 수집: 프로젝트를 순회하며 모든 활성·보관 대화를 읽는 전체 수집(crawl).
-// 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, API_COMPATIBILITY.md) 목록만으로는 완전하지 않다.
+// 대화 카탈로그 수집. 범위(scope)에 따라 두 가지다.
+// - 전체 수집(collectConversationCatalog): 프로젝트를 순회하며 모든 활성·보관 대화를 읽는다. 완전하다.
+// - 범위 수집(collectScopedCatalog): 고른 범위의 활성 대화만 읽는다(프로젝트 범위는 그 프로젝트만, 나머지는 목록 기준).
+// 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, API_COMPATIBILITY.md) 목록만으로는 프로젝트 안의 대화를 다 못 찾는다.
+// 프로젝트 없는 대화는 그 실측에서 빠진 적이 없어 목록으로 찾는다.
 import { assert } from "./assert.js";
 import { CONVERSATION_ID } from "./ids.js";
 
@@ -95,6 +98,11 @@ async function discoverProjects(api) {
   return projects;
 }
 
+// 소유한 프로젝트 이름 목록(요청 1~2회).
+export async function listProjectNames(api) {
+  return (await discoverProjects(api)).map((project) => project.projectName);
+}
+
 export async function collectConversationCatalog(api, now = () => new Date(), onProgress = () => {}) {
   assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
     "Catalog API adapter is incomplete");
@@ -171,6 +179,105 @@ export async function collectConversationCatalog(api, now = () => new Date(), on
   })) });
 }
 
+const SAMPLE_PAGE_SIZE = 10;
+
+// 프로젝트 하나의 대화를 (한 페이지 또는 끝까지) 읽는다. onlyFirstPage 는 프로젝트 성격을 알려 주는 표본 제목용이다.
+async function readProjectConversations(api, project, { onlyFirstPage = false } = {}) {
+  const items = [];
+  let cursor = null;
+  const seenCursors = new Set();
+  while (true) {
+    const data = unwrap(
+      await api.listProjectConversations(project.projectId,
+        { cursor: cursor || "", limit: onlyFirstPage ? SAMPLE_PAGE_SIZE : PROJECT_CONVERSATION_PAGE_SIZE }),
+      `Conversation discovery for project "${project.projectName}"`);
+    const page = data.items || data.conversations || [];
+    if (!page.length) break;
+    for (const item of page) if (CONVERSATION_ID.test(item.id || "")) items.push({ ...item, projectName: project.projectName });
+    const next = data.list?.cursor || data.cursor || data.next_cursor || null;
+    if (onlyFirstPage || !next) break;
+    assert(!seenCursors.has(next), `Conversation pagination cursor repeated for "${project.projectName}"`);
+    seenCursors.add(next);
+    cursor = next;
+  }
+  return items;
+}
+
+function catalogRecord(item, projectName) {
+  return {
+    conversationId: item.id,
+    title: typeof item.title === "string" && item.title.trim() ? item.title : "Untitled",
+    createTime: item.create_time ?? null,
+    updateTime: item.update_time ?? null,
+    isArchived: item.is_archived === true,
+    projectName: projectName ?? null,
+  };
+}
+
+// 범위 수집. scope.kind: "project"(projectName) | "unassigned" | "recent"(days). 완전 수집은 collectConversationCatalog 다.
+// 반환하는 카탈로그는 complete:false 이며, 읽지 않은 프로젝트의 대화 수는 null 이다(요약이 그 수를 지어내지 않게).
+export async function collectScopedCatalog(api, scope, now = () => new Date(), onProgress = () => {}) {
+  assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
+    "Catalog API adapter is incomplete");
+  assert(["project", "unassigned", "recent"].includes(scope?.kind), "Unsupported scope");
+  onProgress({ phase: "projects", index: 0, total: null });
+  const projects = await discoverProjects(api);
+  const nameById = new Map(projects.map((project) => [project.projectId, project.projectName]));
+  const records = new Map();
+  const known = new Map(); // 프로젝트 이름 -> { count, samples }
+
+  if (scope.kind === "project") {
+    const target = projects.find((project) => project.projectName === scope.projectName);
+    assert(target, `프로젝트를 찾을 수 없습니다: ${scope.projectName}`);
+    onProgress({ phase: "projects", index: 0, total: 1, projectName: target.projectName });
+    const items = await readProjectConversations(api, target);
+    for (const item of items) records.set(item.id, catalogRecord(item, target.projectName));
+    known.set(target.projectName, { count: items.length, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean) });
+  } else {
+    // 다른 프로젝트로 옮길 후보를 고르는 데 쓰이도록 프로젝트마다 표본 제목만 읽는다.
+    for (const [index, project] of projects.entries()) {
+      onProgress({ phase: "projects", index, total: projects.length, projectName: project.projectName });
+      const items = await readProjectConversations(api, project, { onlyFirstPage: true });
+      known.set(project.projectName, { count: null, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean) });
+    }
+    const cutoff = scope.kind === "recent" ? now().getTime() - scope.days * 86400000 : null;
+    let offset = 0;
+    const seenPages = new Set();
+    listing: while (true) {
+      const data = unwrap(await api.listConversations({ archived: false, offset, limit: PAGE_SIZE }), "Active conversation discovery");
+      const items = data.items || [];
+      if (!items.length) break;
+      const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
+      assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
+      seenPages.add(pageKey);
+      for (const item of items) {
+        if (!CONVERSATION_ID.test(item.id || "")) continue;
+        const updated = timeMilliseconds(item.update_time);
+        // 목록은 수정 시각 순이므로 기간보다 오래된 항목이 나오면 그 뒤는 볼 필요가 없다.
+        if (cutoff !== null && updated !== null && updated < cutoff) break listing;
+        const gizmo = typeof item.gizmo_id === "string" ? item.gizmo_id : "";
+        // 프로젝트(g-p-) 대화는 이름을 알아야 다루므로, 이름을 모르는 프로젝트의 대화는 제외한다.
+        // g- 로 시작하는 다른 값은 사용자 정의 GPT 이므로 프로젝트 없음으로 본다.
+        if (gizmo.startsWith("g-p-") && !nameById.has(gizmo)) continue;
+        const projectName = gizmo.startsWith("g-p-") ? nameById.get(gizmo) : null;
+        if (scope.kind === "unassigned" && projectName) continue;
+        records.set(item.id, catalogRecord(item, projectName));
+      }
+      offset += items.length;
+      onProgress({ phase: "active", index: offset, total: Number.isFinite(data.total) ? data.total : null });
+      const hasNext = data.has_next ?? data.has_more;
+      if (hasNext === false || (hasNext !== true && items.length < PAGE_SIZE)) break;
+    }
+  }
+  const catalog = buildCatalog({ projects, now, conversations: [...records.values()] });
+  catalog.projects = projects.map((project) => {
+    const info = known.get(project.projectName) || { count: null, samples: [] };
+    return { projectName: project.projectName, conversationCount: info.count, sampleTitles: info.samples };
+  }).sort((left, right) => left.projectName.localeCompare(right.projectName));
+  catalog.scope = { ...catalog.scope, complete: false, collected: scope };
+  return catalog;
+}
+
 function buildCatalog({ projects, conversations, now = () => new Date() }) {
   conversations = [...conversations].sort((left, right) => left.conversationId.localeCompare(right.conversationId));
   const projectContext = projectCatalog(projects, conversations);
@@ -183,6 +290,7 @@ function buildCatalog({ projects, conversations, now = () => new Date() }) {
       activeConversations: true,
       archivedConversations: true,
       projectDiscovery: "owned_only",
+      complete: true,
     },
     counts: {
       conversations: conversations.length,

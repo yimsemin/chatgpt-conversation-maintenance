@@ -1,22 +1,32 @@
 // 화면이 읽는 데이터(세션·요약·보고서·분류안·카탈로그). 읽기 전용이다.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { runFiles } from "./run-files.js";
 import { basename, join } from "node:path";
-import { stateFilePath } from "./data-dir.js";
 import { lockStatus } from "./maintenance-lock.js";
 import { relayBroker } from "./remote-relay.js";
 import { buildClaudePrompt } from "./classification-review.js";
 import { CLASSIFICATION_CRITERIA } from "./classification-criteria.js";
 import { validateClassificationProposals } from "./proposal-validation.js";
-import { readParking } from "./parking.js";
-import { deriveStep, describeBaseline, describeRelay } from "./session.js";
+import { readTrash } from "./trash.js";
+import { readKnownProjects } from "./known-projects.js";
+import { deriveStep, describeRelay } from "./session.js";
 import { buildReviewSummary, rowsFromDecisions, rowsFromProposal } from "./summary.js";
 import { publicPointer, readPointer, validateMaintenanceWorkspace } from "./web-common.js";
 import { readJson } from "./fs-json.js";
 import { jobLogFor, jobs, publicJob } from "./web-jobs.js";
 
+// 삭제후보 프로젝트에 옮겨 둔 대화 현황: 프로젝트 이름, 건수, 가장 오래 둔 대화의 경과 일수.
+export function trashSummary(dataDir, nowMs = Date.now()) {
+  const trash = readTrash(dataDir);
+  const times = trash.items.map((item) => Date.parse(item.trashedAt || "")).filter(Number.isFinite);
+  return {
+    project: trash.project, count: trash.items.length,
+    oldestDays: times.length ? Math.floor((nowMs - Math.min(...times)) / 86400000) : null,
+  };
+}
+
 export function workspaceStatus(workspaceValue) {
-  const { workspace, dataDir, state } = validateMaintenanceWorkspace(workspaceValue);
+  const { workspace, dataDir } = validateMaintenanceWorkspace(workspaceValue);
   const lock = lockStatus({ dataDir });
   const pointer = readPointer(workspace, dataDir);
   return {
@@ -26,10 +36,6 @@ export function workspaceStatus(workspaceValue) {
     lock: lock.locked
       ? { device: lock.holder?.device || null, acquiredAt: lock.holder?.acquiredAt || null, stale: lock.stale }
       : null,
-    baseline: {
-      generatedAt: state.generatedAt || null,
-      counts: state.counts || {},
-    },
     currentRun: pointer ? publicPointer(pointer) : null,
   };
 }
@@ -62,12 +68,6 @@ export function summaryData(workspace, dataDir) {
 export function sessionData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   const relay = relayBroker.status();
-  let baseline = null;
-  try {
-    const state = readJson(stateFilePath(dataDir), "기준선");
-    baseline = { generatedAt: state.generatedAt || null, counts: state.counts || {}, verification: state.source?.verification || null,
-      ...describeBaseline({ generatedAt: state.generatedAt, verification: state.source?.verification }) };
-  } catch {}
   const active = [...jobs.values()].filter((job) => job.workspace === workspace && !job.done);
   const activeJob = active[0] ? publicJob(active[0]) : null;
   const recent = jobLogFor(dataDir).recent(3);
@@ -92,15 +92,11 @@ export function sessionData(workspace, dataDir) {
   const lock = lockStatus({ dataDir });
   return {
     relay: { ...relay, ...describeRelay(relay) },
-    baseline,
-    lastRebaseline: (() => {
-      try { const last = JSON.parse(readFileSync(join(dataDir, "rebaseline-last.json"), "utf8")); return { at: last.at, summary: last.summary }; }
-      catch { return null; }
-    })(),
-    parking: (() => { const parking = readParking(dataDir); return { project: parking.project, count: parking.items.length }; })(),
+    knownProjects: readKnownProjects(dataDir),
+    trash: trashSummary(dataDir),
     run,
     report,
-    step: deriveStep({ hasBaseline: Boolean(baseline), activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
+    step: deriveStep({ activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
       hasReport: run?.hasReport, hasRun: Boolean(run), resultSuperseded }),
     job: activeJob,
     recentJobs: recent,
@@ -176,24 +172,19 @@ function claudePrompt(pointer) {
   } catch { return null; }
 }
 
-// 스캔 후에는 이번 실행의 catalog.json, 스캔 전에는 데이터 폴더의 기준선(state.json)에서
-// 대화 전체 목록을 만든다. 화면의 검색·필터·정렬은 클라이언트가 처리한다.
+// 이번 실행의 catalog.json에서 대화 목록을 만든다. 화면의 검색·필터·정렬은 클라이언트가 처리한다.
 export function catalogData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   const runCatalogPath = pointer ? runFiles(pointer.runDir).catalog : null;
-  const useRun = Boolean(runCatalogPath && existsSync(runCatalogPath));
-  const catalog = useRun
-    ? readJson(runCatalogPath, "카탈로그")
-    : readJson(stateFilePath(dataDir), "기준선");
+  if (!runCatalogPath || !existsSync(runCatalogPath)) return { ready: false };
+  const catalog = readJson(runCatalogPath, "카탈로그");
 
   const reasonsById = new Map();
-  let heldConversationIds = [];
-  if (useRun && existsSync(pointer.inventoryPath)) {
+  if (existsSync(pointer.inventoryPath)) {
     const inventory = readJson(pointer.inventoryPath, "인벤토리");
     for (const item of inventory.conversations || []) {
       reasonsById.set(item.conversationId, item.reasons || []);
     }
-    heldConversationIds = inventory.heldConversationIds || [];
   }
 
   const conversations = (catalog.conversations || []).map((item) => ({
@@ -207,14 +198,14 @@ export function catalogData(workspace, dataDir) {
   }));
 
   return {
-    source: useRun ? "scan" : "baseline",
+    ready: true,
+    scope: catalog.scope || null,
     generatedAt: catalog.generatedAt || null,
     counts: {
       conversations: conversations.length,
       unassigned: conversations.filter((item) => !item.projectName).length,
       archived: conversations.filter((item) => item.isArchived).length,
       candidates: reasonsById.size,
-      held: heldConversationIds.length,
       projects: (catalog.projects || []).length,
     },
     projects: (catalog.projects || []).map((project) => ({

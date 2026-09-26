@@ -30,7 +30,7 @@ test("root modules have no import cycles", () => {
 
 // 순수·하위 모듈은 서버·화면 계층을 알지 못한다.
 const LOW_LEVEL = ["assert.js", "fs-json.js", "run-files.js", "phases.js", "summary.js", "session.js", "errors.js", "jobs.js",
-  "parking.js", "catalog.js", "catalog-diff.js", "baseline.js", "title-rules.js", "content-hash.js", "ids.js", "remote-ops.js",
+  "trash.js", "catalog.js", "title-rules.js", "content-hash.js", "ids.js", "remote-ops.js",
   "relay-api.js", "classification-criteria.js", "proposal-validation.js", "decision-compile.js"];
 
 test("low-level modules never import the web layer, the server or launcher", () => {

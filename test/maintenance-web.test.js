@@ -45,12 +45,6 @@ function workspaceFixture() {
   writeFileSync(join(root, "package.json"), JSON.stringify({
     name: "chatgpt-conversation-maintenance",
   }));
-  writeFileSync(join(root, "data", "state.json"), JSON.stringify({
-    version: 1,
-    kind: "conversation-maintenance-state",
-    generatedAt: "2026-08-27T00:00:00.000Z",
-    counts: { conversations: 3 },
-  }));
   return root;
 }
 
@@ -60,8 +54,7 @@ test("maintenance web validates only a maintenance workspace", () => {
     const result = validateMaintenanceWorkspace(root);
     assert.equal(result.workspace, root);
     assert.equal(result.dataDir, join(root, "data"));
-    assert.equal(result.statePath, join(root, "data", "state.json"));
-    assert.equal(result.state.kind, "conversation-maintenance-state");
+    assert.deepEqual(Object.keys(result).sort(), ["dataDir", "workspace"]);
 
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "another-project" }));
     assert.throws(() => validateMaintenanceWorkspace(root), /유지관리 프로젝트/);

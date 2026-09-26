@@ -89,8 +89,8 @@ export function createFakeChatGPT({ conversations = [], projects = [], accountId
       const conv = convs.get(id);
       if (!conv || !conv.is_visible) return fail(404, "not found");
       if (!projs.has(projectId)) return fail(404, "project not found");
+      // 프로젝트 이동은 수정 시각을 바꾸지 않는다(2026-09-26 실측: 이동된 120건 모두 수정 시각 유지).
       conv.gizmo_id = projectId;
-      touch(conv);
       return ok({ success: true });
     },
     patchConversation: ({ id, body }) => {

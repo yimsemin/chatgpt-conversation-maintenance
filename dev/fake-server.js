@@ -5,9 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { collectConversationCatalog } from "../catalog.js";
 import { assembleProposal } from "../overhaul.js";
-import { createRelayApi } from "../relay-api.js";
 import { relayBroker } from "../remote-relay.js";
 import { attachFakePage, createFakeChatGPT, fakeConversationId, fakeProjectId } from "../test/support/fake-chatgpt.js";
 
@@ -15,7 +13,6 @@ process.argv.push("--no-open");
 const slow = process.argv.includes("--slow");
 const rateLimited = process.argv.includes("--rate-limit");
 const noRelay = process.argv.includes("--no-relay");
-const noBaseline = process.argv.includes("--no-baseline");
 // 제안이 만들어진 직후 후보 하나의 제목을 ChatGPT 쪽에서 바꿔, 적용이 "제목 불일치"로 멈추는 상황을 만든다.
 const renameAfterProposal = process.argv.includes("--rename-after-proposal");
 
@@ -41,15 +38,7 @@ for (const arg of process.argv.filter((item) => item.startsWith("--inject="))) {
   fake.inject({ op, status: Number(status), times: Number(times) });
 }
 
-// 기준선: 지금 상태를 수집해 state.json 으로 저장한다.
-const directApi = createRelayApi({ broker: { request: async ({ op, params }) => fake.handle({ op, params }) }, requestDelayMs: 0 });
-const base = await collectConversationCatalog(directApi);
-if (!noBaseline) writeFileSync(join(root, "data", "state.json"), JSON.stringify({
-  version: 1, kind: "conversation-maintenance-state", generatedAt: base.generatedAt, scope: base.scope,
-  counts: base.counts, projects: base.projects, conversations: base.conversations,
-}, null, 2));
-
-// 기준선 이후 새로 생긴 대화(제목 형식 위반, 잡음, 정상)
+// 프로젝트에 넣지 않은 새 대화(제목 형식 위반, 잡음, 정상). 프로젝트 없는 대화 범위의 후보가 된다.
 const news = [
   ["새 대화 하나", null], ["테스트 입력", null], ["이어폰 후기 — 신제품 청음", null],
   ["회의록 정리", null], ["프롬프트 검증 — 재현 실험", null], ["임시 메모", null],

@@ -1,12 +1,13 @@
 // /maintenance/* 요청을 처리하는 라우터. 실제 일은 web-*.js 모듈이 한다.
 import { assert } from "./assert.js";
 import { relayBroker } from "./remote-relay.js";
-import { readParking } from "./parking.js";
+import { readTrash } from "./trash.js";
 import { APP_ROOT, createSafeDiagnostic, jsonResponse, readRequestJson, validateMaintenanceWorkspace } from "./web-common.js";
 import { createJob, jobLogFor, jobs, publicJob, relayAccountId, relayApi, startAsyncJob } from "./web-jobs.js";
 import { catalogData, proposalData, reportData, reviewedDecisionsData, sessionData, summaryData, workspaceStatus } from "./web-views.js";
-import { prepareParkingFollowUp, savePastedProposal, writeReviewedDecisions } from "./web-decisions.js";
-import { applyWorkflow, initialBaselineWorkflow, rebaselineWorkflow, scanWorkflow } from "./web-workflows.js";
+import { prepareTrashFollowUp, savePastedProposal, writeReviewedDecisions } from "./web-decisions.js";
+import { applyWorkflow, trashSyncWorkflow, projectListWorkflow, scanWorkflow } from "./web-workflows.js";
+import { validateScope } from "./scan.js";
 
 export { jobEvent, formatScanProgress, reportProgress } from "./web-jobs.js";
 export { createSafeDiagnostic, validateMaintenanceWorkspace } from "./web-common.js";
@@ -16,8 +17,8 @@ export { planReuseDecision, assertApplyablePhase } from "./web-workflows.js";
 const RELAY_REQUIRED = "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요";
 
 // ---- 라우트 정의 ----
-// 각 라우트는 (ctx) => 값 을 돌려준다. ctx 에는 검증된 작업 폴더(workspace, dataDir, state)와 요청 본문·쿼리가 있다.
-// state: "required"(기본) | "optional"(기준선이 없어도 됨). 작업을 시작하는 라우트는 startJob() 결과(202)를 돌려준다.
+// 각 라우트는 (ctx) => 값 을 돌려준다. ctx 에는 검증된 작업 폴더(workspace, dataDir)와 요청 본문·쿼리가 있다.
+// 작업을 시작하는 라우트는 startJob() 결과(202)를 돌려준다.
 
 const ROUTES = new Map();
 function route(method, path, options, handler) {
@@ -37,31 +38,29 @@ function startJob(ctx, { kind = "scan", stage = kind, requestDelayMs, run }) {
 }
 
 get("/maintenance/status", { workspace: "raw" }, (ctx) => workspaceStatus(ctx.workspaceValue));
-get("/maintenance/session", { state: "optional" }, (ctx) => sessionData(ctx.workspace, ctx.dataDir));
+get("/maintenance/session", (ctx) => sessionData(ctx.workspace, ctx.dataDir));
 get("/maintenance/proposal", (ctx) => proposalData(ctx.workspace, ctx.dataDir));
 get("/maintenance/summary", (ctx) => summaryData(ctx.workspace, ctx.dataDir));
 get("/maintenance/report", (ctx) => reportData(ctx.workspace, ctx.dataDir));
 get("/maintenance/catalog", (ctx) => catalogData(ctx.workspace, ctx.dataDir));
 get("/maintenance/decisions", (ctx) => reviewedDecisionsData(ctx.workspace, ctx.dataDir));
 
-get("/maintenance/parking", (ctx) => {
-  const parking = readParking(ctx.dataDir);
-  const present = new Map(ctx.state.conversations.map((item) => [item.conversationId, item]));
+get("/maintenance/trash", (ctx) => {
+  const trash = readTrash(ctx.dataDir);
   return {
-    project: parking.project,
-    items: parking.items.map((item) => ({
-      conversationId: item.conversationId, title: present.get(item.conversationId)?.title || item.title,
-      fromProject: item.fromProject, reason: item.reason, intendedTarget: item.intendedTarget, parkedAt: item.parkedAt,
-      inBaseline: present.has(item.conversationId),
+    project: trash.project,
+    items: trash.items.map((item) => ({
+      conversationId: item.conversationId, title: item.title, fromProject: item.fromProject, reason: item.reason,
+      intendedTarget: item.intendedTarget, trashedAt: item.trashedAt,
     })),
   };
 });
-post("/maintenance/parking/prepare", (ctx) => prepareParkingFollowUp(ctx.workspace, ctx.dataDir, ctx.body.decisions));
+post("/maintenance/trash/prepare", (ctx) => prepareTrashFollowUp(ctx.workspace, ctx.dataDir, ctx.body.decisions));
 post("/maintenance/proposal", (ctx) => savePastedProposal(ctx.workspace, ctx.dataDir, ctx.body.proposalJson));
 post("/maintenance/decisions", (ctx) =>
-  writeReviewedDecisions(ctx.workspace, ctx.dataDir, ctx.body.decisions, ctx.body.parking || null));
+  writeReviewedDecisions(ctx.workspace, ctx.dataDir, ctx.body.decisions, ctx.body.trash || null));
 
-get("/maintenance/jobs", { state: "optional" }, (ctx) => {
+get("/maintenance/jobs", (ctx) => {
   const active = [...jobs.values()].filter((job) => job.workspace === ctx.workspace && !job.done).map(publicJob);
   const recent = jobLogFor(ctx.dataDir).recent(10).filter((item) => !active.some((job) => job.id === item.id));
   return { active, recent };
@@ -73,26 +72,20 @@ post("/maintenance/cancel", { workspace: "none" }, (ctx) => {
   return { cancelling: true };
 });
 
-post("/maintenance/scan", (ctx) => startJob(ctx, {
-  run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job),
-}));
-post("/maintenance/collect", (ctx) => startJob(ctx, {
-  run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { full: true }),
-}));
-post("/maintenance/rebaseline", (ctx) => startJob(ctx, {
-  stage: "rebaseline", run: (api, job) => rebaselineWorkflow(ctx.workspace, ctx.dataDir, api, job),
-}));
-post("/maintenance/baseline", { state: "optional" }, (ctx) => {
-  assert(!ctx.state, "이미 기록이 있습니다. 다시 맞추려면 고급 메뉴의 ‘ChatGPT 상태 다시 맞추기’를 쓰세요");
-  assert(["accept", "empty"].includes(ctx.body.mode), "기준선 방식이 올바르지 않습니다");
-  return startJob(ctx, {
-    stage: "baseline", run: (api, job) => initialBaselineWorkflow(ctx.workspace, ctx.dataDir, api, job, { mode: ctx.body.mode }),
-  });
+post("/maintenance/scan", (ctx) => {
+  const scope = validateScope(ctx.body.scope);
+  return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope }) });
 });
+post("/maintenance/projects", (ctx) => startJob(ctx, {
+  run: (api, job) => projectListWorkflow(ctx.dataDir, api, job),
+}));
+post("/maintenance/trash/sync", (ctx) => startJob(ctx, {
+  run: (api, job) => trashSyncWorkflow(ctx.workspace, ctx.dataDir, api, job),
+}));
 post("/maintenance/apply", (ctx) => startJob(ctx, {
   kind: "apply", requestDelayMs: 2000,
   run: async (api, job) => applyWorkflow(ctx.workspace, ctx.dataDir, api, await relayAccountId(api),
-    ctx.body.confirmDeletes === true, job, { quiet: ctx.body.quiet === true }),
+    ctx.body.confirmDeletes === true, job),
 }));
 
 function jobStatus(jobId) {
@@ -116,10 +109,11 @@ export async function handleMaintenanceWebRequest(req, res) {
       return true;
     }
     const body = req.method === "POST" ? await readRequestJson(req) : {};
-    const workspaceValue = (req.method === "POST" ? body.workspace : url.searchParams.get("workspace")) || APP_ROOT;
+    // 작업 폴더는 항상 요청이 밝혀야 한다. 기본값을 두면 모의 서버 같은 임시 환경에서도 요청이 실제 데이터 폴더로 향할 수 있다.
+    const workspaceValue = req.method === "POST" ? body.workspace : url.searchParams.get("workspace");
     const ctx = { url, body, workspaceValue };
     if (entry.options.workspace !== "raw" && entry.options.workspace !== "none") {
-      Object.assign(ctx, validateMaintenanceWorkspace(workspaceValue, { requireState: entry.options.state !== "optional" }));
+      Object.assign(ctx, validateMaintenanceWorkspace(workspaceValue));
     }
     const result = entry.handler(ctx);
     const { status = 200, value } = result && typeof result === "object" && "value" in result && "status" in result

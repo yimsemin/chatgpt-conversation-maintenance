@@ -2,7 +2,7 @@
 /**
  * 로컬 대화 유지관리 웹앱 서버.
  *
- * `127.0.0.1:8523`에서만 동작하며 외부에 배포되지 않는다. 화면(`public/app.html`, 이전 화면 `public/maintenance.html`)을
+ * `127.0.0.1:8523`에서만 동작하며 외부에 배포되지 않는다. 화면(`public/app.html`)을
  * 서빙하고, 유지관리 워크플로 API(`/maintenance/*`, maintenance-web.js)를 위임한다.
  * 비공개 ChatGPT API 호출은 이 파일에 없다. chatgpt.com 페이지의 릴레이 실행기가 수행한다.
  */
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { handleMaintenanceWebRequest } from "./maintenance-web.js";
 import { CONFIG } from "./config.js";
-import { resolveDataDir } from "./data-dir.js";
+import { DEFAULT_TRASH_PROJECT, configuredTrash, resolveDataDir } from "./data-dir.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
 import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
 
@@ -131,10 +131,6 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && (req.url === "/" || req.url === "")) {
     serveLocalHtml(res, "app.html", { strict: true });
 
-  // 전체 목록을 직접 편집하는 이전 화면(고급)
-  } else if (req.method === "GET" && req.url === "/legacy") {
-    serveLocalHtml(res, "maintenance.html");
-
   } else if (req.method === "GET" && req.url.startsWith("/assets/")) {
     serveAsset(res, req.url.split("?")[0]);
 
@@ -148,6 +144,7 @@ const server = createServer(async (req, res) => {
     let dataDir = null;
     try { dataDir = resolveDataDir({ appRoot: MODULE_DIR }); } catch {}
     jsonResponse(res, 200, { platform: process.platform, workspace: process.cwd(), dataDir,
+      trash: { ...configuredTrash(MODULE_DIR), defaultName: DEFAULT_TRASH_PROJECT },
       release: APP_RELEASE, relayProtocolVersion: RELAY_PROTOCOL_VERSION });
 
   // 북마클릿 설치 안내 페이지

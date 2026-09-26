@@ -10,7 +10,7 @@ import { assert } from "./assert.js";
 import { lockFilePath, resolveDataDir } from "./data-dir.js";
 
 // A single local lock file serializes the one-at-a-time maintenance work
-// (baseline scans, checkpoints, routing sync and remote mutations) across the
+// (scans, applies, trash-project checks and other remote work) across the
 // user's computers. It replaces the earlier Git-tag lock: the data folder is
 // synced by the user's own tool, so the lock travels with it. A lock left
 // behind by a crashed run is taken over automatically once it is stale.
@@ -90,8 +90,8 @@ function usage() {
     "  node maintenance-lock.js acquire [--data-dir <path>]",
     "  node maintenance-lock.js release [--data-dir <path>]",
     "",
-    "Acquire before any ChatGPT mutation or baseline scan. Release once the verified",
-    "state.json is written back to the data folder.",
+    "The app takes and releases the lock itself. Use release only to clear a lock",
+    "left behind by a crashed run once you have confirmed that run is dead.",
   ].join("\n");
 }
 

@@ -28,9 +28,10 @@ function effectiveRows() {
     if (o.decision === "keep" && o.project === undefined && !row.project) next.project = row.currentProject;
     return next;
   }).map((row) => {
-    if (!S.parkingProject || row.decision !== "delete") return row;
-    // 삭제 후보는 곧바로 지우지 않고 보관 프로젝트로 옮긴다. 표준 제목이 아니면 보관용 제목을 붙인다.
-    return { ...row, decision: "keep", project: S.parkingProject, parked: true, newTitle: null };
+    if (row.decision !== "delete" || S.trash.permanent) return row;
+    // 삭제 후보는 곧바로 지우지 않는다. 삭제후보 프로젝트로 옮기거나(기본), 옮기지 않고 표시만 한다. 어느 쪽이든 표준 제목을 갖는다.
+    if (S.trash.mode === "none") return { ...row, decision: "keep", project: row.currentProject, marked: true };
+    return { ...row, decision: "keep", project: trashTarget().name, trashed: true };
   });
 }
 
@@ -61,7 +62,7 @@ function drawReview() {
   const rows = effectiveRows();
   const summary = buildReviewSummary({ catalog: S.catalog, rows });
   const ex = summary.exceptions; const c = summary.changes; const t = summary.totals;
-  const invalid = rows.filter((r) => r.decision === "keep" && !r.parked && !isNormalizedTitle(r.newTitle || r.title));
+  const invalid = rows.filter((r) => r.decision === "keep" && !isNormalizedTitle(r.newTitle || r.title));
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
   if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건`);
@@ -71,11 +72,12 @@ function drawReview() {
     h("h2", { text: "3. 바뀌는 내용 검토" }),
     h("p", { class: "lead", text: summary.headline }),
     h("div", { class: "chips" }, h("span", { class: "chip", text: `후보 ${t.candidates}건` }), h("span", { class: "chip good", text: `보존 ${t.keep}` }),
-      h("span", { class: t.delete ? "chip warn" : "chip", text: `삭제 ${t.delete}` }), t.undecided ? h("span", { class: "chip bad", text: `미결정 ${t.undecided}` }) : null,
+      h("span", { class: t.delete ? "chip warn" : "chip", text: `삭제 ${t.delete}` }), t.trashed ? h("span", { class: "chip", text: `삭제후보로 이동 ${t.trashed}` }) : null, t.marked ? h("span", { class: "chip", text: `삭제 표시 ${t.marked}` }) : null, t.undecided ? h("span", { class: "chip bad", text: `미결정 ${t.undecided}` }) : null,
       c.remove ? h("span", { class: "chip warn", text: `직접 빼야 할 대화 ${c.remove}` }) : null),
     projectTable(summary),
-    parkingControl(t.delete + t.parked),
-    section("임시 보관(삭제 후보)", ex.parked.length, ex.parked.map((d) => item(d.title, `${d.project || "프로젝트 없음"} · ${d.why || ""}`, [])), false),
+    trashControl(t.delete + t.trashed + t.marked),
+    section("삭제후보 프로젝트로 옮길 대화", ex.trashed.length, ex.trashed.map((d) => trashItem(d, rows)), false),
+    section("삭제 후보로 표시만 할 대화(이동 없음)", ex.marked.length, ex.marked.map((d) => trashItem(d, rows)), false),
     section("삭제 후보", ex.deletes.length, ex.deletes.map((d) => item(d.title, `${d.project || "프로젝트 없음"} · ${d.why || ""}`, [
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, "보존으로 바꾸기")])), ex.deletes.length > 0 && ex.deletes.length <= 60),
     section("결정이 필요한 항목(미결정)", ex.undecided.length, ex.undecided.map((d) => item(d.title, d.why || "판단 근거 없음", [
@@ -91,17 +93,47 @@ function drawReview() {
       h("button", { class: "btn", type: "button", disabled: blockers.length > 0 || !S.session.relay?.connected, onclick: () => confirmApply(summary) }, "적용")));
 }
 
-function parkingControl(candidates) {
+// 삭제 후보를 옮겨 둘 프로젝트. auto 는 기본 이름의 삭제후보 프로젝트(없으면 새로 만든다).
+// fixed 는 정해 둔 프로젝트이고, 이번 확인에서 본 프로젝트 목록에 없으면 기본 이름의 삭제후보 프로젝트를 새로 만들어 옮긴다.
+function trashTarget() {
+  if (S.trash.mode === "fixed") {
+    const exists = (S.catalog?.projects || []).some((project) => project.projectName === S.trash.name);
+    if (exists) return { name: S.trash.name, fallback: false };
+    return { name: S.trashDefault, fallback: true };
+  }
+  return { name: S.trashDefault, fallback: false };
+}
+
+// 삭제 후보를 어떻게 다룰지 고른다. 기본은 삭제후보 프로젝트로 옮기는 것이며 영구 삭제는 고급 접힘 안에 있다.
+function saveTrash() { try { localStorage.setItem("app_trash", JSON.stringify({ mode: S.trash.mode, name: S.trash.name })); } catch {} }
+
+function trashControl(candidates) {
   if (!candidates) return null;
-  const check = h("input", { type: "checkbox", checked: S.parkingProject ? true : null });
-  const name = h("input", { type: "text", value: S.parkingProject || "검토 대기", size: "14" });
-  const commit = () => {
-    S.parkingProject = check.checked ? name.value.trim() : "";
-    try { localStorage.setItem("app_parking_project", S.parkingProject); } catch {}
-    drawReview();
-  };
-  check.addEventListener("change", commit); name.addEventListener("change", () => { if (check.checked) commit(); });
-  return h("label", { class: "check" }, check, "삭제 후보를 곧바로 지우지 않고 먼저", name, "프로젝트에 임시 보관합니다(ChatGPT에서 직접 확인한 뒤 삭제 확정)");
+  const set = (changes) => { Object.assign(S.trash, changes); saveTrash(); drawReview(); };
+  const radio = (value) => h("input", { type: "radio", name: "trash-mode", checked: S.trash.mode === value && !S.trash.permanent ? true : null,
+    onchange: () => set({ mode: value, permanent: false }) });
+  const name = h("input", { type: "text", value: S.trash.name === S.trashDefault ? "" : S.trash.name, size: "16", placeholder: "프로젝트 이름",
+    onchange: (e) => { const v = e.target.value.trim(); set(v ? { name: v, mode: "fixed", permanent: false } : { mode: "auto", name: S.trashDefault }); } });
+  const target = trashTarget();
+  return h("div", { class: "callout" },
+    h("strong", { text: "삭제 후보는 이렇게 처리합니다" }),
+    h("label", { class: "check" }, radio("auto"), `삭제후보 프로젝트를 자동으로 쓰고, 없으면 새로 만들어 옮깁니다 → 「${S.trashDefault}」(기본)`),
+    h("label", { class: "check" }, radio("fixed"), "정해 둔 프로젝트로 옮깁니다 → ", name,
+      S.trash.mode === "fixed" && target.fallback ? h("span", { class: "small down", text: ` 그런 프로젝트가 없어 「${target.name}」를 새로 만들어 옮깁니다` }) : null),
+    h("label", { class: "check" }, radio("none"), "옮기지 않고 삭제 후보로 표시만 합니다 (프로젝트 안에 있는 대화는 API로 뺄 수 없어 직접 빼야 합니다)"),
+    h("details", { class: "advanced" }, h("summary", { text: "고급 — 영구 삭제" }), h("div", { class: "body" },
+      h("label", { class: "check" }, h("input", { type: "checkbox", checked: S.trash.permanent ? true : null, onchange: (e) => set({ permanent: e.target.checked }) }),
+        "삭제 후보를 바로 영구 삭제합니다(되돌릴 수 없음)"))));
+}
+
+// 삭제후보로 다루는 대화의 표준 제목을 확인·수정한다(삭제후보로 옮길 때도 표준 제목을 갖는다).
+function trashItem(d, rows) {
+  const row = rows.find((r) => r.conversationId === d.conversationId);
+  const title = (row?.newTitle || row?.title || d.title).trim();
+  const input = h("input", { class: `title-input${isNormalizedTitle(title) ? "" : " invalid"}`, type: "text", value: title,
+    onchange: (e) => patch(d.conversationId, { title: e.target.value.trim() }) });
+  return h("div", { class: "item" }, h("div", { class: "t", text: d.title }),
+    h("div", { class: "m", text: `${d.project || "프로젝트 없음"} · ${d.why || ""}` }), input);
 }
 
 export function section(title, count, items, open, note = "") {
@@ -125,7 +157,7 @@ function projectTable(summary) {
   if (!rows.length) return null;
   return h("details", { open: true }, h("summary", { text: `프로젝트별 변화 (${rows.length})` }), h("div", { class: "body" },
     h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "프로젝트" }), h("th", { class: "num", text: "이전" }), h("th", { class: "num", text: "이후" }), h("th", { class: "num", text: "변화" }))),
-      h("tbody", {}, rows.map((p) => h("tr", {}, h("td", { text: `${p.name}${p.isNew ? " (신규)" : ""}` }), h("td", { class: "num", text: p.before }), h("td", { class: "num", text: p.after }),
+      h("tbody", {}, rows.map((p) => h("tr", {}, h("td", { text: `${p.name}${p.isNew ? " (신규)" : ""}` }), h("td", { class: "num", text: p.before ?? "—" }), h("td", { class: "num", text: p.after ?? "—" }),
         h("td", { class: `num ${p.delta > 0 ? "up" : "down"}`, text: `${p.delta > 0 ? "+" : ""}${p.delta}` })))))));
 }
 
@@ -135,7 +167,8 @@ function confirmApply(summary) {
   ack.addEventListener("change", () => { go.disabled = !ack.checked; });
   fill(form, h("h2", { text: "이 내용으로 적용할까요?" }), h("p", {}, h("strong", { text: summary.headline })), h("p", { class: "small", text: "ChatGPT의 대화가 실제로 바뀝니다." }),
     deletes ? h("label", { class: "check" }, ack, `삭제 ${deletes}건은 되돌릴 수 없음을 확인했습니다`) : null,
-    summary.totals.parked ? h("p", { class: "small", text: `임시 보관 ${summary.totals.parked}건은 지우지 않고 「${S.parkingProject}」로 옮깁니다.` }) : null,
+    summary.totals.trashed ? h("p", { class: "small", text: `삭제 후보 ${summary.totals.trashed}건은 지우지 않고 「${trashTarget().name}」로 옮깁니다.` }) : null,
+    summary.totals.marked ? h("p", { class: "small", text: `삭제 후보 ${summary.totals.marked}건은 이동 없이 표시만 합니다. 직접 지우세요.` }) : null,
     h("p", { class: "muted small", text: "적용은 끝날 때까지 자동으로 이어집니다(429·일시적 오류는 기다렸다가 재개). 이 화면을 닫아도 서버가 계속 진행합니다." }),
     h("div", { class: "row" }, go, h("button", { class: "btn ghost", value: "cancel" }, "취소")));
   dlg.onclose = async () => {
@@ -144,11 +177,11 @@ function confirmApply(summary) {
       const decisions = effectiveRows().map((r) => r.decision === "delete"
         ? { conversationId: r.conversationId, decision: "delete" }
         : { conversationId: r.conversationId, decision: "keep", newTitle: (r.newTitle || r.title).trim(), projectName: (r.project || "").trim(),
-          ...(r.parked ? { parked: true } : {}) });
-      const parkedRows = effectiveRows().filter((r) => r.parked);
-      await post("/maintenance/decisions", { decisions, parking: parkedRows.length ? {
-        project: S.parkingProject, entries: parkedRows.map((r) => ({ conversationId: r.conversationId, reason: r.why, intendedTarget: null })) } : undefined });
-      await post("/maintenance/apply", { confirmDeletes: deletes > 0, quiet: $("quiet").checked });
+          ...(r.trashed ? { trashed: true } : {}), ...(r.marked ? { marked: true } : {}) });
+      const trashedRows = effectiveRows().filter((r) => r.trashed);
+      await post("/maintenance/decisions", { decisions, trash: trashedRows.length ? {
+        project: trashTarget().name, entries: trashedRows.map((r) => ({ conversationId: r.conversationId, reason: r.why, intendedTarget: null })) } : undefined });
+      await post("/maintenance/apply", { confirmDeletes: deletes > 0 });
       S.overrides = new Map(); saveOverrides(); S.forceStep = null;
       await refreshSession();
     } catch (e) { fail(e); }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { configuredDataDir, lockFilePath, resolveDataDir, runsDir, stateFilePath } from "../data-dir.js";
+import { DEFAULT_TRASH_PROJECT, configuredDataDir, configuredTrash, lockFilePath, resolveDataDir, runsDir } from "../data-dir.js";
 
 function appRootFixture() {
   return mkdtempSync(join(tmpdir(), "data-dir-"));
@@ -15,7 +15,6 @@ test("resolveDataDir defaults to <appRoot>/data and creates it", () => {
   try {
     const dataDir = resolveDataDir({ appRoot: root });
     assert.equal(dataDir, join(root, "data"));
-    assert.equal(stateFilePath(dataDir), join(root, "data", "state.json"));
     assert.equal(lockFilePath(dataDir), join(root, "data", ".maintenance.lock"));
     assert.equal(runsDir(dataDir), join(root, "data", "runs"));
   } finally {
@@ -43,6 +42,30 @@ test("the config file redirects the data folder, relative to appRoot", () => {
     mkdirSync(join(root, ".local"), { recursive: true });
     writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: "synced/chatgpt" }));
     assert.equal(resolveDataDir({ appRoot: root }), join(root, "synced", "chatgpt"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the trash project defaults to an automatic project and can be fixed by name or turned off", () => {
+  const root = appRootFixture();
+  try {
+    assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
+    mkdirSync(join(root, ".local"));
+    const write = (trash) => writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ trash }));
+    write({ mode: "fixed", name: "  ♻️ 삭제후보  " });
+    assert.deepEqual(configuredTrash(root), { mode: "fixed", name: "♻️ 삭제후보" });
+    write({ mode: "none" });
+    assert.deepEqual(configuredTrash(root), { mode: "none", name: "" });
+    write({ mode: "auto", name: "무시됨" });
+    assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
+    // 이름이 없거나 주소·ID·너무 긴 값이면 정해 둔 프로젝트로 인정하지 않고 기본값으로 돌아간다.
+    for (const name of [undefined, "", "https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/project", "g-p-0123456789abcdef0123456789abcdef", "x".repeat(101)]) {
+      write({ mode: "fixed", name });
+      assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
+    }
+    write({ mode: "bogus" });
+    assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

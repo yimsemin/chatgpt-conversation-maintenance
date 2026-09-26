@@ -5,19 +5,20 @@ import { $, ago, duration, fill, h, meta } from "/assets/dom.js";
 import { api, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
-import { setupPanel } from "/assets/panel-setup.js";
-import { applyReadyPanel, scanPanel, startCollect, startRebaseline, startScan } from "/assets/panel-scan.js";
+import { applyReadyPanel, loadScope, scanPanel, startScan } from "/assets/panel-scan.js";
 import { renderGuide, stepHint } from "/assets/help.js";
 import { proposalPanel } from "/assets/panel-proposal.js";
 import { loadReview } from "/assets/panel-review.js";
 import { loadResult } from "/assets/panel-result.js";
-import { loadParking } from "/assets/panel-parking.js";
+import { loadTrash } from "/assets/panel-trash.js";
 
 function render() {
   const s = S.session;
   const reachable = Boolean(S.sessionError?.detail);
-  const relay = s?.relay || (reachable ? { level: "warn", label: "작업 폴더를 확인하세요", hint: "" }
-    : { level: "bad", label: "서버 응답 없음", hint: "앱 서버가 실행 중인지 확인하세요." });
+  const outdated = S.relayLocal?.needsUpdate === true;
+  const relay = outdated ? { level: "bad", label: "북마클릿 업데이트 필요", hint: "chatgpt.com의 북마클릿이 이 앱보다 오래됐습니다. 북마클릿을 다시 설치한 뒤 눌러 주세요." }
+    : s?.relay || (reachable ? { level: "warn", label: "작업 폴더를 확인하세요", hint: "" }
+      : { level: "bad", label: "서버 응답 없음", hint: "앱 서버가 실행 중인지 확인하세요." });
   $("relay-pill").className = `pill ${relay.level}`;
   $("relay-label").textContent = relay.label;
   const hint = $("relay-hint");
@@ -52,7 +53,7 @@ function renderFailure() {
   const copyText = [explain.title, message && message !== explain.title ? message : "", `작업: ${last.kind} ${last.startedAt || ""}`].filter(Boolean).join("\n");
   fill(box, h("strong", { text: explain.title }), h("p", { class: "small", text: explain.action }),
     h("div", { class: "row" },
-      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; await startScan(); } }, "새 대화 확인으로 다시 시작") : null,
+      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; await startScan(); } }, "같은 범위를 다시 확인") : null,
       h("button", { class: "btn ghost", type: "button", onclick: (e) => { navigator.clipboard.writeText(copyText); e.target.textContent = "복사됨"; } }, "오류 복사"),
       h("button", { class: "btn ghost", type: "button", onclick: () => { S.dismissed.add(last.id); render(); } }, "닫기")));
   box.hidden = false;
@@ -73,7 +74,7 @@ function renderTitle() {
 // 이 실행을 그만두고 최신 상태로 다시 시작한다(ChatGPT에서 그동안 직접 바꾼 것이 있을 때 등).
 function restartButton() {
   return h("button", { class: "btn ghost", type: "button", disabled: !S.session?.relay?.connected, onclick: async () => {
-    if (!confirm("지금까지의 분류·검토 내용을 버리고 새 대화 확인부터 다시 합니다. 이미 ChatGPT에 적용된 것은 그대로 유지됩니다. 계속할까요?")) return;
+    if (!confirm("지금까지의 분류·검토 내용을 버리고 확인부터 다시 합니다(조사 범위는 지금 고른 것). 이미 ChatGPT에 적용된 것은 그대로 유지됩니다. 계속할까요?")) return;
     S.forceStep = null; S.view = null; await startScan();
   } }, "처음부터 다시 확인");
 }
@@ -88,20 +89,17 @@ function renderNow() {
     return;
   }
   let headline = "확인 중…"; let sub = ""; let action = null;
-  const base = s?.baseline;
   if (job && !job.done) {
     headline = job.kind === "apply" ? "적용 중입니다" : "확인 중입니다";
     sub = job.progress ? `${job.progress.label}${job.progress.etaSeconds ? ` · 남은 시간 약 ${duration(job.progress.etaSeconds)}` : ""}` : "잠시만 기다려 주세요";
-  } else if (step === "setup") {
-    headline = "처음 시작합니다"; sub = "ChatGPT에 연결하고 기준선을 만들면 정리를 시작할 수 있습니다.";
-  } else if (step === "parking") {
-    headline = "검토 대기"; sub = `ChatGPT의 「${s.parking?.project || "?"}」 프로젝트에서 직접 확인한 뒤 남길 것과 지울 것을 정하세요.`;
+  } else if (step === "trash") {
+    headline = "삭제후보 확인"; sub = `ChatGPT의 「${s.trash?.project || "?"}」 프로젝트에서 직접 확인한 뒤 남길 것과 지울 것을 정하세요.`;
     action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = null; S.panelKey = ""; render(); } }, "돌아가기");
   } else if (step === "scan") {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
-    headline = allClear ? "새로 정리할 대화가 없습니다" : base?.stale === false ? "지난 확인 이후 새 대화를 확인해 보세요" : "새 대화를 확인할 시간입니다";
-    sub = base ? `지난 확인 기준 대화 ${base.counts?.conversations ?? "?"}개 · 프로젝트 ${base.counts?.projects ?? "?"}개 · ${ago(allClear ? s.run.updatedAt : base.generatedAt)} 확인` : "아직 확인한 기록이 없습니다";
-    action = h("button", { class: "btn", type: "button", disabled: !s?.relay?.connected, onclick: startScan }, "새 대화 확인");
+    headline = allClear ? "이 범위에는 정리할 대화가 없습니다" : "정리할 범위를 골라 확인하세요";
+    sub = s.run ? `마지막 확인 ${ago(s.run.updatedAt)}` : "아직 확인한 기록이 없습니다";
+    action = h("button", { class: "btn", type: "button", disabled: !s?.relay?.connected, onclick: startScan }, "이 범위 확인");
   } else if (step === "proposal") {
     headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = "AI 에이전트에게 분류를 맡기세요.";
     action = restartButton();
@@ -116,7 +114,7 @@ function renderNow() {
 }
 
 function renderSteps() {
-  $("steps").hidden = ["parking", "setup"].includes(currentStep());
+  $("steps").hidden = currentStep() === "trash";
   const order = STEPS.map(([id]) => id); const at = order.indexOf(currentStep());
   fill($("steps"), ...STEPS.map(([id, label], i) =>
     h("li", { class: i < at ? "done" : i === at ? "current" : "", title: stepHint(id) }, h("b", { text: `${i + 1}` }), h("span", { class: "lbl", text: label }))));
@@ -136,8 +134,7 @@ function buildPanel(step) {
   else if (step === "proposal") panel.append(proposalPanel());
   else if (step === "review") { panel.append(h("p", { class: "muted", text: "검토 내용을 불러오는 중…" })); loadReview(); }
   else if (step === "result") { panel.append(h("p", { class: "muted", text: "결과를 불러오는 중…" })); loadResult(); }
-  else if (step === "setup") panel.append(setupPanel());
-  else if (step === "parking") { panel.append(h("p", { class: "muted", text: "검토 대기 목록을 불러오는 중…" })); loadParking(); }
+  else if (step === "trash") { panel.append(h("p", { class: "muted", text: "삭제후보 목록을 불러오는 중…" })); loadTrash(); }
   else if (step === "apply") panel.append(applyReadyPanel());
   else panel.append(scanPanel());
 }
@@ -159,12 +156,18 @@ async function boot() {
   });
   $("relay-pill").addEventListener("click", () => { const hint = S.session?.relay?.hint; if (hint) toast(S.session.relay.label, hint); });
   renderGuide();
-  $("collect").addEventListener("click", startCollect);
-  $("rebaseline").addEventListener("click", startRebaseline);
   $("workspace").addEventListener("change", () => { S.workspace = $("workspace").value.trim(); try { localStorage.setItem("app_workspace", S.workspace); } catch {} refreshSession(); });
   const config = await api("/config").catch(() => ({}));
   S.workspace = (() => { try { return localStorage.getItem("app_workspace"); } catch { return null; } })() || config.workspace || "";
   $("workspace").value = S.workspace;
+  loadScope();
+  // 삭제 후보 처리 방식의 기본값은 설정 파일(.local/config.json)에서 오고, 화면에서 고른 값이 있으면 그것이 우선한다.
+  S.trashDefault = config.trash?.defaultName || "삭제후보";
+  S.trash = { mode: config.trash?.mode || "auto", name: config.trash?.name || S.trashDefault, permanent: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem("app_trash") || "null");
+    if (saved && ["auto", "fixed", "none"].includes(saved.mode)) S.trash = { ...S.trash, mode: saved.mode, ...(saved.name ? { name: saved.name } : {}) };
+  } catch {}
   // 북마클릿이 연 창은 연결만 맡는다. 작업 화면을 둘로 나누면 어디서 눌러야 할지 헷갈리고 동시에 두 곳에서 작업을 시작할 수 있다.
   if (window.name === "chatgptMaintenance") document.body.classList.add("relay-window");
   $("relay-window").hidden = window.name !== "chatgptMaintenance";

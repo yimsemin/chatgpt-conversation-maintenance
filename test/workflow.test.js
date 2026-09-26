@@ -252,17 +252,18 @@ test("reviewed decisions compile to small, source-bound management manifests", (
       inventoryDigest,
       receiptDir: join(root, "receipts"),
       decisions: [
-        { conversationId: ID1, decision: "keep", parked: true, reviewed: true },
+        { conversationId: ID1, decision: "keep", trashed: true, newTitle: "삭제예정 — 표준 제목", reviewed: true },
         { conversationId: ID2, decision: "delete", reviewed: true, rationale: "cleanup" },
       ],
     }, null, 2));
 
     const result = compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans"));
     assert.equal(result.manifests.length, 1);
-    assert.equal(result.skippedKeep, 1);
+    assert.equal(result.skippedKeep, 0);
     const manifest = JSON.parse(readFileSync(result.manifests[0].path, "utf8"));
-    assert.equal(manifest.actions.length, 1);
-    assert.equal(manifest.actions[0].conversationId, ID2);
+    // 삭제예정으로 옮기는 ID1은 표준 제목으로 바꾸는 제목 변경이 함께 계획된다.
+    assert.equal(manifest.actions.length, 2);
+    assert.ok(manifest.actions.some((action) => action.conversationId === ID2 && action.decision === "delete"));
     assert.match(manifest.actions[0].backupSha256, /^[0-9a-f]{64}$/);
     assert.equal(manifest.source.inventoryDigest, inventoryDigest);
     assert.equal(result.manifests[0].digest, managementManifestDigest(manifest));

@@ -239,7 +239,7 @@ export function buildClaudePrompt(review, { inventoryPath = null, proposalPath =
     `- inventoryDigest: "${digest}"`,
     `- scope.candidateCount: ${count}`,
     "- keep/undecided: suggestedNewTitle(null 가능), suggestedProjectAction 필수. 프로젝트를 정하면 suggestedProjectName·projectRationale 필수, 프로젝트 없음이면 suggestedProjectName null(현재 프로젝트 없음 → none, 있음 → manual-remove).",
-    "- delete: suggestedNewTitle·suggestedProjectName·projectRationale 생략, suggestedProjectAction \"none\".",
+    "- delete: suggestedProjectName·projectRationale 생략, suggestedProjectAction \"none\". suggestedNewTitle은 현재 제목이 표준 형식이 아닐 때만 표준 제목(삭제예정 이동용), 아니면 null.",
     "",
     "결과 JSON 전문을 답변에 그대로 붙여 유지관리 앱의 '분류 결과 JSON 붙여넣기'에 넣을 수 있게 한다.",
     ...(inventoryPath && proposalPath

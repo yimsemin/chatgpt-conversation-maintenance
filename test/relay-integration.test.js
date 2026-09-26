@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -68,15 +68,6 @@ function pumpRelay(broker, clientId, handle) {
 
 test("a scan completes through the relay without any direct Node HTTP call", async () => {
   const root = mkdtempSync(join(tmpdir(), "relay-scan-"));
-  const statePath = join(root, "state.json");
-  writeFileSync(statePath, JSON.stringify({
-    version: 1,
-    kind: "conversation-maintenance-state",
-    generatedAt: "2026-09-01T00:00:00.000Z",
-    counts: { conversations: 1 },
-    conversations: [{ conversationId: KNOWN, title: "기존 주제 — 정리 결과", projectName: "조사",
-      updateTime: "2026-09-01T00:00:00.000Z", isArchived: false }],
-  }));
   const runDir = join(root, "run");
   mkdirSync(runDir, { recursive: true });
 
@@ -88,7 +79,7 @@ test("a scan completes through the relay without any direct Node HTTP call", asy
   const api = createRelayApi({ broker, requestDelayMs: 0, sleep: async () => {} });
 
   try {
-    const result = await scanMaintenanceRun({ statePath, runDir, api, dataDir: root });
+    const result = await scanMaintenanceRun({ runDir, api, scope: { kind: "unassigned" } });
     const inventory = JSON.parse(readFileSync(result.inventoryPath, "utf8"));
     assert.deepEqual(inventory.warnings, []);
     assert.deepEqual(inventory.conversations.map((item) => item.conversationId), [FRESH]);

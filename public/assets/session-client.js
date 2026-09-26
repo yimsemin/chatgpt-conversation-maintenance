@@ -22,4 +22,4 @@ export function schedulePoll() {
 }
 
 // ---------- rendering ----------
-export function currentStep() { return S.view === "parking" ? "parking" : (S.forceStep || S.session?.step || "scan"); }
+export function currentStep() { return S.view === "trash" ? "trash" : (S.forceStep || S.session?.step || "scan"); }

@@ -1,14 +1,14 @@
 // 사용자의 결정을 검증·저장하고, 임시 보관과 후속 실행을 준비한다.
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { PHASE } from "./phases.js";
 import { basename, join } from "node:path";
 import { assert } from "./assert.js";
 import { runFiles } from "./run-files.js";
 import { sha256 } from "./content-hash.js";
-import { runsDir, stateFilePath } from "./data-dir.js";
+import { runsDir } from "./data-dir.js";
 import { compileReviewedDecisions } from "./decision-compile.js";
 import { isNormalizedTitle } from "./title-rules.js";
-import { readParking } from "./parking.js";
+import { readTrash } from "./trash.js";
 import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { proposalData, reviewedDecisionsSummary } from "./web-views.js";
@@ -37,15 +37,17 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
       assert(!newTitle, `${label}: 삭제할 대화의 제목은 바꿀 수 없습니다`);
       return { conversationId: source.conversationId, decision: "delete", reviewed: true };
     }
-    // 임시 보관 대상은 표준 제목 규칙에서 제외한다(곧 삭제되거나, 남길 때 새 제목을 받는다).
-    assert(input.parked === true || isNormalizedTitle(newTitle || source.title),
+    // 삭제예정으로 옮기는 대화도 표준 제목을 갖는다(살릴 수도 있고 목록 탐색에 필요하다).
+    assert(isNormalizedTitle(newTitle || source.title),
       `${label}: 제목은 "주제 — 작업/결과" 형식이어야 합니다`);
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
+    assert(!(input.trashed === true && input.marked === true), `${label}: 삭제후보 이동과 삭제 표시는 함께 쓸 수 없습니다`);
     return {
       conversationId: source.conversationId,
       decision: "keep",
       ...(newTitle && newTitle !== source.title ? { newTitle } : {}),
-      ...(input.parked === true ? { parked: true } : {}),
+      ...(input.trashed === true ? { trashed: true } : {}),
+      ...(input.marked === true ? { marked: true } : {}),
       projectName: projectName || null,
       reviewed: true,
     };
@@ -60,14 +62,14 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
   };
 }
 
-export function writeReviewedDecisions(workspace, dataDir, inputs, parking = null) {
+export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null) {
   const pointer = readPointer(workspace, dataDir);
   assert(pointer, "먼저 새 대화 확인을 실행하세요");
   assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 결정을 받을 단계가 아닙니다");
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
   writeJsonAtomic(runFiles(pointer.runDir).decisions, decisions);
-  writeParkingMeta(pointer, inventory, decisions, parking);
+  writeTrashMeta(pointer, inventory, decisions, trash);
   return {
     ready: true,
     run: publicPointer(pointer),
@@ -77,59 +79,78 @@ export function writeReviewedDecisions(workspace, dataDir, inputs, parking = nul
 }
 
 // 삭제 후보를 임시 보관 프로젝트로 보내는 결정이면, 적용이 끝난 뒤 보관 목록에 남길 정보를 실행 폴더에 적어 둔다.
-function writeParkingMeta(pointer, inventory, decisions, parking) {
-  const path = runFiles(pointer.runDir).parkingMeta;
-  if (!parking) { rmSync(path, { force: true }); return; }
-  assert(typeof parking.project === "string" && parking.project.trim() === parking.project && parking.project,
+function writeTrashMeta(pointer, inventory, decisions, trash) {
+  const path = runFiles(pointer.runDir).trashMeta;
+  if (!trash) { rmSync(path, { force: true }); return; }
+  assert(typeof trash.project === "string" && trash.project.trim() === trash.project && trash.project,
     "임시 보관 프로젝트 이름이 올바르지 않습니다");
   const decisionById = new Map(decisions.decisions.map((item) => [item.conversationId, item]));
   const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
   const items = [];
-  for (const entry of parking.entries || []) {
+  for (const entry of trash.entries || []) {
     const decision = decisionById.get(entry.conversationId);
     const source = inventoryById.get(entry.conversationId);
     assert(decision && source, "임시 보관 대상이 이번 후보에 없습니다");
-    assert(decision.decision === "keep" && decision.projectName === parking.project,
+    assert(decision.decision === "keep" && decision.projectName === trash.project,
       "임시 보관 대상은 보관 프로젝트에 두는 결정이어야 합니다");
     items.push({
       conversationId: entry.conversationId, title: decision.newTitle || source.title, fromProject: source.projectName || null,
       reason: String(entry.reason || "").slice(0, 200), intendedTarget: entry.intendedTarget ?? null, record: source,
     });
   }
-  writeJsonAtomic(path, { version: 1, project: parking.project, items });
+  writeJsonAtomic(path, { version: 1, project: trash.project, items });
 }
 
-// 후속 실행(검토 대기 확정): 보관 목록의 대화만 후보로 하는 작은 실행을 만든다.
-export function prepareParkingFollowUp(workspace, dataDir, inputs) {
-  const parking = readParking(dataDir);
-  assert(parking.items.length, "검토 대기 중인 대화가 없습니다");
+// 삭제예정으로 옮길 때 제목을 표준화하므로, 보관 시점의 본문 사본은 지금 제목과 다를 수 있다.
+// 삭제 검증은 사본의 제목이 현재 제목과 같아야 하므로, 다르면 제목만 바꾼 사본을 이 실행 폴더에 만든다
+// (본문 해시 contentSha256은 mapping만 보므로 그대로다).
+function backupWithCurrentTitle(record, currentTitle, runDir) {
+  const original = { backupFile: record.backupFile, backupSha256: record.backupSha256, backupBytes: record.backupBytes };
+  let data;
+  try { data = JSON.parse(readFileSync(record.backupFile, "utf8")); } catch { return original; }
+  if (data?.title === currentTitle) return original;
+  const dir = join(runDir, "json");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const backupFile = join(dir, `${record.conversationId}.json`);
+  const raw = Buffer.from(JSON.stringify({ ...data, title: currentTitle }, null, 2));
+  writeFileSync(backupFile, raw, { mode: 0o600 });
+  return { backupFile, backupSha256: sha256(raw), backupBytes: raw.length };
+}
+
+// 후속 실행(삭제후보 확정): 삭제후보 목록의 대화만 후보로 하는 작은 실행을 만든다. 기록해 둔 제목·본문 사본을 쓰므로 원격을 읽지 않는다.
+// 적용할 때 각 대화의 실제 제목이 기록과 다르면(사용자가 그 사이 바꿨다면) 적용이 그 대화에서 안전하게 멈춘다.
+export function prepareTrashFollowUp(workspace, dataDir, inputs) {
+  const trash = readTrash(dataDir);
+  assert(trash.items.length, "삭제후보 프로젝트에 옮겨 둔 대화가 없습니다");
   assert(Array.isArray(inputs) && inputs.length, "결정이 비어 있습니다");
-  const parkedById = new Map(parking.items.map((item) => [item.conversationId, item]));
-  const statePath = stateFilePath(dataDir);
-  const stateRaw = readFileSync(statePath);
-  const state = JSON.parse(stateRaw.toString("utf8"));
-  const stateById = new Map(state.conversations.map((item) => [item.conversationId, item]));
-  const conversations = inputs.map((input) => {
-    const parked = parkedById.get(input.conversationId);
-    assert(parked, "검토 대기 목록에 없는 대화입니다");
-    const current = stateById.get(input.conversationId);
-    assert(current, `기준선에 없는 대화입니다(이미 삭제됐으면 고급 메뉴의 ‘ChatGPT 상태 다시 맞추기’로 기록을 갱신하세요): ${parked.title}`);
-    return { ...parked.record, ...current, reasons: ["parking-review"],
-      backupFile: parked.record.backupFile, backupSha256: parked.record.backupSha256,
-      backupBytes: parked.record.backupBytes, contentSha256: parked.record.contentSha256,
-      messageCount: parked.record.messageCount, attachmentReferenceCount: parked.record.attachmentReferenceCount ?? 0 };
-  });
-  const runDir = join(runsDir(dataDir), `parking-${runId()}`);
+  const trashedById = new Map(trash.items.map((item) => [item.conversationId, item]));
+  const runDir = join(runsDir(dataDir), `trash-${runId()}`);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  const conversations = inputs.map((input) => {
+    const trashed = trashedById.get(input.conversationId);
+    assert(trashed, "삭제후보 목록에 없는 대화입니다");
+    const backup = backupWithCurrentTitle(trashed.record, trashed.title, runDir);
+    return { ...trashed.record, title: trashed.title, projectName: trash.project, isArchived: false, reasons: ["trash-review"],
+      backupFile: backup.backupFile, backupSha256: backup.backupSha256,
+      backupBytes: backup.backupBytes, contentSha256: trashed.record.contentSha256,
+      messageCount: trashed.record.messageCount, attachmentReferenceCount: trashed.record.attachmentReferenceCount ?? 0 };
+  });
+  const scope = { kind: "project", projectName: trash.project };
   const catalogPath = runFiles(runDir).catalog;
-  writeJsonAtomic(catalogPath, { ...state, kind: "conversation-maintenance-catalog" });
+  const projects = [{ projectName: trash.project, conversationCount: null, sampleTitles: [] }];
+  writeJsonAtomic(catalogPath, {
+    version: 1, kind: "conversation-maintenance-catalog", generatedAt: new Date().toISOString(),
+    scope: { activeConversations: true, archivedConversations: false, projectDiscovery: "owned_only", complete: false, collected: scope },
+    counts: { conversations: conversations.length, active: conversations.length, archived: 0, unassigned: 0, projects: 1 },
+    projects,
+    conversations: conversations.map((item) => ({ conversationId: item.conversationId, title: item.title, createTime: item.createTime ?? null,
+      updateTime: item.updateTime ?? null, isArchived: false, projectName: trash.project })),
+  });
   const inventory = {
     version: 1, kind: "conversation-maintenance-inventory", generatedAt: new Date().toISOString(), runRoot: runDir,
-    catalogFile: catalogPath, source: { mode: "followup", stateDigest: sha256(stateRaw) },
-    counts: { catalogConversations: state.conversations.length, candidates: conversations.length, removed: 0, confirmedUnavailable: 0,
-      held: 0, attachmentReferences: 0 },
-    warnings: [], removedConversationIds: [], confirmedUnavailableConversationIds: [], heldConversationIds: [],
-    projects: state.projects, conversations,
+    catalogFile: catalogPath, source: { mode: "scope", scope },
+    counts: { catalogConversations: conversations.length, candidates: conversations.length, attachmentReferences: 0 },
+    warnings: [], projects, conversations,
   };
   const inventoryPath = runFiles(runDir).inventory;
   writeJsonAtomic(inventoryPath, inventory);
@@ -141,7 +162,7 @@ export function prepareParkingFollowUp(workspace, dataDir, inputs) {
     ...(input.decision !== "delete" && input.newTitle ? { newTitle: input.newTitle } : {}),
   })));
   writeJsonAtomic(runFiles(runDir).decisions, decisions);
-  writeJsonAtomic(runFiles(runDir).followUp, { version: 1, kind: "parking", project: parking.project,
+  writeJsonAtomic(runFiles(runDir).followUp, { version: 1, kind: "trash", project: trash.project,
     ids: conversations.map((item) => item.conversationId) });
   writePointer(workspace, pointer);
   const deletes = decisions.decisions.filter((item) => item.decision === "delete").length;

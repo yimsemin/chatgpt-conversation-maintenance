@@ -7,6 +7,7 @@ import { sha256 } from "./content-hash.js";
 import { managementManifestDigest, validateManagementManifest } from "./management.js";
 import { projectRoutingDigest, validateProjectRouting } from "./project-routing.js";
 import { isNormalizedTitle } from "./title-rules.js";
+import { timeMilliseconds } from "./catalog.js";
 
 const MAINTENANCE_DECISIONS = new Set(["keep", "delete"]);
 
@@ -15,6 +16,15 @@ export function assertOptionalProjectName(value, label) {
   if (value === undefined || value === null) return;
   assert(typeof value === "string" && value.trim() === value && value.length > 0,
     `${label} must be empty or a trimmed project name`);
+}
+
+// 제목 변경은 그 대화의 수정 시각을 변경 시각으로 올려 목록 순서를 바꾼다(2026-09-26 실측, docs/GOALS.md).
+// 오래된 대화부터 바꾸면 바꾼 대화끼리는 원래의 상대 순서가 유지되므로 계획을 수정 시각 오름차순으로 만든다.
+// 수정 시각을 모르는 대화는 가장 앞에 두고, 같은 시각이면 대화 ID 순이라 계획이 항상 같다.
+export function orderOldestFirst(actions, inventoryById) {
+  const time = (action) => timeMilliseconds(inventoryById.get(action.conversationId)?.updateTime) ?? -Infinity;
+  return [...actions].sort((left, right) => (time(left) === time(right) ? 0 : time(left) < time(right) ? -1 : 1)
+    || left.conversationId.localeCompare(right.conversationId));
 }
 
 export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir) {
@@ -49,8 +59,8 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
     if (newTitle !== undefined) assert(typeof newTitle === "string" && newTitle.trim(), `${label}.newTitle is invalid`);
     assert(!(decision.decision === "delete" && newTitle), `${label} cannot rename a conversation that will be deleted`);
     if (decision.decision !== "delete") {
-      // 임시 보관(parked) 결정은 삭제 후보라 표준 제목 규칙에서 제외한다.
-      assert(decision.parked === true || isNormalizedTitle(newTitle || source.title),
+      // 삭제예정(trashed)으로 옮기는 대화도 표준 제목을 갖는다.
+      assert(isNormalizedTitle(newTitle || source.title),
         `${label} must preserve or set the exact "topic — work/result" title form`);
       assertOptionalProjectName(decision.projectName, `${label}.projectName`);
       // A move between two already-existing projects is handled by
@@ -73,14 +83,15 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
   mkdirSync(outDir, { recursive: true });
   assert(readdirSync(outDir).length === 0, `Output directory is not empty: ${outDir}`);
 
+  const ordered = orderOldestFirst(actions, inventoryById);
   const manifests = [];
-  for (let offset = 0; offset < actions.length; offset += 25) {
+  for (let offset = 0; offset < ordered.length; offset += 25) {
     const manifest = validateManagementManifest({
       version: 1,
       workspace: "business",
       receiptDir: resolve(decisions.receiptDir),
       source: { inventoryDigest, decisionsDigest },
-      actions: actions.slice(offset, offset + 25),
+      actions: ordered.slice(offset, offset + 25),
     });
     const number = String(manifests.length + 1).padStart(3, "0");
     const path = join(outDir, `batch-${number}.json`);

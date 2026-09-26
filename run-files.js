@@ -17,7 +17,8 @@ export function runFiles(runDir) {
     planSource: join(runDir, "compiled-plan-source.json"),
     report: join(runDir, "report.json"),
     reportMarkdown: join(runDir, "report.md"),
-    parkingMeta: join(runDir, "parking-meta.json"),
+    trashMeta: join(runDir, "trash-meta.json"),
     followUp: join(runDir, "followup.json"),
+    afterCatalog: join(runDir, "after-catalog.json"),
   };
 }

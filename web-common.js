@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { assert } from "./assert.js";
 import { runFiles } from "./run-files.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
-import { resolveDataDir, runsDir, stateFilePath } from "./data-dir.js";
+import { resolveDataDir, runsDir } from "./data-dir.js";
 import { explainError } from "./errors.js";
 
 export const APP_ROOT = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +40,7 @@ function isInside(root, path) {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
 }
 
-export function validateMaintenanceWorkspace(value, { requireState = true } = {}) {
+export function validateMaintenanceWorkspace(value) {
   assert(typeof value === "string" && value.trim(), "작업 폴더를 선택하세요");
   const workspace = resolve(value.trim());
   const packagePath = join(workspace, "package.json");
@@ -48,12 +48,7 @@ export function validateMaintenanceWorkspace(value, { requireState = true } = {}
   const pkg = readJson(packagePath, "package.json");
   assert(pkg.name === "chatgpt-conversation-maintenance", "대화 유지관리 프로젝트 폴더가 아닙니다");
   const dataDir = resolveDataDir({ appRoot: workspace });
-  const statePath = stateFilePath(dataDir);
-  if (!requireState && !existsSync(statePath)) return { workspace, dataDir, statePath, state: null };
-  assert(existsSync(statePath), `데이터 폴더에 state.json이 없습니다: ${statePath}`);
-  const state = readJson(statePath, "기준선");
-  assert(state.kind === "conversation-maintenance-state", "state.json 형식이 올바르지 않습니다");
-  return { workspace, dataDir, statePath, state };
+  return { workspace, dataDir };
 }
 
 export function pointerPath(workspace) {

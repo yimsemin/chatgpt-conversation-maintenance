@@ -1,24 +1,24 @@
-// 검토 대기(임시 보관) 확정 패널.
+// 삭제후보 확인 패널: 삭제후보 프로젝트에 옮겨 둔 대화를 삭제하거나 원래 자리로 되돌린다.
 import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
-import { $, fill, h } from "/assets/dom.js";
+import { fill, h } from "/assets/dom.js";
+import { startTrashSync } from "/assets/panel-scan.js";
 import { api, fail, post, toast, wsq } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
 import { item } from "/assets/panel-review.js";
 
-// ---------- 검토 대기 ----------
-export async function loadParking() {
+// ---------- 삭제후보 확인 ----------
+export async function loadTrash() {
   try {
-    const data = await api(`/maintenance/parking?${wsq()}`); S.parking = data;
+    const data = await api(`/maintenance/trash?${wsq()}`);
     const choices = new Map(data.items.map((i) => [i.conversationId, { decision: "delete", project: i.intendedTarget || i.fromProject || "", title: "" }]));
-    const names = (S.catalog?.projects || []).map((p) => p.projectName);
-    if (!S.catalog) { try { S.catalog = await api(`/maintenance/catalog?${wsq()}`); } catch {} }
-    const projectNames2 = [...new Set([...(S.catalog?.projects || []).map((p) => p.projectName), ...names])].filter((n) => n !== data.project).sort();
+    const projectNames2 = (S.session?.knownProjects?.names || []).filter((n) => n !== data.project);
     const draw = () => {
       const deletes = [...choices.values()].filter((c) => c.decision === "delete").length;
-      fill($("panel"), h("h2", { text: `검토 대기 ${data.items.length}건` }),
-        h("p", { class: "muted", text: `ChatGPT의 「${data.project}」 프로젝트에서 대화를 직접 확인하세요. 여기서 정한 대로 삭제하거나 원래 자리로 옮깁니다. (직접 지운 대화는 다음 전체 스캔에서 반영됩니다)` }),
-        !data.items.length ? h("p", { class: "chip good", text: "검토 대기 중인 대화가 없습니다" }) : null,
+      fill($("panel"), h("h2", { text: `삭제후보 ${data.items.length}건` }),
+        h("p", { class: "muted", text: `ChatGPT의 「${data.project}」 프로젝트에서 대화를 직접 확인하세요. 여기서 정한 대로 삭제하거나 원래 자리로 옮깁니다. ChatGPT에서 직접 지우거나 옮긴 대화는 ‘ChatGPT에서 다시 확인’으로 목록에서 뺄 수 있습니다.` }),
+        !data.items.length ? h("p", { class: "chip good", text: "삭제후보로 옮겨 둔 대화가 없습니다" }) : null,
+        data.items.length ? h("div", { class: "row" }, h("button", { class: "btn ghost", type: "button", disabled: !S.session?.relay?.connected, onclick: startTrashSync }, "ChatGPT에서 다시 확인(읽기 전용)")) : null,
         h("div", { class: "row" }, h("button", { class: "btn ghost", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "delete"; draw(); } }, "전부 삭제로"),
           h("button", { class: "btn ghost", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "keep"; draw(); } }, "전부 남기기로")),
         ...data.items.map((i) => {
@@ -32,23 +32,23 @@ export async function loadParking() {
             h("div", { class: "ctl" }, h("select", { onchange: (e) => { c.decision = e.target.value; draw(); } },
               h("option", { value: "delete", text: "삭제", selected: c.decision === "delete" ? "" : null }), h("option", { value: "keep", text: "남기기", selected: c.decision === "keep" ? "" : null })),
               c.decision === "keep" ? projSel : null),
-            h("div", { class: "m", text: `${i.fromProject || "프로젝트 없음"}에서 보관 · ${i.reason || ""}${i.inBaseline ? "" : " · 기준선에 없음(이미 삭제됨?)"}` }), titleInput);
+            h("div", { class: "m", text: `${i.fromProject || "프로젝트 없음"}에서 옮김 · ${i.reason || ""}` }), titleInput);
         }),
         h("div", { class: "applybar" }, h("div", {}, h("strong", { text: `삭제 ${deletes}건 · 남기기 ${data.items.length - deletes}건` })),
-          h("button", { class: "btn", type: "button", disabled: !data.items.length || !S.session?.relay?.connected, onclick: () => applyParking(data, choices, deletes) }, "확정하고 적용")));
+          h("button", { class: "btn", type: "button", disabled: !data.items.length || !S.session?.relay?.connected, onclick: () => applyTrash(data, choices, deletes) }, "확정하고 적용")));
     };
     draw();
   } catch (e) { fail(e); }
 }
 
-async function applyParking(data, choices, deletes) {
+async function applyTrash(data, choices, deletes) {
   const bad = data.items.filter((i) => { const c = choices.get(i.conversationId); return c.decision === "keep" && !isNormalizedTitle(i.title) && !isNormalizedTitle(c.title); });
   if (bad.length) { toast(`남길 대화 ${bad.length}건의 제목을 표준 형식(주제 — 작업/결과)으로 적어 주세요.`); return; }
   if (deletes && !confirm(`삭제 ${deletes}건은 되돌릴 수 없습니다. 확정할까요?`)) return;
   try {
-    await post("/maintenance/parking/prepare", { decisions: data.items.map((i) => { const c = choices.get(i.conversationId);
+    await post("/maintenance/trash/prepare", { decisions: data.items.map((i) => { const c = choices.get(i.conversationId);
       return { conversationId: i.conversationId, decision: c.decision, projectName: c.project, newTitle: c.decision === "keep" && !isNormalizedTitle(i.title) ? c.title : undefined }; }) });
-    await post("/maintenance/apply", { confirmDeletes: deletes > 0, quiet: $("quiet").checked });
+    await post("/maintenance/apply", { confirmDeletes: deletes > 0 });
     S.view = null; S.forceStep = null; S.panelKey = ""; await refreshSession();
   } catch (e) { fail(e); }
 }

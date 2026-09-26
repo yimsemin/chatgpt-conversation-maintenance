@@ -2,10 +2,9 @@
 import { PHASE } from "./phases.js";
 
 // 진행 중인 작업이 있으면 그 단계, 없으면 실행 파일 상태로 단계를 정한다.
-// resultSuperseded: 결과 보고서보다 나중에 읽기 전용 작업(확인·검증·기준선 확정)이 끝났다면 그 결과는 지난 일이다.
-export function deriveStep({ activeJobKind = null, phase = "", hasProposal = false, hasReport = false, hasRun = false, hasBaseline = true,
+// resultSuperseded: 결과 보고서보다 나중에 읽기 전용 작업(확인·삭제후보 확인)이 끝났다면 그 결과는 지난 일이다.
+export function deriveStep({ activeJobKind = null, phase = "", hasProposal = false, hasReport = false, hasRun = false,
   resultSuperseded = false }) {
-  if (!hasBaseline && !activeJobKind) return "setup";
   if (activeJobKind === "apply") return "apply";
   if (activeJobKind === "scan") return "scan";
   if (!hasRun) return "scan";
@@ -30,11 +29,4 @@ export function describeRelay(status = {}) {
       hint: "ChatGPT 페이지가 응답하지 않고 있습니다. chatgpt.com 탭을 앞으로 가져오세요." };
   }
   return { level: "ok", label: "ChatGPT 연결됨", hint: "" };
-}
-
-// 기준선 신선도. 오래되면 확인을 권한다.
-export function describeBaseline({ generatedAt = null, verification = null }, nowMs = Date.now()) {
-  if (!generatedAt) return { days: null, stale: true, verification };
-  const days = Math.floor((nowMs - Date.parse(generatedAt)) / 86400000);
-  return { days, stale: days >= 7, verification };
 }

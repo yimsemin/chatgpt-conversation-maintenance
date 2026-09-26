@@ -6,14 +6,12 @@ import { runFiles } from "./run-files.js";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveDataDir, stateFilePath } from "./data-dir.js";
+import { resolveDataDir } from "./data-dir.js";
 import { lockStatus } from "./maintenance-lock.js";
-import { readParking } from "./parking.js";
+import { readTrash } from "./trash.js";
 
 // 새 대화(에이전트)가 코드를 탐색하지 않고 현재 상태와 다음 할 일을 바로
 // 알도록 하는 읽기 전용 요약이다. ChatGPT에 요청하지 않고 파일만 읽는다.
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function readJsonOrNull(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); }
@@ -34,7 +32,7 @@ function describeRun(pointer) {
     phase: pointer.phase || "unknown",
     updatedAt: pointer.updatedAt || null,
     candidates: inventory?.counts?.candidates ?? null,
-    held: inventory?.counts?.held ?? null,
+    scope: inventory?.source?.scope || null,
     hasReview: existsSync(runFiles(runDir).review),
     reviewPath: runFiles(runDir).review,
     inventoryPath: runFiles(runDir).inventory,
@@ -48,15 +46,12 @@ function describeRun(pointer) {
 }
 
 // 사용자가 버튼으로 하는 일과 에이전트가 하는 일을 구분해 다음 행동 하나만 돌려준다.
-export function nextAction({ hasBaseline, lock, run }) {
-  if (!hasBaseline) {
-    return { actor: "user", text: "기준선(state.json)이 없어 시작할 수 없다. docs/GETTING_STARTED.md 확인" };
-  }
+export function nextAction({ lock, run }) {
   if (lock?.locked && !lock.stale) {
     return { actor: "user", text: "다른 실행이 잠금을 잡고 있다. 그 실행이 끝났는지 확인 후 node maintenance-lock.js release" };
   }
   if (!run || run.phase === PHASE.COMPLETE) {
-    return { actor: "user", text: "화면에서 '새 대화 확인'을 누른다(에이전트는 스캔하지 않는다)" };
+    return { actor: "user", text: "화면에서 조사 범위를 고르고 '이 범위 확인'을 누른다(에이전트는 스캔하지 않는다)" };
   }
   if (run.phase === PHASE.READY_TO_APPLY) {
     return { actor: "user", text: "화면에서 검토가 끝난 결정의 '적용 시작'을 누른다" };
@@ -76,55 +71,32 @@ export function nextAction({ hasBaseline, lock, run }) {
 export function buildBrief({ appRoot, dataDir = "", now = () => Date.now() } = {}) {
   const resolvedRoot = resolve(appRoot);
   const dir = resolveDataDir({ dataDir, appRoot: resolvedRoot });
-  const state = readJsonOrNull(stateFilePath(dir));
-  const hasBaseline = state?.kind === "conversation-maintenance-state";
   const lock = lockStatus({ dataDir: dir, now });
   const pointer = readJsonOrNull(join(resolvedRoot, ".local", "maintenance-web.json"));
   const run = pointer?.version === 1 ? describeRun(pointer) : null;
-
-  const generatedAt = hasBaseline ? state.generatedAt || null : null;
-  const ageDays = generatedAt ? Math.floor((now() - Date.parse(generatedAt)) / DAY_MS) : null;
-  const conversations = hasBaseline ? state.conversations || [] : [];
-
+  const trash = readTrash(dir);
   return {
-    baseline: hasBaseline
-      ? {
-        generatedAt,
-        ageDays,
-        conversations: conversations.length,
-        projects: (state.projects || []).length,
-        unassigned: conversations.filter((item) => !item.projectName).length,
-      }
-      : null,
     lock: lock.locked ? { device: lock.holder?.device || null, stale: lock.stale } : null,
     run,
-    parking: (() => { const parking = readParking(dir); return parking.items.length ? { project: parking.project, count: parking.items.length } : null; })(),
-    next: nextAction({ hasBaseline, lock, run }),
+    trash: trash.items.length ? { project: trash.project, count: trash.items.length } : null,
+    next: nextAction({ lock, run }),
   };
 }
 
 export function formatBrief(brief) {
   const lines = [];
-  if (brief.baseline) {
-    const b = brief.baseline;
-    lines.push(
-      `기준선: 대화 ${b.conversations}개 · 프로젝트 ${b.projects}개 · 미배치 ${b.unassigned}개`
-      + ` (${b.generatedAt || "시각 없음"}${b.ageDays === null ? "" : `, ${b.ageDays}일 전`})`,
-    );
-  } else {
-    lines.push("기준선: 없음");
-  }
   lines.push(`잠금: ${brief.lock ? `${brief.lock.device || "unknown"}${brief.lock.stale ? " (오래됨)" : ""}` : "없음"}`);
   if (brief.run) {
     const r = brief.run;
+    const scope = r.scope ? ` · 범위 ${r.scope.kind === "project" ? `프로젝트 ${r.scope.projectName}` : r.scope.kind === "recent" ? `최근 ${r.scope.days}일` : r.scope.kind === "all" ? "전체" : "프로젝트 없는 대화"}` : "";
     lines.push(
-      `최근 실행: ${r.runId} · ${r.phase} · 후보 ${r.candidates ?? "?"}건`
+      `최근 실행: ${r.runId} · ${r.phase}${scope} · 후보 ${r.candidates ?? "?"}건`
       + ` · 분류안 ${r.hasProposal ? "있음" : "없음"} · 결정 ${r.hasDecisions ? "있음" : "없음"} · 영수증 ${r.receipts}건`,
     );
   } else {
     lines.push("최근 실행: 없음");
   }
-  if (brief.parking) lines.push(`검토 대기: ${brief.parking.count}건 (ChatGPT 프로젝트 「${brief.parking.project}」) — 화면의 '검토 대기 열기'에서 사용자가 확정한다`);
+  if (brief.trash) lines.push(`삭제후보: ${brief.trash.count}건 (ChatGPT 프로젝트 「${brief.trash.project}」) — 화면의 '삭제후보 확인'에서 사용자가 확정한다`);
   lines.push(`다음: [${brief.next.actor === "agent" ? "에이전트" : "사용자"}] ${brief.next.text}`);
   return lines.join("\n");
 }
