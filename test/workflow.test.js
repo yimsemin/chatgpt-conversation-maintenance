@@ -537,6 +537,32 @@ test("maintenance compiler rejects a kept title outside the canonical separator 
   }
 });
 
+test("maintenance compiler accepts an unformatted title only when the user unchecked the rename (keepTitle)", () => {
+  const root = fixture();
+  try {
+    const source = buildInventory(root).conversations[0];
+    const inventoryPath = join(root, "maintenance-invalid-title.json");
+    writeFileSync(inventoryPath, JSON.stringify({
+      version: 1,
+      kind: "conversation-maintenance-inventory",
+      warnings: [],
+      conversations: [{ ...source, title: "Unformatted title" }],
+    }));
+    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
+    const decisionsPath = join(root, "maintenance-invalid-decisions.json");
+    writeFileSync(decisionsPath, JSON.stringify({
+      version: 1,
+      kind: "reviewed-decisions",
+      inventoryDigest,
+      receiptDir: join(root, "receipts"),
+      decisions: [{ conversationId: source.conversationId, decision: "keep", keepTitle: true, reviewed: true }],
+    }));
+    assert.doesNotThrow(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("compiler rejects AI-style decisions that were not user-reviewed", () => {
   const root = fixture();
   try {

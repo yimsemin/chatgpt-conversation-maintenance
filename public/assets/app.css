@@ -139,3 +139,6 @@ em.fill { color:var(--muted); font-style:italic; }
 .bulk { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; padding:var(--s1) 0 var(--s2); }
 .apply-toggle { white-space:nowrap; }
 .item.off .t, .item.off .m { opacity:.55; text-decoration:line-through; }
+.pager { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; padding:var(--s1) 0; }
+.seg { display:flex; gap:var(--s1); flex-wrap:wrap; padding:var(--s1) 0; }
+.seg .btn.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }

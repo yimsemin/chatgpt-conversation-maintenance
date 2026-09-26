@@ -56,7 +56,7 @@ export function reviewedPairs(inventory, decisionsFile) {
         `${label}.projectName must be empty for a deleted conversation`);
     } else {
       // 삭제후보 프로젝트로 옮기는 대화도 표준 제목을 갖는다.
-      assert(isNormalizedTitle(newTitle || source.title),
+      assert((decision.keepTitle === true && !newTitle) || isNormalizedTitle(newTitle || source.title),
         `${label} must preserve or set the exact "topic — work/result" title form`);
       assertOptionalProjectName(decision.projectName, `${label}.projectName`);
       assert(!(decision.trashed === true && decision.marked === true), `${label} cannot be both moved to the trash project and only marked`);

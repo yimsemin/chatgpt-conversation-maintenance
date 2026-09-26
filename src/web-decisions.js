@@ -38,7 +38,9 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
       return { conversationId: source.conversationId, decision: "delete", reviewed: true };
     }
     // 삭제후보으로 옮기는 대화도 표준 제목을 갖는다(살릴 수도 있고 목록 탐색에 필요하다).
-    assert(isNormalizedTitle(newTitle || source.title),
+    // 사용자가 제목 변경을 해제한 대화(keepTitle)만 원래 제목을 그대로 둔다(예외).
+    const keepTitle = input.keepTitle === true && (!newTitle || newTitle === source.title);
+    assert(keepTitle || isNormalizedTitle(newTitle || source.title),
       `${label}: 제목은 "주제 — 작업/결과" 형식이어야 합니다`);
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
     assert(!(input.trashed === true && input.marked === true), `${label}: 삭제후보 이동과 삭제 표시는 함께 쓸 수 없습니다`);
@@ -46,6 +48,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
       conversationId: source.conversationId,
       decision: "keep",
       ...(newTitle && newTitle !== source.title ? { newTitle } : {}),
+      ...(keepTitle && !isNormalizedTitle(source.title) ? { keepTitle: true } : {}),
       ...(input.trashed === true ? { trashed: true } : {}),
       ...(input.marked === true ? { marked: true } : {}),
       projectName: projectName || null,

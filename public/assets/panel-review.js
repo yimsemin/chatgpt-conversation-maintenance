@@ -29,7 +29,7 @@ function effectiveRows(ignoreSkips = false) {
     if (o.title !== undefined) next.newTitle = o.title;
     if (o.project !== undefined) next.project = o.project || null;
     if (o.decision === "keep" && o.project === undefined && !row.project) next.project = row.currentProject;
-    if (!ignoreSkips && o.skipMove) next.project = row.currentProject || null;
+    if (!ignoreSkips && o.skipMove) { if (next.decision === "delete") next.decision = "keep"; next.project = row.currentProject || null; }
     if (!ignoreSkips && o.skipTitle) next.newTitle = row.title;
     return next;
   }).map((row) => {
@@ -69,6 +69,10 @@ function redraw() {
       if (next) { next.focus({ preventScroll: true }); if (caret && typeof next.setSelectionRange === "function") try { next.setSelectionRange(...caret); } catch {} }
     }
     window.scrollTo(scrollX, scrollY);
+    if (scrollToKey) {
+      $("panel").querySelector(`details[data-key="${scrollToKey}"] summary`)?.scrollIntoView({ block: "start" });
+      scrollToKey = null;
+    }
   }, 0);
 }
 
@@ -94,14 +98,12 @@ function drawReview() {
   const rows = effectiveRows();
   const summary = buildReviewSummary({ catalog: S.catalog, rows });
   const ex = summary.exceptions; const c = summary.changes; const t = summary.totals;
-  const invalid = rows.filter((r) => r.decision === "keep" && !isNormalizedTitle(r.newTitle || r.title));
+  const invalid = rows.filter((r) => r.decision === "keep" && !S.overrides.get(r.conversationId)?.skipTitle && !isNormalizedTitle(r.newTitle || r.title));
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
   if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — 아래 목록에서 제목을 고쳐 주세요`);
   const listed = buildReviewSummary({ catalog: S.catalog, rows: effectiveRows(true) }).exceptions;
-  const moveList = listed.moves.slice(0, 200);
-  const renameList = listed.renames.slice(0, 200);
-  const movesOff = listed.moves.filter((m) => S.overrides.get(m.conversationId)?.skipMove).length;
+  const dests = destinationEntries();
   const renamesOff = listed.renames.filter((r) => S.overrides.get(r.conversationId)?.skipTitle).length;
   const panel = $("panel");
   fill(panel, 
@@ -112,19 +114,13 @@ function drawReview() {
       c.remove ? h("span", { class: "chip warn", text: `직접 빼야 할 대화 ${c.remove}건` }) : null),
     projectTable(summary),
     trashControl(t.delete + t.trashed + t.marked),
-    section("삭제후보 프로젝트로 옮길 대화", ex.trashed.length, ex.trashed.map((d) => trashItem(d, rows)), false),
-    section("삭제 후보로 표시만 할 대화(이동 없음)", ex.marked.length, ex.marked.map((d) => trashItem(d, rows)), false),
-    section("삭제 후보", ex.deletes.length, ex.deletes.map((d) => item(d.title, `${d.project || "프로젝트 없음"} · ${d.why || ""}`, [
-      h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, "보존으로 바꾸기")])), ex.deletes.length > 0 && ex.deletes.length <= 60),
     section("결정이 필요한 항목(미결정)", ex.undecided.length, ex.undecided.map((d) => item(d.title, d.why || "판단 근거 없음", [
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, "보존"),
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "delete" }) }, "삭제")])), true),
-    section("프로젝트 이동", listed.moves.length, [
-      bulkBar(listed.moves, "skipMove", "이동", movesOff, listed.moves.length > 200 ? `처음 200건만 표시(전체 ${listed.moves.length}건). 전체 적용·해제는 200건 밖의 항목에도 적용됩니다.` : ""),
-      moveList.map((m) => moveItem(m))], false, "", "건", `${listed.moves.length - movesOff}건 적용`),
+    destinationSection(dests),
     section("제목 변경", listed.renames.length, [
-      bulkBar(listed.renames, "skipTitle", "제목 변경", renamesOff, listed.renames.length > 200 ? `처음 200건만 표시(전체 ${listed.renames.length}건). 전체 적용·해제는 200건 밖의 항목에도 적용됩니다.` : ""),
-      renameList.map((r) => titleItem(r))], false, "", "건", `${listed.renames.length - renamesOff}건 적용`),
+      bulkBar(listed.renames, "skipTitle", "제목 변경", renamesOff),
+      paged("제목 변경", listed.renames, titleItem)], false, "", "건", `${listed.renames.length - renamesOff}건 적용`),
     section("확신이 낮은 항목", ex.lowConfidence.length, ex.lowConfidence.map((d) => item(d.title, d.why || "", [])), false),
     c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true, "", "개") : null,
     ex.manualRemoves.length ? section("직접 빼야 하는 대화", ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, `현재 프로젝트: ${m.project} — 앱은 프로젝트에서 뺄 수 없어 결과 화면에 안내합니다`, [])), false) : null,
@@ -211,23 +207,112 @@ function trashControl(candidates) {
         "삭제 후보를 바로 영구 삭제합니다(되돌릴 수 없음)"))));
 }
 
-// 삭제후보로 다루는 대화의 표준 제목을 확인·수정한다(삭제후보로 옮길 때도 표준 제목을 갖는다).
-function trashItem(d, rows) {
-  const row = rows.find((r) => r.conversationId === d.conversationId);
-  const title = (row?.newTitle || row?.title || d.title).trim();
-  const input = h("input", { class: `title-input${isNormalizedTitle(title) ? "" : " invalid"}`, type: "text", value: title, "data-fk": `t:${d.conversationId}`,
-    onchange: (e) => patch(d.conversationId, { title: e.target.value.trim() }) });
-  return h("div", { class: "item" }, h("div", { class: "t", text: d.title }),
-    h("div", { class: "m", text: `${d.project || "프로젝트 없음"} · ${d.why || ""}` }), input);
-}
-
 function section(title, count, items, open, note = "", unit = "건", extra = "") {
   if (!count) return null;
-  return h("details", { open: open || null, "data-key": title }, h("summary", { text: `${title} (${count}${unit}${extra ? ` · ${extra}` : ""})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, [items].flat(2)));
+  return h("details", { open: open || null, "data-key": title }, h("summary", { text: `${title} (${count}${unit}${extra ? ` · ${extra}` : ""})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, [items].flat(Infinity)));
+}
+
+// 긴 목록은 200건씩 나눠 보여 준다(한 화면에 수천 줄을 그리면 느려진다). 기본은 쪽 나누기, "전체 보기"로 한 번에 펼칠 수 있다.
+// 쪽·전체 보기는 화면을 다시 그려도 유지되고, 200건 이하인 목록에는 아무것도 붙지 않는다.
+const PAGE_SIZE = 200;
+const pageState = new Map(); let scrollToKey = null;
+
+function paged(key, list, render) {
+  if (list.length <= PAGE_SIZE) return list.map((x) => render(x));
+  const state = pageState.get(key) || { page: 0, all: false };
+  const pages = Math.ceil(list.length / PAGE_SIZE);
+  state.page = Math.min(state.page, pages - 1); pageState.set(key, state);
+  const shown = state.all ? list : list.slice(state.page * PAGE_SIZE, (state.page + 1) * PAGE_SIZE);
+  const go = (changes) => { Object.assign(state, changes); scrollToKey = key; redraw(); };
+  const bar = (position) => h("div", { class: "pager", "data-pos": position },
+    state.all ? h("span", { class: "small muted", text: `전체 ${list.length}건 표시 중` }) : [
+      h("button", { class: "btn ghost", type: "button", disabled: state.page === 0 ? true : null, onclick: () => go({ page: state.page - 1 }) }, "‹ 이전"),
+      h("span", { class: "small", text: `${state.page + 1} / ${pages}쪽 · ${state.page * PAGE_SIZE + 1}–${Math.min(list.length, (state.page + 1) * PAGE_SIZE)} / ${list.length}건` }),
+      h("button", { class: "btn ghost", type: "button", disabled: state.page === pages - 1 ? true : null, onclick: () => go({ page: state.page + 1 }) }, "다음 ›")],
+    h("button", { class: "btn ghost", type: "button", onclick: () => go({ all: !state.all }) }, state.all ? "쪽으로 나누어 보기" : "전체 한 번에 보기"));
+  return [bar("top"), shown.map((x) => render(x)), bar("bottom")];
+}
+
+// ---------- 옮길 곳: 프로젝트 이동과 삭제후보를 한 목록에서 다룬다 ----------
+// 대화마다 "어디로 보낼까"를 그 자리에서 고른다: 삭제후보(제안값) · 프로젝트 없음 · 각 프로젝트. 체크를 해제하면 원래 자리에 그대로 둔다.
+const TRASH_VALUE = "__trash__";
+let destFilter = "all"; // all | move | trash
+
+function destinationEntries() {
+  const entries = [];
+  for (const r of effectiveRows(true)) {
+    if (r.undecided) continue;
+    const o = S.overrides.get(r.conversationId);
+    const kind = r.trashed ? "trash" : r.marked ? "mark" : r.decision === "delete" ? "delete" : "move";
+    const moving = Boolean(r.project) && r.project !== r.currentProject;
+    if (kind === "move" && !moving && !o?.listed) continue;
+    entries.push({ conversationId: r.conversationId, title: r.title, from: r.currentProject, kind, to: r.project,
+      groupTrash: kind !== "move", effTitle: (r.newTitle || r.title).trim(), off: Boolean(o?.skipMove) });
+  }
+  return entries;
+}
+
+function trashLabel() {
+  if (S.trash.permanent) return "삭제(영구 · 되돌릴 수 없음)";
+  if (S.trash.mode === "none") return "삭제 후보로 표시만(이동 없음)";
+  return `삭제후보로 보내기 → 「${trashTarget().name}」`;
+}
+
+// 해제는 항목을 원래 자리·원래 제목 그대로 두는 것이다. 삭제후보였던 대화도 같다(해제한 항목은 표준 제목 예외).
+const releaseChanges = (entry, off) => ({ skipMove: off, ...(entry.groupTrash ? { skipTitle: off } : {}) });
+
+function destinationSection(all) {
+  if (!all.length) return null;
+  const list = destFilter === "all" ? all : all.filter((e) => (destFilter === "trash") === e.groupTrash);
+  const off = all.filter((e) => e.off).length;
+  const setFilter = (value) => { destFilter = value; pageState.delete(DEST_KEY); redraw(); };
+  const count = (pred) => all.filter(pred).length;
+  const tab = (value, label, n) => h("button", { class: `btn ghost${destFilter === value ? " on" : ""}`, type: "button", "data-fk": `f:${value}`,
+    "aria-pressed": destFilter === value ? "true" : "false", onclick: () => setFilter(value) }, `${label} ${n}`);
+  const bulk = (offValue) => () => {
+    for (const group of [true, false]) {
+      const ids = list.filter((e) => e.groupTrash === group).map((e) => e.conversationId);
+      if (ids.length) patchMany(ids, releaseChanges({ groupTrash: group }, offValue));
+    }
+  };
+  const scope = { all: "전체", move: "프로젝트 이동", trash: "삭제후보" }[destFilter];
+  const listOff = list.filter((e) => e.off).length;
+  const note = list.length > PAGE_SIZE ? "전체 적용·해제는 이 탭의 다른 쪽 항목까지 모두 바꿉니다." : "";
+  return section("옮길 곳", all.length, [
+    h("div", { class: "seg" }, tab("all", "전체", all.length), tab("move", "프로젝트 이동", count((e) => !e.groupTrash)), tab("trash", "삭제후보", count((e) => e.groupTrash))),
+    h("div", { class: "bulk" },
+      h("button", { class: "btn ghost", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope} 전체 적용`),
+      h("button", { class: "btn ghost", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope} 전체 해제`),
+      note ? h("span", { class: "muted small", text: note }) : null),
+    list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: "이 탭에 항목이 없습니다." })],
+  true, "삭제후보로 제안된 대화도 여기서 되살리거나 다른 프로젝트로 보낼 수 있습니다. ‘프로젝트 없음’을 고르면 현재 프로젝트 안의 대화는 앱이 뺄 수 없어 결과 화면에서 직접 하실 일로 안내합니다.",
+  "건", `${all.length - off}건 적용`);
+}
+const DEST_KEY = "옮길 곳";
+
+function destinationItem(e) {
+  const id = e.conversationId;
+  const toggle = h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:dest:${id}`, checked: e.off ? null : true,
+    onchange: (ev) => patchMany([id], releaseChanges(e, !ev.target.checked)) }), "적용");
+  const select = h("select", { "data-fk": `m:${id}`, onchange: (ev) => {
+    const v = ev.target.value;
+    patch(id, v === TRASH_VALUE ? { decision: "delete", project: undefined, skipMove: false, skipTitle: false, listed: true }
+      : { decision: "keep", project: v, skipMove: false, skipTitle: false, listed: true });
+  } }, h("option", { value: TRASH_VALUE, text: trashLabel() }), h("option", { value: "", text: "프로젝트 없음" }),
+    ...projectNames().map((n) => h("option", { value: n, text: n })));
+  select.value = e.groupTrash ? TRASH_VALUE : (e.to || "");
+  const dest = e.groupTrash ? trashLabel() : (e.to || "프로젝트 없음");
+  // 삭제후보로 보내거나 제목이 표준이 아닌 채 옮기는 대화는 표준 제목이 필요하다(해제한 항목은 예외).
+  const needsTitle = !e.off && e.kind !== "delete" && (e.groupTrash || !isNormalizedTitle(e.effTitle));
+  const input = needsTitle ? h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
+    onchange: (ev) => patch(id, { title: ev.target.value.trim() }) }) : null;
+  return h("div", { class: `item${e.off ? " off" : ""}` }, h("div", { class: "t", text: e.title }), h("div", { class: "ctl" }, toggle, select),
+    h("div", { class: "m", text: `${e.from || "프로젝트 없음"} → ${dest}` }), input);
 }
 
 // 목록의 모든 항목을 한 번에 적용하거나(체크) 적용 안 함(해제)으로 바꾼다.
-function bulkBar(list, flag, label, off, note) {
+function bulkBar(list, flag, label, off) {
+  const note = list.length > PAGE_SIZE ? "전체 적용·해제는 다른 쪽의 항목까지 모두 바꿉니다." : "";
   const ids = list.map((x) => x.conversationId);
   return h("div", { class: "bulk" },
     h("button", { class: "btn ghost", type: "button", disabled: off === 0 ? true : null, onclick: () => patchMany(ids, { [flag]: false }) }, `${label} 전체 적용`),
@@ -235,19 +320,11 @@ function bulkBar(list, flag, label, off, note) {
     note ? h("span", { class: "muted small", text: note }) : null);
 }
 
-// 적용 체크 상자. 해제하면 그 항목은 바꾸지 않는다(원래 프로젝트·제목 그대로).
+// 적용 체크 상자. 해제하면 그 항목은 바꾸지 않는다(원래 제목 그대로).
 function applyToggle(id, flag) {
   const off = !!S.overrides.get(id)?.[flag];
   return h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:${flag}:${id}`, checked: off ? null : true,
     onchange: (e) => patch(id, { [flag]: !e.target.checked }) }), "적용");
-}
-
-function moveItem(m) {
-  const off = !!S.overrides.get(m.conversationId)?.skipMove;
-  const el = item(m.title, `${m.from || "프로젝트 없음"} → ${m.to}`, [applyToggle(m.conversationId, "skipMove"),
-    projectSelect(m.to, (v) => patch(m.conversationId, { project: v, skipMove: false }), `m:${m.conversationId}`)]);
-  if (off) el.classList.add("off");
-  return el;
 }
 
 export function item(title, meta, controls) {
@@ -288,6 +365,7 @@ function confirmApply(summary) {
       const decisions = effectiveRows().map((r) => r.decision === "delete"
         ? { conversationId: r.conversationId, decision: "delete" }
         : { conversationId: r.conversationId, decision: "keep", newTitle: (r.newTitle || r.title).trim(), projectName: (r.project || "").trim(),
+          ...(S.overrides.get(r.conversationId)?.skipTitle ? { keepTitle: true } : {}),
           ...(r.trashed ? { trashed: true } : {}), ...(r.marked ? { marked: true } : {}) });
       const trashedRows = effectiveRows().filter((r) => r.trashed);
       await post("/maintenance/decisions", { decisions, trash: trashedRows.length ? {
