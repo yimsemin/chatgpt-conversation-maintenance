@@ -55,7 +55,8 @@ test("the app runs in the foreground process, shows what is running, and refuses
   } finally { app.child.kill("SIGKILL"); }
 });
 
-test("closing the terminal window (SIGHUP) or pressing Ctrl+C ends the app", async () => {
+// Windows 는 SIGHUP·SIGINT 를 프로세스에 전달하지 못해(강제 종료) 이 시험은 POSIX 에서만 의미가 있다.
+test("closing the terminal window (SIGHUP) or pressing Ctrl+C ends the app", { skip: process.platform === "win32" }, async () => {
   for (const [port, signal] of [[18712, "SIGHUP"], [18713, "SIGINT"]]) {
     const app = await startApp(port);
     app.child.kill(signal);

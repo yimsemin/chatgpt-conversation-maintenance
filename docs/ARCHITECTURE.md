@@ -14,12 +14,12 @@
 
 | 계층 | 모듈 | 책임 |
 | --- | --- | --- |
-| 라우터 | `maintenance-web.js` | `/maintenance/*` 라우트 표. 작업 폴더 검증·릴레이 확인·작업 시작 공통 처리 |
+| 라우터 | `maintenance-web.js` | `/maintenance/*` 라우트 표. 릴레이 확인·작업 시작 공통 처리 |
 | 워크플로 | `web-workflows.js` | 스캔·적용·삭제후보 다시 확인·프로젝트 목록 읽기(`applyWorkflow`는 점검→컴파일→제목삭제→배치→결과 확정→마무리 단계 함수를 부르는 조정자) |
 | 결정 | `web-decisions.js` | 결정 검증·저장, 삭제후보 이동 정보, 후속 실행 준비 |
 | 화면 데이터 | `web-views.js` | 세션·요약·보고서·분류안·카탈로그(읽기 전용) |
 | 작업 | `web-jobs.js` | 작업 목록·이벤트·진행률, 자동 재개, 릴레이 API 생성 |
-| 공용 | `web-common.js` | 작업 폴더 검증, 현재 실행 포인터, 안전한 오류 진단 |
+| 공용 | `web-common.js` | 앱 폴더 확정, 현재 실행 포인터, 안전한 오류 진단 |
 
 | 영역 | 모듈 | 책임 |
 | --- | --- | --- |
@@ -67,7 +67,7 @@
 | `runs/<id>/report.json`·`report.md` | `web-workflows.js`(`finishRun`) | `web-views.js` |
 | `runs/<id>/trash-meta.json`·`followup.json` | `web-decisions.js` | `web-workflows.js`(`settleTrash`) |
 | `data/trash.json` | `trash.js` | `web-views.js`, `web-decisions.js`, `web-workflows.js`, `brief.js` |
-| `data/known-projects.json` | `known-projects.js`(스캔·프로젝트 목록 읽기 뒤) | `web-views.js`(범위 선택용) |
+| `data/known-projects.json` | `known-projects.js`(프로젝트 범위·최근 N일 스캔, 프로젝트 목록 읽기, 적용 뒤 대화를 넣은 프로젝트 기억) | `web-views.js`(범위 선택용), `scan.js`(프로젝트 없는 대화의 옮길 후보 문맥) |
 | `data/jobs/*.jsonl` | `jobs.js` | `web-views.js` |
 | `.local/maintenance-web.json`(현재 실행 포인터, `phases.js` 단계) | `web-common.js`(`writePointer`) | `web-*`, `brief.js` |
 
