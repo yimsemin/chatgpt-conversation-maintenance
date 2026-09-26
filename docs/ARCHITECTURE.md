@@ -24,7 +24,7 @@
 | 영역 | 모듈 | 책임 |
 | --- | --- | --- |
 | 실행·상태 | `launcher.js`, `server.js`, `app-status.js` | 앱을 터미널 프로세스로 켜고(하나만) 끄기·상태 확인, `/health`·`/app/shutdown`, 프로세스·시작 시각·코드 변경 여부 |
-| 카탈로그 | `catalog.js`, `known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 나머지는 대화 목록 + 프로젝트별 표본 제목), 알려진 프로젝트 이름 사본 |
+| 카탈로그 | `catalog.js`, `known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 프로젝트 없는 대화는 프로젝트 목록 없이 대화 목록만, 최근 N일은 목록 + 프로젝트 이름), 알려진 프로젝트 이름 사본 |
 | 스캔·결과 확정 | `scan.js`, `finalize.js` | 조사 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
 | 분류 | `classification-criteria.js`, `classification-review.js`, `proposal-validation.js`, `decision-compile.js`, `workflow.js`(로컬 명령) | 판단 기준 압축본, `review.json`·요청문, 제안 검증, 결정 → 실행 계획 |
 | 적용 엔진 | `management.js`, `plan-set.js`, `project-management.js`, `project-routing.js` | 제목·삭제 계획, 배치 묶음, 프로젝트 생성·배치·이동 |

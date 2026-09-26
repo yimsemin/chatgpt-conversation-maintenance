@@ -9,6 +9,9 @@ import { refreshSession } from "/assets/session-client.js";
 const SCOPE_KINDS = [["unassigned", "프로젝트에 넣지 않은 대화"], ["project", "특정 프로젝트의 대화"], ["recent", "최근 며칠 안에 수정한 대화"],
   ["all", "모든 대화(전체 재정비 — 오래 걸림)"]];
 
+// 프로젝트 없는 대화의 기간 선택지(일). 0 은 기간 제한 없음.
+const UNASSIGNED_WINDOWS = [[14, "최근 14일"], [30, "최근 30일"], [0, "전체 기간"]];
+
 function saveScope() { try { localStorage.setItem("app_scan_scope", JSON.stringify(S.scope)); } catch {} }
 
 export function loadScope() {
@@ -17,10 +20,11 @@ export function loadScope() {
     if (saved?.kind) S.scope = { ...S.scope, ...saved, projectNames: Array.isArray(saved.projectNames) ? saved.projectNames : (saved.projectName ? [saved.projectName] : []) };
   } catch {}
   if (!SCOPE_KINDS.some(([value]) => value === S.scope.kind)) S.scope.kind = "unassigned";
+  if (!UNASSIGNED_WINDOWS.some(([value]) => value === S.scope.window)) S.scope.window = 14;
 }
 
 const SCOPE_HINTS = {
-  unassigned: "프로젝트에 넣지 않은 대화를 후보로 삼습니다. 프로젝트로 정돈하는 것이 이 도구의 핵심 용도입니다.",
+  unassigned: "프로젝트에 넣지 않은 대화를 후보로 삼습니다. 프로젝트로 정돈하는 것이 이 도구의 핵심 용도입니다. 프로젝트 목록은 읽지 않으며, 옮길 프로젝트는 이전에 쓴 프로젝트 중에서 고릅니다. 기간을 좁히면 목록을 덜 읽어 빨라집니다.",
   project: "고른 프로젝트 안의 대화만 후보로 삼습니다. 작업을 마무리한 프로젝트를 정돈할 때 씁니다. 가장 빠릅니다.",
   recent: "최근 며칠 안에 수정한 대화를 후보로 삼습니다. 프로젝트 안의 대화는 ChatGPT 목록에서 일부 빠질 수 있으니 빠짐없이 보려면 프로젝트 범위를 쓰세요.",
   all: "모든 대화(보관한 것 포함)의 본문을 받아 처음부터 다시 분류합니다. 수 분~수 시간 걸리고 끊기면 이어받습니다.",
@@ -41,8 +45,13 @@ function scopePicker() {
   kind.value = S.scope.kind;
   const days = h("input", { type: "number", min: "1", max: "3650", value: String(S.scope.days || 7), size: "4",
     onchange: (e) => { S.scope.days = Math.max(1, Math.min(3650, Math.floor(Number(e.target.value)) || 7)); saveScope(); } });
-  // 한 줄: 범위 선택 + (최근 N일이면 일수 입력)
+  // 프로젝트 없는 대화는 기간을 좁힐 수 있다(기본 14일). 기간이 짧을수록 대화 목록을 덜 읽는다.
+  const period = h("select", { onchange: (e) => { S.scope.window = Number(e.target.value); saveScope(); } },
+    ...UNASSIGNED_WINDOWS.map(([value, label]) => h("option", { value: String(value), text: label })));
+  period.value = String(S.scope.window);
+  // 한 줄: 범위 선택 + (프로젝트 없는 대화면 기간, 최근 N일이면 일수 입력)
   const line = h("div", { class: "row" }, h("label", { class: "field inline" }, "조사 범위", kind),
+    S.scope.kind === "unassigned" ? h("label", { class: "field inline" }, "기간", period) : null,
     S.scope.kind === "recent" ? h("label", { class: "field inline" }, "최근", days, "일") : null);
   return h("div", {}, line, S.scope.kind === "project" ? projectChooser() : null, h("p", { class: "muted small", text: SCOPE_HINTS[S.scope.kind] }));
 }
@@ -82,7 +91,7 @@ export function scopeLabel(scope) {
   if (scope.kind === "project") return `프로젝트 ${(scope.projectNames || (scope.projectName ? [scope.projectName] : [])).map((name) => `「${name}」`).join(", ")}`;
   if (scope.kind === "recent") return `최근 ${scope.days}일`;
   if (scope.kind === "all") return "모든 대화";
-  return "프로젝트에 넣지 않은 대화";
+  return scope.days ? `프로젝트에 넣지 않은 대화(최근 ${scope.days}일)` : "프로젝트에 넣지 않은 대화";
 }
 
 // 진행 중인 분류·검토가 있으면 새 확인을 시작할 때 버려진다는 것을 알린다.
@@ -92,9 +101,10 @@ function pendingRun() {
 }
 
 function scanBody() {
-  const { kind, projectNames, days } = S.scope;
+  const { kind, projectNames, days, window } = S.scope;
   if (kind === "project") return { scope: { kind, projectNames } };
   if (kind === "recent") return { scope: { kind, days } };
+  if (kind === "unassigned") return { scope: window ? { kind, days: window } : { kind } };
   return { scope: { kind } };
 }
 

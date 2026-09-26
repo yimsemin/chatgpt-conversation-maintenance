@@ -37,10 +37,15 @@ export function validateScope(scope) {
     }
     return { kind: "project", projectNames: [...new Set(names)] };
   }
+  const validDays = (days) => Number.isInteger(days) && days >= 1 && days <= MAX_RECENT_DAYS;
   if (scope.kind === "recent") {
-    assert(Number.isInteger(scope.days) && scope.days >= 1 && scope.days <= MAX_RECENT_DAYS,
-      "최근 일수는 1 이상의 정수여야 합니다");
+    assert(validDays(scope.days), "최근 일수는 1 이상의 정수여야 합니다");
     return { kind: "recent", days: scope.days };
+  }
+  if (scope.kind === "unassigned") {
+    // days 가 없으면 기간 제한 없이 프로젝트 없는 대화 전체다.
+    assert(scope.days == null || validDays(scope.days), "기간(일)은 1 이상의 정수여야 합니다");
+    return scope.days == null ? { kind: "unassigned" } : { kind: "unassigned", days: scope.days };
   }
   return { kind: scope.kind };
 }
@@ -49,7 +54,7 @@ export function describeScope(scope) {
   if (scope.kind === "project") return `프로젝트 ${scope.projectNames.map((name) => `「${name}」`).join(", ")}`;
   if (scope.kind === "recent") return `최근 ${scope.days}일 안에 수정된 대화`;
   if (scope.kind === "all") return "모든 대화";
-  return "프로젝트에 넣지 않은 대화";
+  return scope.days ? `프로젝트에 넣지 않은 대화(최근 ${scope.days}일)` : "프로젝트에 넣지 않은 대화(전체 기간)";
 }
 
 function conversationRecord(catalogItem, data, raw, backupFile) {
@@ -110,12 +115,12 @@ function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, sc
 
 // 범위 안의 대화를 모두 후보로 받는다(지난 확인과 비교하지 않는다). 도중에 끊긴 실행 폴더는 같은 runDir 로 이어받는다.
 // 프로젝트·기록 파일은 만들지 않고 실행 폴더(runDir)에만 결과를 남긴다.
-export async function scanMaintenanceRun({ runDir, api, scope, now = () => new Date(), onProgress = () => {} }) {
+export async function scanMaintenanceRun({ runDir, api, scope, knownProjects = [], now = () => new Date(), onProgress = () => {} }) {
   const validScope = validateScope(scope);
   const root = prepareRunDirectory(runDir);
   const catalog = validScope.kind === "all"
     ? await collectConversationCatalog(api, now, onProgress)
-    : await collectScopedCatalog(api, validScope, now, onProgress);
+    : await collectScopedCatalog(api, validScope, now, onProgress, { knownProjects });
   const catalogPath = runFiles(root).catalog;
   const selected = catalog.conversations
     .filter((item) => validScope.kind === "all" || !item.isArchived)

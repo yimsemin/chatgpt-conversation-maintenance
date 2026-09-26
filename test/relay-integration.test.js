@@ -91,7 +91,7 @@ test("a scan completes through the relay without any direct Node HTTP call", asy
 
   // 페이지가 실제로 고정 경로만 받았는지 확인한다.
   assert.deepEqual([...new Set(served.map((entry) => entry.op))].sort(),
-    ["getConversation", "listConversations", "listProjectConversations", "listProjects"]);
+    ["getConversation", "listConversations"]);
   for (const entry of served) {
     assert.match(entry.path, /^\/(backend-api|api)\//);
     assert.doesNotMatch(entry.path, /^https?:/);

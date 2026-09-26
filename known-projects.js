@@ -25,6 +25,10 @@ export function sortByRecency(projects) {
 export function readKnownProjects(dataDir) {
   try {
     const data = JSON.parse(readFileSync(join(dataDir, FILE), "utf8"));
+    // 이름만 적던 옛 형식(version 1)도 읽는다.
+    if (data?.version === 1 && Array.isArray(data.names)) {
+      return { updatedAt: data.updatedAt || null, projects: data.names.filter((name) => typeof name === "string").map((name) => ({ name })) };
+    }
     if (data?.version === 2 && Array.isArray(data.projects)) {
       return { updatedAt: data.updatedAt || null, projects: data.projects.filter((p) => typeof p?.name === "string") };
     }
@@ -46,4 +50,13 @@ export function writeKnownProjects(dataDir, projects, now = () => new Date()) {
   const value = { version: 2, updatedAt: now().toISOString(), projects: sortByRecency(merged) };
   writeJsonAtomic(join(dataDir, FILE), value);
   return value;
+}
+
+// 프로젝트를 옮겨 넣었거나 새로 만든 뒤 그 이름을 기억해 둔다(다음 분류에서 옮길 후보로 쓴다). 이미 아는 프로젝트는 그대로 두고 더한다.
+export function rememberProjects(dataDir, names) {
+  const known = readKnownProjects(dataDir).projects;
+  const have = new Set(known.map((project) => project.name));
+  const added = [...new Set(names)].filter((name) => name && !have.has(name));
+  if (!added.length) return known;
+  return writeKnownProjects(dataDir, [...added.map((name) => ({ name })), ...known]).projects;
 }

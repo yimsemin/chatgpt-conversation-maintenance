@@ -186,17 +186,22 @@ function catalogRecord(item, projectName) {
   };
 }
 
-// 범위 수집. scope.kind: "project"(projectNames) | "unassigned" | "recent"(days). 완전 수집은 collectConversationCatalog 다.
+// 범위 수집. scope.kind: "project"(projectNames) | "unassigned"(days 이내, 없으면 전체) | "recent"(days). 완전 수집은 collectConversationCatalog 다.
 // 반환하는 카탈로그는 complete:false 이며, 읽지 않은 프로젝트의 대화 수는 null 이다(요약이 그 수를 지어내지 않게).
-export async function collectScopedCatalog(api, scope, now = () => new Date(), onProgress = () => {}) {
-  assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
-    "Catalog API adapter is incomplete");
+// 프로젝트 없는 대화는 프로젝트 목록을 읽지 않고 찾는다. 옮길 후보로는 이미 알고 있는 프로젝트(knownProjects 이름)만 문맥으로 쓴다.
+export async function collectScopedCatalog(api, scope, now = () => new Date(), onProgress = () => {}, { knownProjects = [] } = {}) {
   assert(["project", "unassigned", "recent"].includes(scope?.kind), "Unsupported scope");
-  onProgress({ phase: "projects", index: 0, total: null });
-  const projects = await discoverProjects(api);
+  assert(api?.listConversations && (scope.kind === "unassigned" || (api.listProjectSidebar && api.listProjectConversations)),
+    "Catalog API adapter is incomplete");
+  let projects;
+  if (scope.kind === "unassigned") projects = knownProjects.map((projectName) => ({ projectId: null, projectName }));
+  else {
+    onProgress({ phase: "projects", index: 0, total: null });
+    projects = await discoverProjects(api);
+  }
   const nameById = new Map(projects.map((project) => [project.projectId, project.projectName]));
   const records = new Map();
-  const known = new Map(); // 프로젝트 이름 -> { count, samples }
+  const known = new Map(); // 읽은 프로젝트 이름 -> { count, samples, latestUpdate }
 
   if (scope.kind === "project") {
     for (const [index, name] of scope.projectNames.entries()) {
@@ -209,14 +214,7 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
         latestUpdate: latestOf(items) });
     }
   } else {
-    // 다른 프로젝트로 옮길 후보를 고르는 데 쓰이도록 프로젝트마다 표본 제목만 읽는다.
-    for (const [index, project] of projects.entries()) {
-      onProgress({ phase: "projects", index, total: projects.length, projectName: project.projectName });
-      const items = await readProjectConversations(api, project, { onlyFirstPage: true });
-      known.set(project.projectName, { count: null, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean),
-        latestUpdate: latestOf(items) });
-    }
-    const cutoff = scope.kind === "recent" ? now().getTime() - scope.days * 86400000 : null;
+    const cutoff = scope.days ? now().getTime() - scope.days * 86400000 : null;
     listing: for await (const items of listConversationPages(api, { archived: false, onProgress })) {
       for (const item of items) {
         const updated = timeMilliseconds(item.update_time);

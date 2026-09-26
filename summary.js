@@ -20,12 +20,10 @@ export function rowsFromProposal(proposal, inventory) {
   });
 }
 
-export function rowsFromDecisions(decisions, inventory, proposal = null) {
+export function rowsFromDecisions(decisions, inventory) {
   const byId = new Map((inventory.conversations || []).map((item) => [item.conversationId, item]));
-  const noteById = new Map((proposal?.items || []).map((item) => [item.conversationId, item]));
   return (decisions.decisions || []).map((item) => {
     const source = byId.get(item.conversationId) || {};
-    const note = noteById.get(item.conversationId) || {};
     return {
       conversationId: item.conversationId,
       title: source.title ?? "",
@@ -36,8 +34,8 @@ export function rowsFromDecisions(decisions, inventory, proposal = null) {
       marked: item.marked === true,
       newTitle: item.newTitle || null,
       project: item.decision === "delete" ? null : (item.projectName ?? null),
-      confidence: note.confidence || null,
-      why: item.rationale || note.rationale || "",
+      confidence: null,
+      why: item.rationale || "",
       action: null,
     };
   });
@@ -172,6 +170,7 @@ function headline(totals, changes) {
 export function buildResultReport({ catalogBefore, catalogAfter, rows, renameOrder = null, finishedAt = new Date().toISOString() }) {
   const plan = buildReviewSummary({ catalog: catalogBefore, rows });
   const afterCounts = countByProject(catalogAfter);
+  const rowTitle = new Map(rows.map((row) => [row.conversationId, row.newTitle || row.title]));
   const projects = plan.projects.map((project) => ({
     ...project,
     actualAfter: afterCounts.has(project.name) ? afterCounts.get(project.name) : null,
@@ -187,7 +186,7 @@ export function buildResultReport({ catalogBefore, catalogAfter, rows, renameOrd
     mismatches,
     renameOrder,
     // 무엇이 어떻게 바뀌었는지 대화별로 남긴다(화면·보고서에서 확인용).
-    details: { renames: plan.exceptions.renames, moves: plan.exceptions.moves, trashed: plan.exceptions.trashed },
+    details: { renames: plan.exceptions.renames, moves: plan.exceptions.moves, trashed: plan.exceptions.trashed.map((item) => ({ ...item, title: rowTitle.get(item.conversationId) || item.title })) },
     todo: {
       deleteEmptyProjects: [...afterCounts.entries()].filter(([, count]) => count === 0).map(([name]) => name).sort(),
       removeFromProject: plan.exceptions.manualRemoves,

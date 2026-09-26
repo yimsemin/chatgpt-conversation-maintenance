@@ -52,6 +52,8 @@ function api() {
 
 test("scope validation accepts only the four scope kinds", () => {
   assert.deepEqual(validateScope({ kind: "unassigned" }), { kind: "unassigned" });
+  assert.deepEqual(validateScope({ kind: "unassigned", days: 14 }), { kind: "unassigned", days: 14 });
+  assert.throws(() => validateScope({ kind: "unassigned", days: 0 }), /기간/);
   assert.deepEqual(validateScope({ kind: "all", extra: 1 }), { kind: "all" });
   assert.deepEqual(validateScope({ kind: "recent", days: 7, extra: 1 }), { kind: "recent", days: 7 });
   assert.throws(() => validateScope({ kind: "everything" }), /종류/);
@@ -75,15 +77,21 @@ test("the project scope reads only that project and leaves other project counts 
   await assert.rejects(() => collectScopedCatalog(fake, { kind: "project", projectNames: ["없는 프로젝트"] }, () => NOW), /프로젝트를 찾을 수 없습니다/);
 });
 
-test("the unassigned scope reads the list once, skips archived pages, and treats custom GPTs as projectless", async () => {
+test("the unassigned scope reads only the conversation list: no project reads, custom GPTs count as projectless", async () => {
   const fake = api();
-  const catalog = await collectScopedCatalog(fake, { kind: "unassigned" }, () => NOW);
+  const catalog = await collectScopedCatalog(fake, { kind: "unassigned" }, () => NOW, () => {}, { knownProjects: ["프로젝트 A"] });
   assert.deepEqual(catalog.conversations.map((c) => c.conversationId).sort(), [ID1, ID3, ID4].sort());
   assert.equal(fake.calls.list.every((call) => call.archived === false), true);
-  // 다른 프로젝트로 옮길 후보를 고르는 데 쓰일 표본 제목은 프로젝트마다 작은 한 페이지만 읽는다.
-  assert.deepEqual(fake.calls.projectList.map((c) => c.limit), [10, 10]);
-  assert.equal(catalog.projects.find((p) => p.projectName === "프로젝트 A").sampleTitles[0], "프로젝트 A — 대화");
-  assert.equal(catalog.projects.every((p) => p.conversationCount === null), true);
+  assert.equal(fake.calls.sidebar, 0);
+  assert.equal(fake.calls.projectList.length, 0);
+  assert.deepEqual(catalog.projects.map((p) => [p.projectName, p.conversationCount]), [["프로젝트 A", null]], "only known projects are context");
+});
+
+test("the unassigned scope can be limited to recent days and stops paging at the cutoff", async () => {
+  const fake = api();
+  const catalog = await collectScopedCatalog(fake, { kind: "unassigned", days: 14 }, () => NOW);
+  assert.deepEqual(catalog.conversations.map((c) => c.conversationId).sort(), [ID1, ID3].sort());
+  assert.deepEqual(catalog.projects, []);
 });
 
 test("the recent scope stops paging at the cutoff and drops conversations of unknown projects", async () => {
@@ -102,6 +110,7 @@ test("a scoped scan collects only the scope and records it in the inventory", as
     assert.equal(result.inventory.source.mode, "scope");
     assert.deepEqual(result.inventory.source.scope, { kind: "unassigned" });
     assert.equal(result.inventory.counts.candidates, 3);
+    assert.equal(fake.calls.sidebar, 0, "the projectless scope never lists projects");
     assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
     assert.equal(result.catalog.scope.complete, false);
 

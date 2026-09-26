@@ -15,7 +15,7 @@ import { compileProjectRouting, compileReviewedDecisions } from "./decision-comp
 import { writeClassificationReview } from "./classification-review.js";
 import { addTrashed, readTrash, removeTrashed } from "./trash.js";
 import { collectScopedCatalog, listProjectsWithRecency } from "./catalog.js";
-import { writeKnownProjects } from "./known-projects.js";
+import { readKnownProjects, rememberProjects, writeKnownProjects } from "./known-projects.js";
 import { buildResultReport, reportMarkdown, rowsFromDecisions } from "./summary.js";
 import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
@@ -41,7 +41,6 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
     acquireLock({ dataDir });
     lockHeld = true;
     const id = runId();
-    // 전체 범위는 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
     const runDir = validScope.kind === "all" ? overhaulRunDir(dataDir) : join(runsDir(dataDir), id);
     const inventoryPath = runFiles(runDir).inventory;
     const reviewPath = runFiles(runDir).review;
@@ -50,9 +49,12 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
       : `대화 확인: ${describeScope(validScope)}를 후보로 받습니다(읽기 전용).`);
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
     const scanResult = await untilDone(job, "확인", () => scanMaintenanceRun({
-      runDir, api, scope: validScope, onProgress: (info) => reportProgress(job, info),
+      runDir, api, scope: validScope, knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
-    writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => ({ name: project.projectName, updatedAt: project.latestUpdate })));
+    // 프로젝트 없는 대화 범위는 프로젝트 목록을 읽지 않으므로 알려진 프로젝트 기록을 건드리지 않는다.
+    if (validScope.kind !== "unassigned") {
+      writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => ({ name: project.projectName, updatedAt: project.latestUpdate })));
+    }
     const counts = scanResult.inventory.counts;
     const candidateCount = Number(counts?.candidates || 0);
     const pointer = {
@@ -268,7 +270,11 @@ function finishRun({ workspace, dataDir, pointer, job, afterCatalog, renameOrder
   let report = null;
   try { report = writeResultReport(pointer, afterCatalog, renameOrder); }
   catch (error) { jobEvent(job, "report", `결과 보고서를 만들지 못했습니다: ${error.message}`); }
-  if (report) jobEvent(job, "report", `결과: ${report.headline}`);
+  if (report) {
+    jobEvent(job, "report", `결과: ${report.headline}`);
+    // 대화를 넣은 프로젝트는 다음 분류에서 옮길 후보로 쓰도록 기억한다(프로젝트 목록을 다시 읽지 않아도 된다).
+    try { rememberProjects(dataDir, report.projects.filter((project) => project.delta > 0).map((project) => project.name)); } catch {}
+  }
   const result = { counts: afterCatalog.counts, deletes, proposalCount: decisionCount, headline: report?.headline || null,
     scope: pointer.result?.scope };
   writePointer(workspace, { ...pointer, phase: PHASE.COMPLETE, result });

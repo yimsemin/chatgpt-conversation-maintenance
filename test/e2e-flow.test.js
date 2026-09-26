@@ -71,7 +71,7 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     session = await untilProposal(dev);
     // 프로젝트에 넣지 않은 대화: 처음부터 프로젝트 없던 8개와 새로 생긴 6개.
     assert.equal(session.run.candidates, 14);
-    assert.ok(session.knownProjects.projects.length >= 5, "the scan fills the known project list for the scope picker");
+    assert.equal(session.knownProjects.projects.length, 0, "a projectless scan does not read the project list");
 
     const proposal = await dev.get("/maintenance/proposal");
     assert.equal(proposal.ready, true);
@@ -105,8 +105,8 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
 test("a project scope scans only that project and applies without a baseline", async () => {
   const dev = await startDev(18608, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
   try {
-    const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
-    assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
+    const listed = await dev.waitJob((await dev.call("/maintenance/projects", {})).jobId);
+    assert.equal(listed.ok, true, JSON.stringify(listed.error));
     const name = (await dev.get("/maintenance/session")).knownProjects.projects[0].name;
     const project = await dev.waitJob((await dev.call("/maintenance/scan", { scope: { kind: "project", projectNames: [name] } })).jobId);
     assert.equal(project.ok, true, JSON.stringify(project.error));
