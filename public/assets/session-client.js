@@ -1,19 +1,19 @@
 // 서버 세션 상태 가져오기(폴링)와 현재 단계 판단.
 import { S, hooks } from "/assets/state.js";
-import { api, fail, wsq } from "/assets/net.js";
+import { api, fail } from "/assets/net.js";
 
 // ---------- session polling ----------
 export async function refreshSession() {
-  try { S.session = await api(`/maintenance/session?${wsq()}`); S.sessionError = null; }
+  try { S.session = await api("/maintenance/session"); S.sessionError = null; }
   catch (error) {
     S.session = null; S.sessionError = error;
-    // 서버가 응답한 오류(작업 폴더 문제 등)는 한 번만 알리고, 서버 자체가 없을 때는 안내 문구만 보인다.
+    // 서버가 응답한 오류는 한 번만 알리고, 서버 자체가 없을 때는 안내 문구만 보인다.
     if (error?.detail && S.lastErrorShown !== error.message) { S.lastErrorShown = error.message; fail(error); }
   }
   hooks.render();
 }
 
-export let pollTimer = null;
+let pollTimer = null;
 
 export function schedulePoll() {
   clearTimeout(pollTimer);

@@ -13,13 +13,11 @@ async function startDev(port, extraArgs = [], env = {}) {
     cwd: ROOT, env: { ...process.env, MAINTENANCE_PORT: String(port), ...env }, stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  let workspace = "";
   const ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`dev server did not start: ${output}`)), 20000);
     child.stdout.on("data", (chunk) => {
       output += chunk;
-      const match = output.match(/작업 폴더 (.+)\n/);
-      if (match && output.includes("이 터미널 창이 앱입니다")) { workspace = match[1].trim(); clearTimeout(timer); resolve(); }
+      if (output.includes("이 터미널 창이 앱입니다")) { clearTimeout(timer); resolve(); }
     });
     child.stderr.on("data", (chunk) => { output += chunk; });
     child.on("exit", (code) => reject(new Error(`dev server exited ${code}: ${output}`)));
@@ -29,12 +27,12 @@ async function startDev(port, extraArgs = [], env = {}) {
   const base = `http://127.0.0.1:${port}`;
   const call = async (path, body = null) => {
     const response = await fetch(`${base}${path}`, body === null ? {} : {
-      method: "POST", headers: { "Content-Type": "application/json", Origin: base }, body: JSON.stringify({ workspace, ...body }) });
+      method: "POST", headers: { "Content-Type": "application/json", Origin: base }, body: JSON.stringify(body) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
     return data;
   };
-  const get = (path) => call(`${path}${path.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(workspace)}`);
+  const get = (path) => call(path);
   const waitJob = async (jobId, timeoutMs = 60000) => {
     const end = Date.now() + timeoutMs;
     while (Date.now() < end) {
@@ -44,7 +42,7 @@ async function startDev(port, extraArgs = [], env = {}) {
     }
     throw new Error("job timed out");
   };
-  return { child, call, get, waitJob, workspace, stop: async () => { child.kill("SIGTERM"); await once(child, "exit").catch(() => {}); } };
+  return { child, call, get, waitJob, stop: async () => { child.kill("SIGTERM"); await once(child, "exit").catch(() => {}); } };
 }
 
 async function untilProposal(dev) {
@@ -75,10 +73,6 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     assert.equal(session.run.candidates, 14);
     assert.ok(session.knownProjects.projects.length >= 5, "the scan fills the known project list for the scope picker");
 
-    const summary = (await dev.get("/maintenance/summary")).summary;
-    assert.equal(summary.totals.candidates, 14);
-    assert.ok(summary.totals.delete >= 1);
-
     const proposal = await dev.get("/maintenance/proposal");
     assert.equal(proposal.ready, true);
     const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 90000);
@@ -88,7 +82,8 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     assert.equal(session.step, "result");
     const report = (await dev.get("/maintenance/report")).report;
     assert.deepEqual(report.mismatches, []);
-    assert.equal(report.totals.delete, summary.totals.delete);
+    assert.ok(report.totals.delete >= 1);
+    assert.equal(report.totals.candidates, 14);
     assert.ok(report.renameOrder.renamed > 1, "several titles were standardized");
     assert.equal(report.renameOrder.preserved, true, "renamed conversations keep their original relative order");
     const jobs = await dev.get("/maintenance/jobs");
@@ -163,14 +158,15 @@ test("a second job is refused while one runs, and a cancelled scan can be starte
   } finally { await dev.stop(); }
 });
 
-test("a request without an explicit workspace is refused instead of falling back to a default folder", async () => {
+test("a request cannot point the app at another folder", async () => {
   const dev = await startDev(18609, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
   try {
-    const response = await fetch(`http://127.0.0.1:18609/maintenance/session`);
-    assert.equal(response.status, 400);
-    const post = await fetch(`http://127.0.0.1:18609/maintenance/scan`, { method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:18609" }, body: JSON.stringify(UNASSIGNED) });
+    const get = await fetch("http://127.0.0.1:18609/maintenance/session?workspace=/tmp");
+    assert.equal(get.status, 400);
+    const post = await fetch("http://127.0.0.1:18609/maintenance/scan", { method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:18609" }, body: JSON.stringify({ ...UNASSIGNED, workspace: "/tmp" }) });
     assert.equal(post.status, 400);
+    assert.equal((await fetch("http://127.0.0.1:18609/maintenance/session")).status, 200);
   } finally { await dev.stop(); }
 });
 

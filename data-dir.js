@@ -27,7 +27,7 @@ export function configuredDataDir(appRoot = MODULE_ROOT) {
 //   none         프로젝트로 옮기지 않고 삭제 후보 표시만 한다(이미 프로젝트 안에 있는 대화는 API로 뺄 수 없어 직접 빼야 한다).
 // 프로젝트 주소·ID는 받지 않고 이름만 쓴다.
 export const DEFAULT_TRASH_PROJECT = "삭제후보";
-export const TRASH_MODES = ["auto", "fixed", "none"];
+const TRASH_MODES = ["auto", "fixed", "none"];
 
 export function configuredTrash(appRoot = MODULE_ROOT) {
   const fallback = { mode: "auto", name: DEFAULT_TRASH_PROJECT };

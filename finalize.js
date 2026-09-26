@@ -4,9 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { assert } from "./assert.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
-import { assertOptionalProjectName } from "./decision-compile.js";
-import { sha256 } from "./content-hash.js";
-import { isNormalizedTitle } from "./title-rules.js";
+import { loadReviewedRun, reviewedPairs } from "./decision-compile.js";
 import { loadPlanSet } from "./plan-set.js";
 import { projectRoutingStatus, validateProjectRouting } from "./project-routing.js";
 import { runFiles } from "./run-files.js";
@@ -99,43 +97,8 @@ export function checkRenameOrder(inventory, receiptDir) {
 }
 
 export function finalizeMaintenanceRun({ inventoryPath, decisionsPath, plansDir = "", routingPath = "", now = () => new Date() }) {
-  const inventoryRaw = readFileSync(inventoryPath);
-  const decisionsRaw = readFileSync(decisionsPath);
-  const inventory = JSON.parse(inventoryRaw.toString("utf8"));
-  const decisionsFile = JSON.parse(decisionsRaw.toString("utf8"));
-  const inventoryDigest = sha256(inventoryRaw);
-  const decisionsDigest = sha256(decisionsRaw);
-  assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory",
-    "Finalize requires a maintenance inventory");
-  assert(Array.isArray(inventory.warnings) && inventory.warnings.length === 0,
-    `Maintenance inventory is not safe: ${(inventory.warnings || []).join("; ")}`);
-  assert(decisionsFile?.version === 1 && decisionsFile.kind === "reviewed-decisions",
-    "Finalize requires reviewed decisions");
-  assert(decisionsFile.inventoryDigest === inventoryDigest, "Reviewed decisions do not match the inventory");
-  assert(Array.isArray(decisionsFile.decisions), "Reviewed decisions are missing");
-  const candidateIds = inventory.conversations.map((item) => item.conversationId).sort();
-  const reviewedIds = decisionsFile.decisions.map((item) => item.conversationId).sort();
-  assert(JSON.stringify(candidateIds) === JSON.stringify(reviewedIds),
-    "Every maintenance candidate must have exactly one reviewed decision");
-  assert(decisionsFile.decisions.every((item) => item.reviewed === true),
-    "Every maintenance candidate must be reviewed");
-  const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
-  for (const decision of decisionsFile.decisions) {
-    assert(["keep", "delete"].includes(decision.decision),
-      `Unsupported reviewed decision: ${decision.conversationId}`);
-    assert(!(decision.decision === "delete" && decision.newTitle),
-      `A deleted conversation cannot also be renamed: ${decision.conversationId}`);
-    if (decision.decision !== "delete") {
-      assert(isNormalizedTitle(decision.newTitle || inventoryById.get(decision.conversationId)?.title),
-        `Reviewed title must use the exact "topic — work/result" form: ${decision.conversationId}`);
-      assertOptionalProjectName(decision.projectName,
-        `Reviewed projectName for ${decision.conversationId}`);
-      // A decision.projectName that differs from the conversation's current
-      // project is a real move between two existing projects, handled by
-      // compileProjectRouting()/runProjectRouting() after the management plans —
-      // not something this finalize step needs to reject.
-    }
-  }
+  const { inventory, decisionsFile, inventoryDigest, decisionsDigest } = loadReviewedRun(inventoryPath, decisionsPath);
+  reviewedPairs(inventory, decisionsFile); // 후보마다 정확히 하나의 검토된 결정이 있는지 확인한다
   const mutations = mutationDecisions(decisionsFile.decisions);
   if (mutations.length) {
     validateCompletedPlans(plansDir, inventoryDigest, decisionsDigest,

@@ -6,7 +6,7 @@
 import { assert } from "./assert.js";
 import { CONVERSATION_ID } from "./ids.js";
 
-export const PAGE_SIZE = 100;
+const PAGE_SIZE = 100;
 const PROJECT_PAGE_SIZE = 20;
 const PROJECT_CONVERSATION_PAGE_SIZE = 50;
 
@@ -18,18 +18,6 @@ export function timeMilliseconds(value) {
   }
   const parsed = Date.parse(value || "");
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-// 한쪽 시각을 알 수 없으면 "바뀌었다"로 보지 않는다. 대화 목록 엔드포인트는 항목을
-// 수정시각 순으로 주고 offset 으로 페이지를 넘기므로, 제목을 대량 변경한 직후에는
-// 일부 대화가 주 목록에서 밀려 프로젝트 목록에서만 수집된다. 그 응답에는 create_time 이
-// 없을 수 있는데, 정보가 없는 것을 변경 증거로 취급하면 실제로 바뀌지 않은 대화 때문에
-// 전체 작업이 멈춘다(2026-09-12 실측: createTime 드리프트로 검증 2회 실패).
-export function sameTime(left, right) {
-  const a = timeMilliseconds(left);
-  const b = timeMilliseconds(right);
-  if (a === null || b === null) return true;
-  return a === b;
 }
 
 export function projectCatalog(projects, conversations) {
@@ -51,7 +39,7 @@ export function projectCatalog(projects, conversations) {
     .sort((left, right) => left.projectName.localeCompare(right.projectName));
 }
 
-export function unwrap(response, label) {
+function unwrap(response, label) {
   assert(response.ok, `${label} failed: HTTP ${response.status}`);
   assert(response.data && typeof response.data === "object", `${label} returned invalid JSON`);
   return response.data;
@@ -69,8 +57,8 @@ export function unwrapSidebarGizmo(entry) {
   return current;
 }
 
-// 소유 프로젝트(ID·이름)를 모두 찾는다.
-async function discoverProjects(api) {
+// 소유 프로젝트(ID·이름, 알면 마지막 수정 시각)를 모두 찾는다. 프로젝트를 찾는 유일한 구현이다(카탈로그와 프로젝트 배치가 함께 쓴다).
+export async function discoverProjects(api) {
   const projects = [];
   let projectCursor = null;
   const seenProjectCursors = new Set();
@@ -106,80 +94,51 @@ export async function listProjectsWithRecency(api) {
     ...(project.updatedAt ? { updatedAt: project.updatedAt } : {}) }));
 }
 
+// 대화 목록(활성 또는 보관)을 페이지 단위로 돌려준다. offset 으로 넘기며, 같은 페이지가 반복되면 멈춘 것으로 보고 실패한다.
+async function* listConversationPages(api, { archived, onProgress }) {
+  let offset = 0;
+  const seenPages = new Set();
+  while (true) {
+    const data = unwrap(
+      await api.listConversations({ archived, offset, limit: PAGE_SIZE }),
+      `${archived ? "Archived" : "Active"} conversation discovery`);
+    const items = data.items || [];
+    if (!items.length) return;
+    const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
+    assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
+    seenPages.add(pageKey);
+    yield items.filter((item) => CONVERSATION_ID.test(item.id || ""));
+    offset += items.length;
+    const total = Number.isFinite(data.total) ? data.total : null;
+    onProgress({ phase: archived ? "archived" : "active", index: offset, total });
+    const hasNext = data.has_next ?? data.has_more;
+    if (hasNext === false) return;
+    if (hasNext !== true && total !== null && offset >= total) return;
+    if (hasNext !== true && total === null && items.length < PAGE_SIZE) return;
+  }
+}
+
 export async function collectConversationCatalog(api, now = () => new Date(), onProgress = () => {}) {
   assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
     "Catalog API adapter is incomplete");
   onProgress({ phase: "projects", index: 0, total: null });
   const projects = await discoverProjects(api);
 
-  const projectByConversation = new Map();
-  const projectExtras = new Map();
+  const records = new Map();
   for (const [projectIndex, project] of projects.entries()) {
     onProgress({ phase: "projects", index: projectIndex, total: projects.length, projectName: project.projectName });
-    let cursor = null;
-    const seenCursors = new Set();
-    while (true) {
-      const data = unwrap(
-        await api.listProjectConversations(project.projectId,
-          { cursor: cursor || "", limit: PROJECT_CONVERSATION_PAGE_SIZE }),
-        `Conversation discovery for project "${project.projectName}"`);
-      const items = data.items || data.conversations || [];
-      if (!items.length) break;
+    for (const item of await readProjectConversations(api, project)) records.set(item.id, catalogRecord(item, project.projectName));
+  }
+  // 전체 목록은 프로젝트 대화를 일부 빠뜨리므로(위 설명) 프로젝트를 순회한 결과가 정본이고, 목록은 프로젝트 없는 대화와 보관 상태를 채운다.
+  for (const archived of [false, true]) {
+    for await (const items of listConversationPages(api, { archived, onProgress })) {
       for (const item of items) {
-        if (!CONVERSATION_ID.test(item.id || "")) continue;
-        projectByConversation.set(item.id, project.projectName);
-        projectExtras.set(item.id, { ...item, projectName: project.projectName });
+        const known = records.get(item.id);
+        records.set(item.id, catalogRecord({ ...item, is_archived: item.is_archived === true || archived }, known?.projectName ?? null));
       }
-      const next = data.list?.cursor || data.cursor || data.next_cursor || null;
-      if (!next) break;
-      assert(!seenCursors.has(next), `Conversation pagination cursor repeated for "${project.projectName}"`);
-      seenCursors.add(next);
-      cursor = next;
     }
   }
-
-  const conversationById = new Map();
-  for (const isArchived of [false, true]) {
-    let offset = 0;
-    const seenPages = new Set();
-    while (true) {
-      const data = unwrap(
-        await api.listConversations({ archived: isArchived, offset, limit: PAGE_SIZE }),
-        `${isArchived ? "Archived" : "Active"} conversation discovery`);
-      const items = data.items || [];
-      if (!items.length) break;
-      const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
-      assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
-      seenPages.add(pageKey);
-      for (const item of items) {
-        if (!CONVERSATION_ID.test(item.id || "")) continue;
-        conversationById.set(item.id, {
-          ...item,
-          is_archived: item.is_archived === true || isArchived,
-          projectName: projectByConversation.get(item.id) || null,
-        });
-      }
-      offset += items.length;
-      const total = Number.isFinite(data.total) ? data.total : null;
-      onProgress({ phase: isArchived ? "archived" : "active", index: offset, total });
-      const hasNext = data.has_next ?? data.has_more;
-      if (hasNext === false) break;
-      if (hasNext !== true && total !== null && offset >= total) break;
-      if (hasNext !== true && total === null && items.length < PAGE_SIZE) break;
-    }
-  }
-  for (const [id, item] of projectExtras) {
-    if (!conversationById.has(id)) conversationById.set(id, item);
-  }
-
-  return buildCatalog({ projects, now, conversations: [...conversationById.values()].map((item) => ({
-    conversationId: item.id,
-    title: typeof item.title === "string" && item.title.trim() ? item.title : "Untitled",
-    createTime: item.create_time ?? null,
-    updateTime: item.update_time ?? null,
-    isArchived: item.is_archived === true,
-    projectName: item.projectName || projectByConversation.get(item.id) || null,
-  })) });
+  return buildCatalog({ projects, now, conversations: [...records.values()] });
 }
 
 const SAMPLE_PAGE_SIZE = 10;
@@ -258,17 +217,8 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
         latestUpdate: latestOf(items) });
     }
     const cutoff = scope.kind === "recent" ? now().getTime() - scope.days * 86400000 : null;
-    let offset = 0;
-    const seenPages = new Set();
-    listing: while (true) {
-      const data = unwrap(await api.listConversations({ archived: false, offset, limit: PAGE_SIZE }), "Active conversation discovery");
-      const items = data.items || [];
-      if (!items.length) break;
-      const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
-      assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
-      seenPages.add(pageKey);
+    listing: for await (const items of listConversationPages(api, { archived: false, onProgress })) {
       for (const item of items) {
-        if (!CONVERSATION_ID.test(item.id || "")) continue;
         const updated = timeMilliseconds(item.update_time);
         // 목록은 수정 시각 순이므로 기간보다 오래된 항목이 나오면 그 뒤는 볼 필요가 없다.
         if (cutoff !== null && updated !== null && updated < cutoff) break listing;
@@ -280,10 +230,6 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
         if (scope.kind === "unassigned" && projectName) continue;
         records.set(item.id, catalogRecord(item, projectName));
       }
-      offset += items.length;
-      onProgress({ phase: "active", index: offset, total: Number.isFinite(data.total) ? data.total : null });
-      const hasNext = data.has_next ?? data.has_more;
-      if (hasNext === false || (hasNext !== true && items.length < PAGE_SIZE)) break;
     }
   }
   const catalog = buildCatalog({ projects, now, conversations: [...records.values()] });
@@ -318,22 +264,6 @@ function buildCatalog({ projects, conversations, now = () => new Date() }) {
       projects: projects.length,
     },
     projects: projectContext,
-    conversations,
-  };
-}
-
-export function catalogFrom(base, conversations, now) {
-  return {
-    ...base,
-    generatedAt: now().toISOString(),
-    counts: {
-      ...base.counts,
-      conversations: conversations.length,
-      active: conversations.filter((item) => !item.isArchived).length,
-      archived: conversations.filter((item) => item.isArchived).length,
-      unassigned: conversations.filter((item) => !item.projectName).length,
-    },
-    projects: projectCatalog(base.projects, conversations),
     conversations,
   };
 }

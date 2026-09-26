@@ -20,12 +20,10 @@ export function rowsFromProposal(proposal, inventory) {
   });
 }
 
-export function rowsFromDecisions(decisions, inventory, proposal = null) {
+export function rowsFromDecisions(decisions, inventory) {
   const byId = new Map((inventory.conversations || []).map((item) => [item.conversationId, item]));
-  const noteById = new Map((proposal?.items || []).map((item) => [item.conversationId, item]));
   return (decisions.decisions || []).map((item) => {
     const source = byId.get(item.conversationId) || {};
-    const note = noteById.get(item.conversationId) || {};
     return {
       conversationId: item.conversationId,
       title: source.title ?? "",
@@ -36,8 +34,8 @@ export function rowsFromDecisions(decisions, inventory, proposal = null) {
       marked: item.marked === true,
       newTitle: item.newTitle || null,
       project: item.decision === "delete" ? null : (item.projectName ?? null),
-      confidence: note.confidence || null,
-      why: item.rationale || note.rationale || "",
+      confidence: null,
+      why: item.rationale || "",
       action: null,
     };
   });
@@ -186,6 +184,8 @@ export function buildResultReport({ catalogBefore, catalogAfter, rows, renameOrd
     projects,
     mismatches,
     renameOrder,
+    // 무엇이 어떻게 바뀌었는지 대화별로 남긴다(화면·보고서에서 확인용).
+    details: { renames: plan.exceptions.renames, moves: plan.exceptions.moves, trashed: plan.exceptions.trashed },
     todo: {
       deleteEmptyProjects: [...afterCounts.entries()].filter(([, count]) => count === 0).map(([name]) => name).sort(),
       removeFromProject: plan.exceptions.manualRemoves,
@@ -207,6 +207,10 @@ export function reportMarkdown(report) {
       ? `제목을 바꾼 ${report.renameOrder.renamed}건은 ChatGPT 목록에서 원래의 상대 순서를 유지했습니다(바꾸지 않은 대화보다는 위로 올라옵니다).`
       : `⚠ 제목을 바꾼 ${report.renameOrder.renamed}건 중 ${report.renameOrder.outOfOrder.length}건의 목록 순서가 원래와 달라졌습니다.`);
   }
+  const details = report.details || {};
+  if (details.renames?.length) lines.push("", "## 바뀐 제목", "", ...details.renames.map((item) => `- ${item.from} → ${item.to}`));
+  if (details.moves?.length) lines.push("", "## 옮긴 대화", "", ...details.moves.map((item) => `- ${item.title}: ${item.from || "프로젝트 없음"} → ${item.to}`));
+  if (details.trashed?.length) lines.push("", "## 삭제후보로 보낸 대화", "", ...details.trashed.map((item) => `- ${item.title}${item.project ? ` (원래: ${item.project})` : ""}${item.why ? ` — ${item.why}` : ""}`));
   lines.push("", "## 직접 하실 일");
   if (!report.todo.deleteEmptyProjects.length && !report.todo.removeFromProject.length && !report.todo.deleteYourself.length) lines.push("", "없습니다.");
   if (report.todo.deleteYourself.length) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 실계정 없이 화면·흐름 전체를 시험하는 개발용 서버. 모의 ChatGPT 계정을 만들고 릴레이 브로커에 붙인다.
-// 실제 데이터 폴더를 건드리지 않고 임시 작업 폴더를 새로 만든다. 사용: node dev/fake-server.js [--slow] [--rate-limit]
+// 실제 데이터 폴더를 건드리지 않고 임시 앱 폴더를 새로 만든다. 사용: node dev/fake-server.js [--slow] [--rate-limit]
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,7 +45,8 @@ const news = [
 ];
 news.forEach(([title], i) => fake.addConversation({ id: fakeConversationId(100 + i), title }));
 
-process.chdir(root);
+// 이 서버는 실제 저장소 폴더가 아니라 방금 만든 임시 폴더를 앱 폴더로 쓴다.
+process.env.MAINTENANCE_ROOT = root;
 // --drop-relay-after=N: N번째 요청에서 정리 창이 바뀐 것처럼 끊고 새 창을 붙인다(중단 복구 시험).
 const dropArg = process.argv.find((item) => item.startsWith("--drop-relay-after="));
 if (dropArg && !noRelay) {
@@ -96,4 +97,4 @@ setInterval(() => {
 
 const { startServer } = await import("../server.js");
 startServer();
-console.log(`[dev] 모의 ChatGPT 서버: 작업 폴더 ${process.cwd()}`);
+console.log(`[dev] 모의 ChatGPT 서버: 임시 앱 폴더 ${root}`);

@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   listOwnedProjects,
-  prepareProjectPlacement,
+  projectPlacementConfirmation,
   runProjectPlacementWorkflow,
   validateProjectPlacementPlan,
 } from "../project-management.js";
+
+// 계획을 검증해 승인 확인 문구를 만든다(적용 시험용).
+function prepare(plan) {
+  const normalized = validateProjectPlacementPlan(plan);
+  return { project: normalized.project, actions: normalized.actions, expectedConfirmation: projectPlacementConfirmation(normalized) };
+}
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const CONVERSATION_ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379345";
@@ -41,7 +47,7 @@ function fixturePlan(receiptDir, overrides = {}) {
 test("project placement plans bind explicit project creation and projectless moves", () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-project-plan-test-"));
   try {
-    const prepared = prepareProjectPlacement(fixturePlan(root));
+    const prepared = prepare(fixturePlan(root));
     assert.equal(prepared.project.createIfMissing, true);
     assert.equal(prepared.actions.length, 1);
     assert.match(prepared.expectedConfirmation,
@@ -54,7 +60,7 @@ test("project placement plans bind explicit project creation and projectless mov
     const sourceProjectId = `g-p-${"2".repeat(32)}`;
     const withSource = fixturePlan(root);
     withSource.actions[0].expectedSourceProjectId = sourceProjectId;
-    const preparedWithSource = prepareProjectPlacement(withSource);
+    const preparedWithSource = prepare(withSource);
     assert.equal(preparedWithSource.actions[0].expectedSourceProjectId, sourceProjectId);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -64,7 +70,7 @@ test("project placement plans bind explicit project creation and projectless mov
 test("owned-project discovery accepts sidebar wrappers and cursors", async () => {
   const cursors = [];
   const api = {
-    listProjects: async (cursor) => {
+    listProjectSidebar: async ({ cursor } = {}) => {
       cursors.push(cursor);
       if (!cursor) {
         return {
@@ -97,7 +103,7 @@ test("apply reconciles mutation-then-HTTP-500 responses by reading remote state"
   let createCalls = 0;
   let moveCalls = 0;
   const api = {
-    listProjects: async () => ({
+    listProjectSidebar: async () => ({
       ok: true,
       status: 200,
       data: { items: project ? [{ id: project.projectId, display: { name: project.projectName } }] : [] },
@@ -126,7 +132,7 @@ test("apply reconciles mutation-then-HTTP-500 responses by reading remote state"
   };
   try {
     const plan = fixturePlan(root);
-    const prepared = prepareProjectPlacement(plan);
+    const prepared = prepare(plan);
     const result = await runProjectPlacementWorkflow({
       plan,
       accountId: ACCOUNT_ID,
@@ -152,11 +158,11 @@ test("apply reconciles mutation-then-HTTP-500 responses by reading remote state"
   }
 });
 
-test("preflight refuses conversations already assigned to a different project", async () => {
+test("a conversation already assigned to an unexpected project is not moved", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-project-preflight-test-"));
   let writes = 0;
   const api = {
-    listProjects: async () => ({
+    listProjectSidebar: async () => ({
       ok: true,
       status: 200,
       data: { items: [{ id: PROJECT_ID, display: { name: "Research" } }] },
@@ -175,7 +181,7 @@ test("preflight refuses conversations already assigned to a different project", 
   };
   try {
     const plan = fixturePlan(root);
-    const prepared = prepareProjectPlacement(plan);
+    const prepared = prepare(plan);
     const result = await runProjectPlacementWorkflow({
       plan,
       accountId: ACCOUNT_ID,
@@ -184,10 +190,9 @@ test("preflight refuses conversations already assigned to a different project", 
       api,
     });
     assert.equal(result.ok, false);
-    assert.equal(result.phase, "preflight");
-    assert.match(result.preflight[0].error, /not in the expected source project/);
+    assert.match(result.error, /not in the expected source project/);
     assert.equal(writes, 0);
-    assert.deepEqual(readdirSync(root), []);
+    assert.equal(JSON.parse(readFileSync(result.receiptFile, "utf8")).status, "failed");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -199,7 +204,7 @@ test("apply moves a conversation from a named source project to a different targ
   let currentGizmoId = SOURCE_PROJECT_ID;
   let moveCalls = 0;
   const api = {
-    listProjects: async () => ({
+    listProjectSidebar: async () => ({
       ok: true,
       status: 200,
       data: {
@@ -230,7 +235,7 @@ test("apply moves a conversation from a named source project to a different targ
     const plan = fixturePlan(root);
     plan.project.createIfMissing = false;
     plan.actions[0].expectedSourceProjectId = SOURCE_PROJECT_ID;
-    const prepared = prepareProjectPlacement(plan);
+    const prepared = prepare(plan);
     const result = await runProjectPlacementWorkflow({
       plan,
       accountId: ACCOUNT_ID,

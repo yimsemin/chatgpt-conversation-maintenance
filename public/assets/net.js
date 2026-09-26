@@ -1,5 +1,4 @@
 // 서버 호출, 오류 알림.
-import { S } from "/assets/state.js";
 import { $, fill, h } from "/assets/dom.js";
 
 export async function api(url, options) {
@@ -9,9 +8,7 @@ export async function api(url, options) {
   return data;
 }
 
-export const wsq = () => `workspace=${encodeURIComponent(S.workspace)}`;
-
-export const post = (path, body = {}) => api(path, { method: "POST", body: JSON.stringify({ workspace: S.workspace, ...body }) });
+export const post = (path, body = {}) => api(path, { method: "POST", body: JSON.stringify(body) });
 
 export function toast(message, detail = "") {
   const box = $("toast");
@@ -25,7 +22,7 @@ function friendly(error) {
   const explain = error?.detail?.explain;
   if (explain) return [explain.title, `${explain.action}\n\n${error.detail.message || ""}`.trim()];
   const message = String(error?.message || error);
-  if (/failed to fetch|networkerror|load failed/i.test(message)) return ["앱 서버에 연결하지 못했습니다.", "터미널에서 `npm start`로 서버를 켠 뒤 새로고침하세요."];
+  if (/failed to fetch|networkerror|load failed/i.test(message)) return ["앱 서버에 연결하지 못했습니다.", "터미널에서 `npm run app`으로 앱을 켠 뒤 새로고침하세요."];
   return [message, ""];
 }
 

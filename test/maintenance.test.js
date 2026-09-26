@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { buildAfterCatalog, finalizeMaintenanceRun } from "../finalize.js";
-import { sameTime, timeMilliseconds, unwrapSidebarGizmo, collectConversationCatalog } from "../catalog.js";
+import { collectConversationCatalog, timeMilliseconds, unwrapSidebarGizmo } from "../catalog.js";
 import { isNormalizedTitle } from "../title-rules.js";
 import { scanMaintenanceRun } from "../scan.js";
 
@@ -183,7 +183,7 @@ test("finalize rejects archive and unresolved decisions", () => {
     try {
       const current = conversation(ID1, "대상 — 작업 결과 정리", 2);
       const files = finalizeFixture(root, [current], [{ conversationId: ID1, decision, projectName: "Project A", reviewed: true }]);
-      assert.throws(() => finalizeMaintenanceRun(files), /Unsupported reviewed decision/);
+      assert.throws(() => finalizeMaintenanceRun(files), /must be keep or delete/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -206,23 +206,11 @@ test("the result catalog drops deleted conversations, applies titles and moves, 
   assert.equal(after.counts.conversations, 2);
 });
 
-test("the same instant compares equal across ISO strings and float epoch seconds", () => {
+test("timestamps compare equal across ISO strings and float epoch seconds, and unknown ones are null", () => {
   const iso = "2026-08-27T15:18:23.211721Z";
-  const epochSeconds = Date.parse(iso) / 1000 + 0.000721;
-  assert.equal(timeMilliseconds(iso), timeMilliseconds(epochSeconds));
-  assert.equal(sameTime(iso, epochSeconds), true);
-  assert.equal(sameTime(epochSeconds, iso), true);
-  // 밀리초 단위의 실제 차이는 계속 구분한다.
-  assert.equal(sameTime(iso, "2026-08-27T15:18:23.212Z"), false);
-});
-
-test("an unknown timestamp is not treated as evidence of change", () => {
-  const iso = "2026-08-27T15:18:23.211721Z";
-  assert.equal(sameTime(iso, null), true);
-  assert.equal(sameTime(null, iso), true);
-  assert.equal(sameTime(undefined, iso), true);
-  assert.equal(sameTime("", iso), true);
-  assert.equal(sameTime(null, null), true);
+  assert.equal(timeMilliseconds(iso), timeMilliseconds(Date.parse(iso) / 1000 + 0.000721));
+  assert.notEqual(timeMilliseconds(iso), timeMilliseconds("2026-08-27T15:18:23.212Z"));
+  for (const unknown of [null, undefined, "", "not a time"]) assert.equal(timeMilliseconds(unknown), null);
 });
 
 test("sidebar entries are unwrapped at every observed nesting depth", () => {

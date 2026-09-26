@@ -1,9 +1,8 @@
 // 분류용 최소 입력(review.json) 생성과 요청문 작성. 대화 본문에서 현재 경로의 발췌만 뽑는다.
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { assert } from "./assert.js";
-import { readJson, writeJsonAtomic } from "./fs-json.js";
+import { readJson, writeJsonAtomic, writeTextAtomic } from "./fs-json.js";
 import { attachmentReferenceCount, sha256 } from "./content-hash.js";
 import { CLASSIFICATION_CRITERIA, CLASSIFICATION_PROPOSAL_SCHEMA } from "./classification-criteria.js";
 
@@ -187,19 +186,6 @@ export function writeClassificationReview(inventoryPath, outputPath, now = () =>
   return { output, outputBytes: statSync(output).size, counts: review.counts };
 }
 
-function writeTextAtomic(path, text) {
-  assert(!existsSync(path), `Output already exists: ${path}`);
-  mkdirSync(dirname(path), { recursive: true });
-  const partial = `${path}.partial-${randomUUID()}`;
-  try {
-    writeFileSync(partial, text, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    renameSync(partial, path);
-  } catch (error) {
-    try { unlinkSync(partial); } catch {}
-    throw error;
-  }
-}
-
 // Claude 전용 요청문: 규칙·프로젝트 문맥·후보 발췌를 한 덩어리에 담아 저장소
 // 문서 접근 없이도(예: claude.ai) 그대로 붙여넣어 분류할 수 있게 한다.
 export function buildClaudePrompt(review, { inventoryPath = null, proposalPath = null } = {}) {
@@ -255,6 +241,6 @@ export function writeClaudePrompt(reviewPath, outputPath, { inventoryPath = "", 
     inventoryPath: inventoryPath ? resolve(inventoryPath) : null,
     proposalPath: proposalPath ? resolve(proposalPath) : null,
   });
-  writeTextAtomic(output, `${text}\n`);
+  writeTextAtomic(output, `${text}\n`, { exclusive: true });
   return { output, outputBytes: statSync(output).size, candidateCount: review.counts?.candidates ?? review.conversations.length };
 }

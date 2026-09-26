@@ -7,7 +7,6 @@ import test from "node:test";
 import {
   STALE_LOCK_MS,
   acquireLock,
-  assertLockHeld,
   lockStatus,
   releaseLock,
 } from "../maintenance-lock.js";
@@ -17,7 +16,7 @@ function dataDirFixture() {
   return mkdtempSync(join(tmpdir(), "maintenance-lock-"));
 }
 
-test("acquire writes a holder, assertLockHeld passes, release clears it", () => {
+test("acquire writes a holder and release clears it", () => {
   const dataDir = dataDirFixture();
   try {
     assert.equal(lockStatus({ dataDir }).locked, false);
@@ -29,11 +28,9 @@ test("acquire writes a holder, assertLockHeld passes, release clears it", () => 
     assert.equal(status.locked, true);
     assert.equal(status.stale, false);
     assert.equal(status.holder.runId, "run-1");
-    assert.equal(assertLockHeld({ dataDir }).locked, true);
 
     assert.deepEqual(releaseLock({ dataDir }), { locked: false });
     assert.equal(lockStatus({ dataDir }).locked, false);
-    assert.throws(() => assertLockHeld({ dataDir }), /no maintenance lock/);
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }

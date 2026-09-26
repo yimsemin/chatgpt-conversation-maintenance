@@ -21,7 +21,7 @@ function render() {
   // 북마클릿으로 막 연 창은 ChatGPT와 연결하는 데 몇 초 걸린다. 그동안은 "끊김"이 아니라 "연결 중"으로 보인다.
   const connecting = isRelayOwnerWindow() && s && !s.relay?.connected && Date.now() - BOOTED_AT < 20000;
   const relay = connecting ? { level: "warn", label: "ChatGPT에 연결하는 중…", hint: "" } : outdated ? { level: "bad", label: "북마클릿 업데이트 필요", hint: "chatgpt.com의 북마클릿이 이 앱보다 오래됐습니다. 북마클릿을 다시 설치한 뒤 눌러 주세요." }
-    : s?.relay || (reachable ? { level: "warn", label: "작업 폴더를 확인하세요", hint: "" }
+    : s?.relay || (reachable ? { level: "warn", label: "앱이 오류를 응답했습니다", hint: "" }
       : { level: "bad", label: "서버 응답 없음", hint: "앱 서버가 실행 중인지 확인하세요." });
   $("relay-pill").className = `pill ${relay.level}`;
   $("relay-label").textContent = relay.label;
@@ -97,8 +97,8 @@ function renderNow() {
   const s = S.session; const step = currentStep(); const job = s?.job;
   if (!s) {
     const reachable = Boolean(S.sessionError?.detail);
-    fill($("now"), h("div", {}, h("p", { class: "headline", text: reachable ? "작업 폴더를 확인하세요" : "앱 서버에 연결하지 못했습니다" }),
-      h("p", { class: "sub", text: reachable ? (S.sessionError.detail.explain?.title || S.sessionError.message) : "터미널에서 `npm start`로 서버를 켠 뒤 새로고침하세요." })));
+    fill($("now"), h("div", {}, h("p", { class: "headline", text: reachable ? "앱이 오류를 응답했습니다" : "앱에 연결하지 못했습니다" }),
+      h("p", { class: "sub", text: reachable ? (S.sessionError.detail.explain?.title || S.sessionError.message) : "터미널에서 `npm run app`으로 앱을 켠 뒤 새로고침하세요." })));
     return;
   }
   let headline = "확인 중…"; let sub = ""; let action = null;
@@ -190,9 +190,6 @@ async function boot() {
     } catch (e) { toast("종료하지 못했습니다", String(e?.message || e)); }
   });
   const config = await api("/config").catch(() => ({}));
-  // 작업 폴더는 앱이 있는 저장소 폴더로 고정이다(사용자가 바꾸지 않는다). 예전에 저장된 값은 지운다.
-  S.workspace = config.workspace || "";
-  try { localStorage.removeItem("app_workspace"); } catch {}
   loadScope();
   // 삭제 후보 처리 방식의 기본값은 설정 파일(.local/config.json)에서 오고, 화면에서 고른 값이 있으면 그것이 우선한다.
   S.trashDefault = config.trash?.defaultName || "삭제후보";

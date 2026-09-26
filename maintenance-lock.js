@@ -74,15 +74,6 @@ export function releaseLock({ dataDir } = {}) {
   return { locked: false };
 }
 
-export function assertLockHeld({ dataDir } = {}) {
-  const status = lockStatus({ dataDir });
-  assert(status.locked,
-    'no maintenance lock is held; run "node maintenance-lock.js acquire" first');
-  assert(!status.stale,
-    'the maintenance lock is stale; re-acquire it with "node maintenance-lock.js acquire" before mutating');
-  return { locked: true, holder: status.holder };
-}
-
 function usage() {
   return [
     "Usage:",

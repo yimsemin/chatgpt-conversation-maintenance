@@ -9,9 +9,9 @@ import { runsDir } from "./data-dir.js";
 import { compileReviewedDecisions } from "./decision-compile.js";
 import { isNormalizedTitle } from "./title-rules.js";
 import { readTrash } from "./trash.js";
-import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
+import { readPointer, runId, writePointer } from "./web-common.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
-import { proposalData, reviewedDecisionsSummary } from "./web-views.js";
+import { proposalData } from "./web-views.js";
 
 // 화면에서 직접 만든 후보별 결정을 reviewed-decisions.json 형식으로 검증·변환한다.
 // 규칙은 decision-compile.js compileReviewedDecisions / finalize.js finalizeMaintenanceRun과 같다.
@@ -70,12 +70,7 @@ export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null)
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
   writeJsonAtomic(runFiles(pointer.runDir).decisions, decisions);
   writeTrashMeta(pointer, inventory, decisions, trash);
-  return {
-    ready: true,
-    run: publicPointer(pointer),
-    ...reviewedDecisionsSummary(inventory, decisions),
-    decisions: decisions.decisions,
-  };
+  return { saved: decisions.decisions.length };
 }
 
 // 삭제 후보를 삭제후보 프로젝트로 보내는 결정이면, 적용이 끝난 뒤 삭제후보 목록에 남길 정보를 실행 폴더에 적어 둔다.

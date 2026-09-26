@@ -8,7 +8,6 @@
  */
 
 import { createServer } from "node:http";
-import { Buffer } from "node:buffer";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -16,24 +15,17 @@ import { fileURLToPath } from "node:url";
 
 import { handleMaintenanceWebRequest } from "./maintenance-web.js";
 import { CONFIG } from "./config.js";
-import { DEFAULT_TRASH_PROJECT, configuredTrash, resolveDataDir } from "./data-dir.js";
+import { DEFAULT_TRASH_PROJECT, configuredTrash } from "./data-dir.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
 import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
 import { appStatus } from "./app-status.js";
 import { jobs } from "./web-jobs.js";
+import { MAX_BODY_BYTES, appFolders, jsonResponse, readRequestJson } from "./web-common.js";
 
 // 새로 만드는 파일·디렉터리를 현재 OS 사용자로 제한한다(플랫폼이 umask를 지원하는 경우).
 try { process.umask(0o077); } catch {}
 
-// 이 모듈이 놓인 디렉터리. import.meta.url 을 쓸 수 없는 실행 형태에서는 실행 경로로 되돌린다.
-function resolveModuleDir() {
-  if (import.meta.url) {
-    try { return dirname(fileURLToPath(import.meta.url)); } catch {}
-  }
-  return dirname(process.argv[1] || ".");
-}
-
-const MODULE_DIR = resolveModuleDir();
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
 const NO_OPEN = process.argv.includes("--no-open");
 
@@ -63,15 +55,8 @@ function serveAsset(res, pathname) {
 }
 
 function serveLocalHtml(res, filename, { strict = false } = {}) {
-  const candidates = [
-    join(MODULE_DIR, "public", filename),
-    join(dirname(process.execPath), "public", filename),
-    join(process.cwd(), "public", filename),
-  ];
   let html = null;
-  for (const path of candidates) {
-    try { html = readFileSync(path, "utf8"); break; } catch {}
-  }
+  try { html = readFileSync(join(MODULE_DIR, "public", filename), "utf8"); } catch {}
   if (!html) {
     res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(`Could not find public/${filename}`);
@@ -90,17 +75,7 @@ function serveLocalHtml(res, filename, { strict = false } = {}) {
     .replaceAll("__RELAY_PROTOCOL_VERSION__", String(RELAY_PROTOCOL_VERSION)));
 }
 
-function jsonResponse(res, status, value) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff",
-  });
-  res.end(JSON.stringify(value));
-}
-
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
-// 릴레이 결과에는 대화 본문 전체가 실린다. 2MB 한도로는 실제 대화가 거부되고, 그러면
+// 릴레이 결과에는 대화 본문 전체가 실린다. 일반 요청의 한도로는 실제 대화가 거부되고, 그러면
 // 결과가 브로커에 도달하지 못해 스캔이 "relay timed out"으로 실패한다(2026-09-12 실측).
 const MAX_RELAY_RESULT_BYTES = 64 * 1024 * 1024;
 
@@ -108,27 +83,7 @@ export function bodyLimitForPath(pathname) {
   return pathname === "/relay/result" ? MAX_RELAY_RESULT_BYTES : MAX_BODY_BYTES;
 }
 
-async function readRequestJson(req) {
-  const limit = bodyLimitForPath(new URL(req.url || "/", "http://127.0.0.1").pathname);
-  let size = 0;
-  const chunks = [];
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > limit) throw new Error("Request body too large");
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-// 화면이 기본으로 쓰는 작업 폴더. 실행한 폴더(cwd)가 유지관리 프로젝트일 때만 그것을 쓰고(모의 서버의 임시 폴더),
-// 아니면 이 저장소 폴더다. 엉뚱한 폴더에서 켜도 작업 폴더가 깨지지 않게 한다.
-function defaultWorkspace() {
-  try {
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
-    if (pkg?.name === "chatgpt-conversation-maintenance") return process.cwd();
-  } catch {}
-  return MODULE_DIR;
-}
+const readJsonBody = (req) => readRequestJson(req, bodyLimitForPath(new URL(req.url || "/", "http://127.0.0.1").pathname));
 
 const server = createServer(async (req, res) => {
   const expectedHost = `${HOST}:${PORT}`;
@@ -154,7 +109,7 @@ const server = createServer(async (req, res) => {
   // 앱 종료. 실행 중인 작업이 있으면 force 없이는 거절한다(작업이 도중에 끊기지 않게).
   } else if (req.method === "POST" && req.url === "/app/shutdown") {
     let force = false;
-    try { force = (await readRequestJson(req))?.force === true; } catch {}
+    try { force = (await readJsonBody(req))?.force === true; } catch {}
     const running = [...jobs.values()].filter((job) => !job.done).length;
     if (running && !force) {
       jsonResponse(res, 409, { error: { message: "진행 중인 작업이 있어 종료하지 않았습니다. 작업이 끝나거나 중단된 뒤 다시 종료하세요." } });
@@ -163,13 +118,9 @@ const server = createServer(async (req, res) => {
       setTimeout(() => process.exit(0), 200);
     }
 
-  // 화면이 쓰는 최소 설정 (기본 작업 폴더, 데이터 폴더 위치)
+  // 화면이 쓰는 최소 설정: 삭제 후보 처리 방식의 기본값
   } else if (req.method === "GET" && req.url === "/config") {
-    let dataDir = null;
-    try { dataDir = resolveDataDir({ appRoot: MODULE_DIR }); } catch {}
-    jsonResponse(res, 200, { platform: process.platform, workspace: defaultWorkspace(), dataDir,
-      trash: { ...configuredTrash(MODULE_DIR), defaultName: DEFAULT_TRASH_PROJECT },
-      release: APP_RELEASE, relayProtocolVersion: RELAY_PROTOCOL_VERSION });
+    jsonResponse(res, 200, { trash: { ...configuredTrash(appFolders().workspace), defaultName: DEFAULT_TRASH_PROJECT } });
 
   // 북마클릿 설치 안내 페이지
   } else if (req.method === "GET" && req.url === "/auth/bookmarklet") {
@@ -177,7 +128,7 @@ const server = createServer(async (req, res) => {
 
   // 유지관리 화면과 chatgpt.com 실행기 사이의 로컬 대기열. 원시 URL과 세션은 받지 않는다.
   } else if (req.url.startsWith("/relay/")) {
-    await handleRemoteRelayRequest(req, res, { readJson: readRequestJson, jsonResponse });
+    await handleRemoteRelayRequest(req, res, { readJson: readJsonBody, jsonResponse });
 
   // 로컬 유지관리 워크플로 API. Host와 Origin은 위에서 검증했다.
   } else if (req.url.startsWith("/maintenance/")) {
@@ -228,7 +179,7 @@ function revealInBrowser(target) {
 
 // 아직 한 번도 정리를 해 보지 않았는가(작업 로그가 없다).
 function isFirstUse() {
-  try { return readdirSync(join(resolveDataDir({ appRoot: MODULE_DIR }), "jobs")).length === 0; } catch { return true; }
+  try { return readdirSync(join(appFolders().dataDir, "jobs")).length === 0; } catch { return true; }
 }
 
 export function startServer() {

@@ -4,7 +4,7 @@
 export const STEPS = [["scan", "확인"], ["proposal", "제안"], ["review", "검토"], ["apply", "적용"], ["result", "결과"]];
 
 export const S = {
-  workspace: "", session: null, catalog: null, proposal: null, overrides: new Map(),
+  session: null, catalog: null, proposal: null, overrides: new Map(),
   forceStep: null, panelKey: "", live: [], relayLocal: { connected: false },
   sessionError: null, lastErrorShown: null, lastScanEmpty: null, view: null, dismissed: new Set(),
   scope: { kind: "unassigned", projectNames: [], days: 7 },

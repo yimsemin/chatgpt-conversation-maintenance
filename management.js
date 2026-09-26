@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { assert } from "./assert.js";
+import { writeJsonAtomic } from "./fs-json.js";
 import { ACCOUNT_ID, CONVERSATION_ID } from "./ids.js";
 
 const DECISIONS = new Set(["keep", "delete"]);
@@ -136,20 +137,6 @@ export function prepareManagementWorkflow(rawManifest) {
   };
 }
 
-async function mapConcurrent(items, limit, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(items[index], index);
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
 function remoteConversation(data, action) {
   const remoteId = data?.conversation_id || data?.id;
   assert(remoteId === action.conversationId, `Remote conversation ID does not match ${action.conversationId}`);
@@ -187,72 +174,39 @@ async function verifyDelete(api, action) {
 }
 
 function createReceiptFile(receiptDir, receipt) {
-  mkdirSync(receiptDir, { recursive: true });
   const stamp = receipt.startedAt.replace(/[:.]/g, "-");
   const finalPath = join(receiptDir, `${stamp}_${receipt.runId}.json`);
-  writeReceiptAtPath(finalPath, receipt);
+  writeJsonAtomic(finalPath, receipt);
   return finalPath;
 }
 
-function writeReceiptAtPath(finalPath, receipt) {
-  const partialPath = `${finalPath}.partial-${randomUUID()}`;
-  try {
-    writeFileSync(partialPath, JSON.stringify(receipt, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" });
-    renameSync(partialPath, finalPath);
-  } catch (error) {
-    try { unlinkSync(partialPath); } catch {}
-    throw error;
-  }
-}
-
-export async function runManagementWorkflow({ mode, manifest: rawManifest, accountId, confirmation, reviewedConversationIds, api, recheckBeforeEachWrite = true, actionConcurrency = 1, now = () => new Date() }) {
-  assert(mode === "preflight" || mode === "apply", "Mode must be preflight or apply");
+// 승인된 제목 변경·삭제를 한 건씩 적용한다. 쓰기 직전에 그 대화를 원격에서 다시 읽어 예상 제목과 맞는지 확인하고,
+// 쓴 뒤에는 결과를 다시 읽어 검증한다. 한 건이 실패하면 나머지는 건너뛴다. 결과는 토큰이 없는 영수증에 남는다.
+export async function runManagementWorkflow({ manifest: rawManifest, accountId, confirmation, reviewedConversationIds, api, now = () => new Date() }) {
   assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
   assert(api?.getConversation && api?.patchConversation, "Management API adapter is incomplete");
-  assert(Number.isInteger(actionConcurrency) && actionConcurrency >= 1 && actionConcurrency <= 4,
-    "Action concurrency must be an integer from 1 to 4");
 
   const manifest = validateManagementManifest(rawManifest);
   const manifestDigest = managementManifestDigest(manifest);
   const expectedConfirmation = managementConfirmation(manifest);
-  // Strict runs verify the full remote batch before any write and then close the
-  // time-of-check/time-of-use gap again per action. Efficient apply runs the
-  // same remote check immediately before each write, avoiding a burst of reads.
-  const batchRemotePreflight = mode === "preflight" || recheckBeforeEachWrite;
-  const inspectAction = async (action) => {
-    const item = {
-      conversationId: action.conversationId,
-      expectedTitle: action.expectedTitle,
-      decision: action.decision,
-      ...(action.newTitle ? { newTitle: action.newTitle } : {}),
-    };
-    try {
-      item.backup = inspectConversationBackup(action);
-      if (batchRemotePreflight) item.remote = await readRemote(api, action);
-      item.ok = true;
-    } catch (error) {
-      item.ok = false;
-      item.error = error.message;
-    }
-    return item;
-  };
-  const preflight = batchRemotePreflight
-    ? await mapConcurrent(manifest.actions, 4, inspectAction)
-    : await Promise.all(manifest.actions.map(inspectAction));
-  const preflightFailed = preflight.some((item) => !item.ok);
-
-  if (preflightFailed) {
-    return { ok: false, phase: "preflight", manifestDigest, expectedConfirmation, preflight };
-  }
-  if (mode === "preflight") {
-    return { ok: true, phase: "preflight", manifestDigest, expectedConfirmation, preflight };
-  }
-
   assert(confirmation === expectedConfirmation, "Confirmation phrase does not match the manifest");
   const expectedReviewedIds = manifest.actions.map((action) => action.conversationId);
   assert(Array.isArray(reviewedConversationIds), "Every action must be reviewed by the user");
   assert(JSON.stringify(reviewedConversationIds) === JSON.stringify(expectedReviewedIds),
     "Reviewed conversation IDs do not exactly match the manifest");
+
+  // 본문 사본(백업)은 쓰기 전에 모두 검증한다. 원격 쪽 검증은 건마다 쓰기 직전에 한다(읽기가 몰리지 않게).
+  const backups = new Map();
+  const preflight = manifest.actions.map((action) => {
+    const item = { conversationId: action.conversationId, expectedTitle: action.expectedTitle, decision: action.decision,
+      ...(action.newTitle ? { newTitle: action.newTitle } : {}) };
+    try { item.backup = inspectConversationBackup(action); backups.set(action.conversationId, item.backup); item.ok = true; }
+    catch (error) { item.ok = false; item.error = error.message; }
+    return item;
+  });
+  if (preflight.some((item) => !item.ok)) {
+    return { ok: false, phase: "preflight", manifestDigest, expectedConfirmation, preflight };
+  }
 
   const receipt = {
     version: 1,
@@ -261,39 +215,28 @@ export async function runManagementWorkflow({ mode, manifest: rawManifest, accou
     ...(manifest.source ? { source: manifest.source } : {}),
     startedAt: now().toISOString(),
     status: "running",
-    verificationProfile: recheckBeforeEachWrite ? "strict" : "efficient",
-    actionConcurrency,
     manifestDigest,
     expectedConfirmation,
     reviewedConversationIds: expectedReviewedIds,
     results: [],
   };
-  // Prove that the receipt directory is writable before the first mutation.
+  // 첫 쓰기 전에 영수증 폴더에 쓸 수 있는지 확인한다.
   const receiptFile = createReceiptFile(manifest.receiptDir, receipt);
   let failure = null;
-  let nextActionIndex = 0;
-  const startedIndexes = new Set();
 
-  async function applyAction(action, index) {
-    const checked = preflight[index];
+  async function applyAction(action) {
     const result = {
       conversationId: action.conversationId,
       expectedTitle: action.expectedTitle,
       decision: action.decision,
-      backup: checked.backup,
+      backup: backups.get(action.conversationId),
       startedAt: now().toISOString(),
       mutations: [],
     };
-    receipt.currentActions ||= [];
-    receipt.currentActions.push({
-      conversationId: action.conversationId,
-      decision: action.decision,
-      startedAt: result.startedAt,
-    });
-    writeReceiptAtPath(receiptFile, receipt);
+    // 진행 중 표시: 여기서 죽으면 이 건의 결과가 불확실하다는 것을 다음 실행이 알 수 있다.
+    receipt.currentActions = [{ conversationId: action.conversationId, decision: action.decision, startedAt: result.startedAt }];
+    writeJsonAtomic(receiptFile, receipt);
     try {
-      // Strict mode repeats the completed batch check; efficient mode performs
-      // its single remote preflight here. Both verify every mutation afterward.
       await readRemote(api, action);
 
       if (action.newTitle) {
@@ -315,47 +258,34 @@ export async function runManagementWorkflow({ mode, manifest: rawManifest, accou
     } catch (error) {
       result.ok = false;
       result.error = error.message;
-      failure ||= error;
+      failure = error;
     }
     result.finishedAt = now().toISOString();
     receipt.results.push(result);
-    receipt.currentActions = receipt.currentActions.filter(
-      (item) => item.conversationId !== action.conversationId
-    );
-    if (receipt.currentActions.length === 0) delete receipt.currentActions;
-    writeReceiptAtPath(receiptFile, receipt);
+    delete receipt.currentActions;
+    writeJsonAtomic(receiptFile, receipt);
   }
 
-  async function actionWorker() {
-    while (!failure && nextActionIndex < manifest.actions.length) {
-      const index = nextActionIndex++;
-      startedIndexes.add(index);
-      await applyAction(manifest.actions[index], index);
-    }
+  let done = 0;
+  for (const action of manifest.actions) {
+    if (failure) break;
+    await applyAction(action);
+    done += 1;
   }
-
-  await Promise.all(Array.from(
-    { length: Math.min(actionConcurrency, manifest.actions.length) },
-    () => actionWorker()
-  ));
-
-  if (failure && startedIndexes.size < manifest.actions.length) {
-    for (const [index, action] of manifest.actions.entries()) {
-      if (startedIndexes.has(index)) continue;
-      receipt.results.push({
-        conversationId: action.conversationId,
-        expectedTitle: action.expectedTitle,
-        decision: action.decision,
-        ok: false,
-        skipped: true,
-        error: "Skipped because an earlier action failed",
-      });
-    }
+  for (const action of manifest.actions.slice(done)) {
+    receipt.results.push({
+      conversationId: action.conversationId,
+      expectedTitle: action.expectedTitle,
+      decision: action.decision,
+      ok: false,
+      skipped: true,
+      error: "Skipped because an earlier action failed",
+    });
   }
 
   receipt.status = failure ? "failed" : "completed";
   receipt.finishedAt = now().toISOString();
-  writeReceiptAtPath(receiptFile, receipt);
+  writeJsonAtomic(receiptFile, receipt);
   return {
     ok: !failure,
     phase: "apply",

@@ -3,14 +3,14 @@ import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
 import { fill, h } from "/assets/dom.js";
 import { startTrashSync } from "/assets/panel-scan.js";
-import { api, fail, post, toast, wsq } from "/assets/net.js";
+import { api, fail, post, toast } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
 import { item } from "/assets/panel-review.js";
 
 // ---------- 삭제후보 확인 ----------
 export async function loadTrash() {
   try {
-    const data = await api(`/maintenance/trash?${wsq()}`);
+    const data = await api("/maintenance/trash");
     const choices = new Map(data.items.map((i) => [i.conversationId, { decision: "delete", project: i.intendedTarget || i.fromProject || "", title: "" }]));
     const projectNames2 = (S.session?.knownProjects?.projects || []).map((p) => p.name).filter((n) => n !== data.project);
     const draw = () => {

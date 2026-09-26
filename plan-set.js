@@ -188,16 +188,10 @@ export async function applyPlanSet({
   confirmation,
   accountId,
   api,
-  maxBatches = Number.POSITIVE_INFINITY,
-  batchDelayMs = 0,
-  sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
   onProgress = () => {},
 }) {
   assert(api?.getConversation && api?.patchConversation, "Management API adapter is incomplete");
   assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
-  assert((Number.isInteger(maxBatches) && maxBatches > 0) || maxBatches === Number.POSITIVE_INFINITY,
-    "maxBatches must be a positive integer");
-  assert(Number.isInteger(batchDelayMs) && batchDelayMs >= 0, "batchDelayMs must be a non-negative integer");
 
   const prepared = preparePlanSet(plansDir);
   if (prepared.summary.remainingActions === 0) {
@@ -209,10 +203,8 @@ export async function applyPlanSet({
     `Plan-set confirmation does not match. Expected: ${prepared.summary.expectedConfirmation}`);
 
   let appliedBatches = 0;
-  const selectedPlans = prepared.plans
-    .filter((plan) => plan.remainingManifest)
-    .slice(0, maxBatches);
-  for (const [selectedIndex, plan] of selectedPlans.entries()) {
+  const selectedPlans = prepared.plans.filter((plan) => plan.remainingManifest);
+  for (const plan of selectedPlans) {
     const manifest = plan.remainingManifest;
     onProgress({
       type: "batch-start",
@@ -221,14 +213,11 @@ export async function applyPlanSet({
       batch: appliedBatches + 1,
     });
     const result = await runManagementWorkflow({
-      mode: "apply",
       manifest,
       accountId,
       confirmation: managementConfirmation(manifest),
       reviewedConversationIds: manifest.actions.map((action) => action.conversationId),
       api,
-      recheckBeforeEachWrite: false,
-      actionConcurrency: 1,
     });
     appliedBatches++;
     onProgress({
@@ -247,7 +236,6 @@ export async function applyPlanSet({
         summary: loadPlanSet(plansDir).summary,
       };
     }
-    if (batchDelayMs > 0 && selectedIndex + 1 < selectedPlans.length) await sleep(batchDelayMs);
   }
   return { ok: true, appliedBatches, summary: loadPlanSet(plansDir).summary };
 }

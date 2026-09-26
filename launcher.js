@@ -22,7 +22,7 @@ function assertSupportedNode() {
 }
 
 // 이미 떠 있는 우리 앱의 정보. 없거나 다른 프로그램이면 null.
-export async function runningApp() {
+async function runningApp() {
   try {
     const response = await fetch(`${URL}/health`, { signal: AbortSignal.timeout(1500), cache: "no-store" });
     const body = await response.json();

@@ -1,20 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  assertApplyablePhase,
-  buildReviewedDecisions,
-  buildReviewedDecisionsFromInputs,
-  createSafeDiagnostic,
-  formatScanProgress,
-  jobEvent,
-  planReuseDecision,
-  validateMaintenanceWorkspace,
-} from "../maintenance-web.js";
+import { appFolders, createSafeDiagnostic } from "../web-common.js";
+import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../web-decisions.js";
+import { formatScanProgress, jobEvent } from "../web-jobs.js";
+import { assertApplyablePhase, planReuseDecision } from "../web-workflows.js";
 import { compileProjectRouting, compileReviewedDecisions } from "../decision-compile.js";
 
 function inventoryFixture(overrides = {}) {
@@ -39,26 +33,15 @@ function inventoryFixture(overrides = {}) {
   };
 }
 
-function workspaceFixture() {
+test("the app folder is the repository folder unless a test points it at a temporary folder", () => {
+  const repo = appFolders();
+  assert.equal(repo.dataDir, join(repo.workspace, "data"));
   const root = mkdtempSync(join(tmpdir(), "maintenance-web-"));
-  mkdirSync(join(root, "data"));
-  writeFileSync(join(root, "package.json"), JSON.stringify({
-    name: "chatgpt-conversation-maintenance",
-  }));
-  return root;
-}
-
-test("maintenance web validates only a maintenance workspace", () => {
-  const root = workspaceFixture();
+  process.env.MAINTENANCE_ROOT = root;
   try {
-    const result = validateMaintenanceWorkspace(root);
-    assert.equal(result.workspace, root);
-    assert.equal(result.dataDir, join(root, "data"));
-    assert.deepEqual(Object.keys(result).sort(), ["dataDir", "workspace"]);
-
-    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "another-project" }));
-    assert.throws(() => validateMaintenanceWorkspace(root), /유지관리 프로젝트/);
+    assert.deepEqual(appFolders(), { workspace: root, dataDir: join(root, "data") });
   } finally {
+    delete process.env.MAINTENANCE_ROOT;
     rmSync(root, { recursive: true, force: true });
   }
 });

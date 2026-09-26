@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { buildClaudePrompt, writeClassificationReview } from "../classification-review.js";
 import { CLASSIFICATION_CRITERIA } from "../classification-criteria.js";
-import { compileProjectRouting, compileReviewedDecisions, writeRemainingManifest } from "../decision-compile.js";
+import { compileProjectRouting, compileReviewedDecisions } from "../decision-compile.js";
 import { validateClassificationProposals } from "../proposal-validation.js";
 import { buildInventory } from "./support/export-inventory.js";
 import { managementManifestDigest } from "../management.js";
@@ -574,37 +574,7 @@ test("compiler refuses an inventory with export completeness warnings", () => {
       decisions: [{ conversationId: ID1, decision: "delete", reviewed: true }],
     }));
     assert.throws(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")),
-      /Inventory is not safe to compile/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("remaining manifest excludes actions already completed in a matching receipt", () => {
-  const root = fixture();
-  try {
-    const backup1 = join(root, "json", "one.json");
-    const backup2 = join(root, "projects", "Project A", "json", "two.json");
-    const manifest = {
-      version: 1,
-      workspace: "business",
-      receiptDir: join(root, "receipts"),
-      actions: [
-        { conversationId: ID1, expectedTitle: "General", decision: "delete", approved: true, backupFile: backup1 },
-        { conversationId: ID2, expectedTitle: "Project chat", decision: "delete", approved: true, backupFile: backup2 },
-      ],
-    };
-    const manifestPath = join(root, "manifest.json");
-    const receiptPath = join(root, "receipt.json");
-    writeFileSync(manifestPath, JSON.stringify(manifest));
-    writeFileSync(receiptPath, JSON.stringify({
-      manifestDigest: managementManifestDigest(manifest),
-      results: [{ conversationId: ID1, ok: true }, { conversationId: ID2, ok: false }],
-    }));
-    const outputPath = join(root, "remaining.json");
-    const remaining = writeRemainingManifest(manifestPath, receiptPath, outputPath);
-    assert.equal(remaining.actions.length, 1);
-    assert.equal(remaining.actions[0].conversationId, ID2);
+      /Inventory is not safe to use/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1,8 +1,9 @@
 // 알려진 프로젝트 목록(범위 선택용): 이름과 알고 있는 마지막 수정 시각. 스캔·프로젝트 목록 읽기가 끝날 때 갱신하는 읽기용 사본이며 판단의 근거가 아니다.
 // 링크로 프로젝트를 찾을 수 있게 프로젝트 ID도 함께 둔다(이 파일은 데이터 폴더에만 있다). 순서는 최근에 쓴 프로젝트가 앞에 오도록 정렬해 준다.
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { writeJsonAtomic } from "./fs-json.js";
 
 const FILE = "known-projects.json";
 
@@ -42,11 +43,7 @@ export function writeKnownProjects(dataDir, projects, now = () => new Date()) {
     const id = project.id ?? known?.id;
     return { name: project.name, ...(id ? { id } : {}), ...(latest ? { updatedAt: latest } : {}) };
   });
-  const path = join(dataDir, FILE);
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const partial = `${path}.partial-${randomUUID()}`;
   const value = { version: 2, updatedAt: now().toISOString(), projects: sortByRecency(merged) };
-  writeFileSync(partial, JSON.stringify(value, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" });
-  renameSync(partial, path);
+  writeJsonAtomic(join(dataDir, FILE), value);
   return value;
 }

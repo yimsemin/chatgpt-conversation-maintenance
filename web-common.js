@@ -1,4 +1,4 @@
-// 유지관리 웹앱 공용: 파일 읽기·쓰기, 작업 폴더 검증, 현재 실행 포인터, 안전한 오류 진단.
+// 유지관리 웹앱 공용: 요청 읽기·응답, 앱 폴더, 현재 실행 포인터, 안전한 오류 진단.
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
@@ -8,6 +8,7 @@ import { assert } from "./assert.js";
 import { runFiles } from "./run-files.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { resolveDataDir, runsDir } from "./data-dir.js";
+import { CONFIG } from "./config.js";
 import { explainError } from "./errors.js";
 
 export const APP_ROOT = dirname(fileURLToPath(import.meta.url));
@@ -23,12 +24,12 @@ export function jsonResponse(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
-export async function readRequestJson(req) {
+export async function readRequestJson(req, limit = MAX_BODY_BYTES) {
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    assert(size <= MAX_BODY_BYTES, "요청 본문이 너무 큽니다");
+    assert(size <= limit, "요청 본문이 너무 큽니다");
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
@@ -40,15 +41,10 @@ function isInside(root, path) {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
 }
 
-export function validateMaintenanceWorkspace(value) {
-  assert(typeof value === "string" && value.trim(), "작업 폴더를 선택하세요");
-  const workspace = resolve(value.trim());
-  const packagePath = join(workspace, "package.json");
-  assert(existsSync(packagePath), "선택한 폴더에 package.json이 없습니다");
-  const pkg = readJson(packagePath, "package.json");
-  assert(pkg.name === "chatgpt-conversation-maintenance", "대화 유지관리 프로젝트 폴더가 아닙니다");
-  const dataDir = resolveDataDir({ appRoot: workspace });
-  return { workspace, dataDir };
+// 앱 폴더(이 저장소 폴더)와 그 안의 데이터 폴더. 요청이 폴더를 고르지 않는다: 이 폴더를 지우면 관련 파일이 모두 지워진다.
+export function appFolders() {
+  const workspace = CONFIG.root ? resolve(CONFIG.root) : APP_ROOT;
+  return { workspace, dataDir: resolveDataDir({ appRoot: workspace }) };
 }
 
 export function pointerPath(workspace) {
@@ -56,7 +52,7 @@ export function pointerPath(workspace) {
 }
 
 // 조사 범위가 기록되지 않은 실행(범위 조사 이전 방식으로 만든 실행)은 현재 흐름과 맞지 않아 쓰지 않는다.
-export function isCurrentPointer(pointer) {
+function isCurrentPointer(pointer) {
   return Boolean(pointer?.result?.scope);
 }
 

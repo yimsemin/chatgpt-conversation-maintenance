@@ -91,7 +91,7 @@ function pendingRun() {
   return run && run.phase !== "complete" ? run : null;
 }
 
-export function scanBody() {
+function scanBody() {
   const { kind, projectNames, days } = S.scope;
   if (kind === "project") return { scope: { kind, projectNames } };
   if (kind === "recent") return { scope: { kind, days } };

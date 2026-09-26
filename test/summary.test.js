@@ -51,6 +51,9 @@ test("the result report lists the empty projects and manual removals the user mu
   const markdown = reportMarkdown(report);
   assert.match(markdown, /비어 있는 프로젝트/);
   assert.match(markdown, /영수증/);
+  assert.equal(report.details.moves.length, report.changes.move);
+  assert.equal(report.details.renames.length, report.changes.rename);
+  if (report.changes.rename) assert.match(markdown, /## 바뀐 제목/);
 });
 
 test("proposal items become rows and undecided items are counted separately", () => {

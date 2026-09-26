@@ -1,14 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { assert } from "./assert.js";
+import { discoverProjects } from "./catalog.js";
 import { exactKeys } from "./exact-keys.js";
+import { writeJsonAtomic } from "./fs-json.js";
 import { ACCOUNT_ID, CONVERSATION_ID, PROJECT_ID } from "./ids.js";
 
 try { process.umask(0o077); } catch {}
@@ -98,59 +94,10 @@ export function projectPlacementConfirmation(plan) {
   return `APPLY PROJECT PLAN; CREATE IF MISSING ${create}; MOVE ${normalized.actions.length} CONVERSATIONS; PLAN ${projectPlacementPlanDigest(normalized).slice(0, 12)}`;
 }
 
-export function prepareProjectPlacement(plan) {
-  const normalized = validateProjectPlacementPlan(plan);
-  return {
-    ok: true,
-    phase: "prepare",
-    planDigest: projectPlacementPlanDigest(normalized),
-    expectedConfirmation: projectPlacementConfirmation(normalized),
-    project: normalized.project,
-    actions: normalized.actions,
-  };
-}
-
-function projectFromItem(item) {
-  const candidates = [
-    item?.resource?.gizmo?.gizmo,
-    item?.resource?.gizmo,
-    item?.gizmo?.gizmo,
-    item?.gizmo,
-    item,
-  ];
-  for (const candidate of candidates) {
-    const projectId = candidate?.id || "";
-    if (!PROJECT_ID.test(projectId)) continue;
-    return {
-      projectId,
-      projectName: candidate.display?.name || candidate.name || projectId,
-    };
-  }
-  return null;
-}
-
 export async function listOwnedProjects(api) {
-  assert(api?.listProjects, "Project API adapter is incomplete");
-  const projects = new Map();
-  const seenCursors = new Set();
-  let cursor = "";
-  while (true) {
-    const response = await api.listProjects(cursor);
-    assert(response && typeof response === "object", "Project discovery returned an invalid response");
-    assert(response.ok, `Project discovery failed: HTTP ${response.status}`);
-    assert(response.data && typeof response.data === "object", "Project discovery returned invalid JSON");
-    const items = response.data.list?.items || response.data.items || [];
-    for (const item of items) {
-      const project = projectFromItem(item);
-      if (project) projects.set(project.projectId, project);
-    }
-    const next = response.data.list?.cursor || response.data.cursor || response.data.next_cursor || "";
-    if (!next) break;
-    assert(!seenCursors.has(next), "Project pagination cursor repeated");
-    seenCursors.add(next);
-    cursor = next;
-  }
-  return [...projects.values()].sort((left, right) =>
+  assert(api?.listProjectSidebar, "Project API adapter is incomplete");
+  const projects = (await discoverProjects(api)).map(({ projectId, projectName }) => ({ projectId, projectName }));
+  return projects.sort((left, right) =>
     left.projectName.localeCompare(right.projectName) || left.projectId.localeCompare(right.projectId));
 }
 
@@ -192,26 +139,10 @@ async function inspectConversation(api, action, targetProjectId = null) {
   return conversationPlacement(await api.getConversation(action.conversationId), action, targetProjectId);
 }
 
-function writeReceiptAtPath(path, receipt) {
-  const partial = `${path}.partial-${randomUUID()}`;
-  try {
-    writeFileSync(partial, JSON.stringify(receipt, null, 2), {
-      encoding: "utf8",
-      mode: 0o600,
-      flag: "wx",
-    });
-    renameSync(partial, path);
-  } catch (error) {
-    try { unlinkSync(partial); } catch {}
-    throw error;
-  }
-}
-
 function createReceiptFile(receiptDir, receipt) {
-  mkdirSync(receiptDir, { recursive: true });
   const stamp = receipt.startedAt.replace(/[:.]/g, "-");
   const path = join(receiptDir, `${stamp}_${receipt.runId}_project-placement.json`);
-  writeReceiptAtPath(path, receipt);
+  writeJsonAtomic(path, receipt);
   return path;
 }
 
@@ -237,12 +168,11 @@ export async function runProjectPlacementWorkflow({
   verificationAttempts = 3,
   verificationDelayMs = 1000,
   initialProjects = null,
-  batchRemotePreflight = true,
   sourceProjectIds = {},
   sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
 }) {
   assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
-  assert(api?.getConversation && api?.listProjects && api?.createProject && api?.moveConversation,
+  assert(api?.getConversation && api?.listProjectSidebar && api?.createProject && api?.moveConversation,
     "Project API adapter is incomplete");
   assert(Number.isInteger(discoveryAttempts) && discoveryAttempts >= 1,
     "discoveryAttempts must be a positive integer");
@@ -262,7 +192,6 @@ export async function runProjectPlacementWorkflow({
 
   assert(initialProjects === null || Array.isArray(initialProjects),
     "initialProjects must be null or an array");
-  assert(typeof batchRemotePreflight === "boolean", "batchRemotePreflight must be boolean");
   const projects = initialProjects || await listOwnedProjects(api);
   let targetProject = findTargetProject(projects, plan.project);
   if (!targetProject) {
@@ -282,21 +211,6 @@ export async function runProjectPlacementWorkflow({
     return override === undefined ? action : { ...action, expectedSourceProjectId: override };
   }
 
-  const preflight = [];
-  if (batchRemotePreflight) {
-    for (const action of plan.actions) {
-      try {
-        const remote = await inspectConversation(api, effectiveAction(action), targetProject?.projectId || null);
-        preflight.push({ ...action, remote, ok: true });
-      } catch (error) {
-        preflight.push({ ...action, ok: false, error: error.message });
-      }
-    }
-  }
-  if (preflight.some((item) => !item.ok)) {
-    return { ok: false, phase: "preflight", planDigest, expectedConfirmation, preflight };
-  }
-
   const receipt = {
     version: 1,
     kind: "chatgpt-project-placement-receipt",
@@ -304,7 +218,6 @@ export async function runProjectPlacementWorkflow({
     workspace: plan.workspace,
     startedAt: now().toISOString(),
     status: "running",
-    verificationProfile: batchRemotePreflight ? "strict" : "efficient",
     planDigest,
     expectedConfirmation,
     project: plan.project,
@@ -316,7 +229,7 @@ export async function runProjectPlacementWorkflow({
   try {
     if (!targetProject) {
       receipt.currentAction = { type: "create-project", projectName: plan.project.name };
-      writeReceiptAtPath(receiptFile, receipt);
+      writeJsonAtomic(receiptFile, receipt);
       let createResponse = null;
       let createError = null;
       try {
@@ -340,7 +253,7 @@ export async function runProjectPlacementWorkflow({
         ok: true,
       });
       delete receipt.currentAction;
-      writeReceiptAtPath(receiptFile, receipt);
+      writeJsonAtomic(receiptFile, receipt);
     } else {
       receipt.results.push({
         type: "resolve-project",
@@ -348,7 +261,7 @@ export async function runProjectPlacementWorkflow({
         projectName: targetProject.projectName,
         ok: true,
       });
-      writeReceiptAtPath(receiptFile, receipt);
+      writeJsonAtomic(receiptFile, receipt);
     }
 
     for (const action of plan.actions) {
@@ -357,7 +270,7 @@ export async function runProjectPlacementWorkflow({
         conversationId: action.conversationId,
         targetProjectId: targetProject.projectId,
       };
-      writeReceiptAtPath(receiptFile, receipt);
+      writeJsonAtomic(receiptFile, receipt);
       const before = await inspectConversation(api, effectiveAction(action), targetProject.projectId);
       if (before.state === "already-target") {
         receipt.results.push({
@@ -368,7 +281,7 @@ export async function runProjectPlacementWorkflow({
           ok: true,
         });
         delete receipt.currentAction;
-        writeReceiptAtPath(receiptFile, receipt);
+        writeJsonAtomic(receiptFile, receipt);
         continue;
       }
 
@@ -412,13 +325,13 @@ export async function runProjectPlacementWorkflow({
         ok: true,
       });
       delete receipt.currentAction;
-      writeReceiptAtPath(receiptFile, receipt);
+      writeJsonAtomic(receiptFile, receipt);
     }
 
     receipt.status = "completed";
     receipt.finishedAt = now().toISOString();
     delete receipt.currentAction;
-    writeReceiptAtPath(receiptFile, receipt);
+    writeJsonAtomic(receiptFile, receipt);
     return {
       ok: true,
       phase: "apply",
@@ -431,7 +344,7 @@ export async function runProjectPlacementWorkflow({
     receipt.status = "failed";
     receipt.error = error.message;
     receipt.finishedAt = now().toISOString();
-    writeReceiptAtPath(receiptFile, receipt);
+    writeJsonAtomic(receiptFile, receipt);
     return {
       ok: false,
       phase: "apply",

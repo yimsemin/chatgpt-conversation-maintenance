@@ -108,72 +108,38 @@ test("local preparation validates backups and builds review data without remote 
   }
 });
 
-test("preflight performs no mutation", async () => {
-  const { root, manifest } = fixture();
-  let patches = 0;
-  const api = {
-    getConversation: async () => ({
-      ok: true,
-      status: 200,
-      data: { conversation_id: ID, title: TITLE, is_archived: false },
-    }),
-    patchConversation: async () => { patches++; },
-  };
-  try {
-    const result = await runManagementWorkflow({ mode: "preflight", manifest, accountId: ACCOUNT_ID, api });
-    assert.equal(result.ok, true);
-    assert.equal(result.phase, "preflight");
-    assert.equal(patches, 0);
-    assert.equal(existsSync(manifest.receiptDir), false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("apply deletes only after confirmation, verifies invisibility, and writes a token-free receipt", async () => {
-  const { root, manifest } = fixture();
-  let visible = true;
-  const patches = [];
-  const api = {
-    getConversation: async () => ({
-      ok: true,
-      status: 200,
-      data: { conversation_id: ID, title: TITLE, is_archived: false, is_visible: visible },
-    }),
+function applyApi({ title = TITLE, onPatch = () => {} } = {}) {
+  const state = { visible: true, reads: 0, patches: [] };
+  return {
+    state,
+    getConversation: async (id) => {
+      state.reads += 1;
+      return { ok: true, status: 200, data: { conversation_id: id, title, is_archived: false, is_visible: state.visible } };
+    },
     patchConversation: async (id, body) => {
-      assert.equal(id, ID);
-      patches.push(body);
-      if (body.is_visible === false) visible = false;
+      state.patches.push(body);
+      if (body.is_visible === false) state.visible = false;
+      onPatch(id, body);
       return { success: true };
     },
   };
+}
+
+test("apply deletes only after confirmation and review, verifies invisibility, and writes a token-free receipt", async () => {
+  const { root, manifest } = fixture();
+  const api = applyApi();
   try {
-    await assert.rejects(
-      runManagementWorkflow({ mode: "apply", manifest, accountId: ACCOUNT_ID, confirmation: "wrong", api }),
-      /Confirmation phrase/
-    );
-    assert.equal(patches.length, 0);
+    const confirmation = managementConfirmation(validateManagementManifest(manifest));
+    await assert.rejects(runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation: "wrong", api }), /Confirmation phrase/);
+    await assert.rejects(runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, api }), /reviewed by the user/);
+    assert.equal(api.state.patches.length, 0, "nothing is written before both gates pass");
 
-    const normalized = validateManagementManifest(manifest);
-    const confirmation = managementConfirmation(normalized);
-    await assert.rejects(
-      runManagementWorkflow({ mode: "apply", manifest, accountId: ACCOUNT_ID, confirmation, api }),
-      /reviewed by the user/
-    );
-    assert.equal(patches.length, 0);
-
-    const result = await runManagementWorkflow({
-      mode: "apply",
-      manifest,
-      accountId: ACCOUNT_ID,
-      confirmation,
-      reviewedConversationIds: [ID],
-      api,
-    });
+    const result = await runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [ID], api });
     assert.equal(result.ok, true);
-    assert.deepEqual(patches, [{ is_visible: false }]);
+    assert.deepEqual(api.state.patches, [{ is_visible: false }]);
     assert.equal(result.results[0].verification, "not-visible");
-    assert.equal(result.manifestDigest, managementManifestDigest(normalized));
+    // 쓰기 직전 확인 한 번 + 쓴 뒤 검증 한 번
+    assert.equal(api.state.reads, 2);
     const receiptText = readFileSync(result.receiptFile, "utf8");
     assert.doesNotMatch(receiptText, /accessToken|Bearer|eyJ/);
     assert.equal(JSON.parse(receiptText).status, "completed");
@@ -182,139 +148,40 @@ test("apply deletes only after confirmation, verifies invisibility, and writes a
   }
 });
 
-test("efficient apply keeps per-action preflight and post-write verification without a duplicate batch read", async () => {
+test("a backup that does not match blocks every action before any write", async () => {
   const { root, manifest } = fixture();
-  let visible = true;
-  let reads = 0;
-  const api = {
-    getConversation: async () => {
-      reads++;
-      return {
-        ok: true,
-        status: 200,
-        data: { conversation_id: ID, title: TITLE, is_archived: false, is_visible: visible },
-      };
-    },
-    patchConversation: async (_id, body) => {
-      if (body.is_visible === false) visible = false;
-      return { success: true };
-    },
-  };
+  const api = applyApi();
   try {
+    writeFileSync(manifest.actions[0].backupFile, "{}");
     const confirmation = managementConfirmation(validateManagementManifest(manifest));
-    const result = await runManagementWorkflow({
-      mode: "apply",
-      manifest,
-      accountId: ACCOUNT_ID,
-      confirmation,
-      reviewedConversationIds: [ID],
-      api,
-      recheckBeforeEachWrite: false,
-    });
-    assert.equal(result.ok, true);
-    assert.equal(reads, 2);
-    assert.equal(result.results[0].verification, "not-visible");
-    assert.equal(JSON.parse(readFileSync(result.receiptFile, "utf8")).verificationProfile, "efficient");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("efficient apply can verify and mutate three independent actions concurrently", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-management-parallel-test-"));
-  const ids = [
-    ID,
-    "6a66ddf8-ecac-83ee-9311-0d3d3e379346",
-    "6a66ddf8-ecac-83ee-9311-0d3d3e379347",
-  ];
-  const states = new Map();
-  const actions = ids.map((id, index) => {
-    const title = `${TITLE} ${index + 1}`;
-    const backupFile = join(root, `conversation-${index}.json`);
-    const backup = JSON.stringify({
-      conversation_id: id,
-      title,
-      create_time: 1,
-      update_time: 2,
-      mapping: { root: { id: "root", message: null } },
-    });
-    writeFileSync(backupFile, backup);
-    states.set(id, { title, visible: true });
-    return {
-      conversationId: id,
-      expectedTitle: title,
-      decision: "delete",
-      approved: true,
-      backupFile,
-      backupSha256: createHash("sha256").update(backup).digest("hex"),
-    };
-  });
-  const manifest = {
-    version: 1,
-    workspace: "business",
-    receiptDir: join(root, "receipts"),
-    actions,
-  };
-  let activePatches = 0;
-  let peakPatches = 0;
-  const api = {
-    getConversation: async (id) => {
-      const state = states.get(id);
-      return {
-        ok: true,
-        status: 200,
-        data: { conversation_id: id, title: state.title, is_visible: state.visible },
-      };
-    },
-    patchConversation: async (id, body) => {
-      activePatches++;
-      peakPatches = Math.max(peakPatches, activePatches);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      if (body.is_visible === false) states.get(id).visible = false;
-      activePatches--;
-      return { success: true };
-    },
-  };
-  try {
-    const confirmation = managementConfirmation(validateManagementManifest(manifest));
-    const result = await runManagementWorkflow({
-      mode: "apply",
-      manifest,
-      accountId: ACCOUNT_ID,
-      confirmation,
-      reviewedConversationIds: ids,
-      api,
-      recheckBeforeEachWrite: false,
-      actionConcurrency: 3,
-    });
-    assert.equal(result.ok, true);
-    assert.equal(peakPatches, 3);
-    assert.equal(result.results.length, 3);
-    assert.ok(result.results.every((item) => item.ok && item.verification === "not-visible"));
-    const receipt = JSON.parse(readFileSync(result.receiptFile, "utf8"));
-    assert.equal(receipt.actionConcurrency, 3);
-    assert.equal(receipt.status, "completed");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a preflight mismatch blocks every action", async () => {
-  const { root, manifest } = fixture();
-  let patches = 0;
-  const api = {
-    getConversation: async () => ({
-      ok: true,
-      status: 200,
-      data: { conversation_id: ID, title: "different title" },
-    }),
-    patchConversation: async () => { patches++; },
-  };
-  try {
-    const result = await runManagementWorkflow({ mode: "apply", manifest, accountId: ACCOUNT_ID, confirmation: "anything", api });
+    const result = await runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [ID], api });
     assert.equal(result.ok, false);
     assert.equal(result.phase, "preflight");
-    assert.equal(patches, 0);
+    assert.equal(api.state.patches.length, 0);
+    assert.equal(existsSync(manifest.receiptDir), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a conversation whose remote title changed is not written and the rest are skipped", async () => {
+  const { root, manifest } = fixture();
+  const secondId = "6a66ddf8-ecac-83ee-9311-0d3d3e379346";
+  const backup = JSON.stringify({ conversation_id: secondId, title: TITLE, create_time: 1, update_time: 2, mapping: { root: { id: "root", message: null } } });
+  const secondFile = join(root, "second.json");
+  writeFileSync(secondFile, backup);
+  const second = { ...manifest.actions[0], conversationId: secondId, backupFile: secondFile, backupSha256: createHash("sha256").update(backup).digest("hex") };
+  const two = { ...manifest, actions: [manifest.actions[0], second] };
+  const api = applyApi({ title: "different title" });
+  try {
+    const confirmation = managementConfirmation(validateManagementManifest(two));
+    const result = await runManagementWorkflow({ manifest: two, accountId: ACCOUNT_ID, confirmation,
+      reviewedConversationIds: two.actions.map((a) => a.conversationId), api });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /Remote title does not match/);
+    assert.equal(api.state.patches.length, 0);
+    assert.deepEqual(result.results.map((r) => [r.ok, r.skipped === true]), [[false, false], [false, true]]);
+    assert.equal(JSON.parse(readFileSync(result.receiptFile, "utf8")).status, "failed");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

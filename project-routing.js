@@ -214,7 +214,7 @@ export async function runProjectRouting({
   pendingOnly = false,
   onProgress = () => {},
 }) {
-  assert(api?.listProjects && api?.getConversation && api?.createProject && api?.moveConversation,
+  assert(api?.listProjectSidebar && api?.getConversation && api?.createProject && api?.moveConversation,
     "Project API adapter is incomplete");
   assert((Number.isInteger(maxTargets) && maxTargets > 0) || maxTargets === Number.POSITIVE_INFINITY,
     "maxTargets must be a positive integer");
@@ -252,7 +252,6 @@ export async function runProjectRouting({
       reviewedConversationIds: plan.actions.map((action) => action.conversationId),
       api,
       initialProjects: projectCatalog,
-      batchRemotePreflight: false,
       sourceProjectIds,
     });
     results.push({ projectName: plan.project.name, ...result });

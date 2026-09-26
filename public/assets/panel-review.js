@@ -4,13 +4,13 @@ import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
 import { $, fill, h, meta } from "/assets/dom.js";
 import { projectIdFromLink } from "/assets/shared/project-link.js";
-import { api, fail, post, toast, wsq } from "/assets/net.js";
+import { api, fail, post, toast } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
 
 // ---------- step 3: review ----------
 export async function loadReview() {
   try {
-    const [proposal, catalog] = await Promise.all([api(`/maintenance/proposal?${wsq()}`), api(`/maintenance/catalog?${wsq()}`)]);
+    const [proposal, catalog] = await Promise.all([api("/maintenance/proposal"), api("/maintenance/catalog")]);
     S.proposal = proposal; S.catalog = catalog;
     if (!proposal.ready) { fill($("panel"), h("p", { text: "분류 제안이 아직 없습니다." })); return; }
     loadOverrides();
@@ -101,7 +101,7 @@ function drawReview() {
 const RELAY_DOWN = "ChatGPT 연결이 끊겨 있습니다 — chatgpt.com 탭에서 북마클릿을 눌러 주세요";
 
 // 적용 버튼과 막힌 이유를 지금 상태(연결 여부 포함)에 맞춘다. 화면이 갱신될 때마다 부른다.
-export function syncApplyBar() {
+function syncApplyBar() {
   const button = document.getElementById("apply-button"); const box = document.getElementById("apply-blockers");
   if (!button || !box) return;
   const reasons = [...(S.applyBlockers || []), ...(S.session?.relay?.connected ? [] : [RELAY_DOWN])];
@@ -184,7 +184,7 @@ function trashItem(d, rows) {
     h("div", { class: "m", text: `${d.project || "프로젝트 없음"} · ${d.why || ""}` }), input);
 }
 
-export function section(title, count, items, open, note = "", unit = "건") {
+function section(title, count, items, open, note = "", unit = "건") {
   if (!count) return null;
   return h("details", { open: open || null }, h("summary", { text: `${title} (${count}${unit})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, items));
 }

@@ -84,7 +84,7 @@ test("routing reuses one project catalog and applies existing and new targets", 
   ]);
   let listCalls = 0;
   const api = {
-    listProjects: async () => {
+    listProjectSidebar: async () => {
       listCalls++;
       return {
         ok: true,
@@ -147,7 +147,7 @@ test("routing resolves a named source project and moves a conversation already i
   let currentGizmoId = oldProjectId;
   let moveCalls = 0;
   const api = {
-    listProjects: async () => ({
+    listProjectSidebar: async () => ({
       ok: true,
       status: 200,
       data: { items: projects.map((project) => ({ id: project.projectId, display: { name: project.projectName } })) },

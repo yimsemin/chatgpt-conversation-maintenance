@@ -10,59 +10,19 @@ import { validateClassificationProposals } from "./proposal-validation.js";
 import { readTrash } from "./trash.js";
 import { readKnownProjects } from "./known-projects.js";
 import { deriveStep, describeRelay } from "./session.js";
-import { buildReviewSummary, rowsFromDecisions, rowsFromProposal } from "./summary.js";
-import { APP_ROOT, publicPointer, readPointer, readRawPointer, validateMaintenanceWorkspace } from "./web-common.js";
+import { APP_ROOT, publicPointer, readPointer, readRawPointer } from "./web-common.js";
 import { appStatus } from "./app-status.js";
 import { readJson } from "./fs-json.js";
 import { jobLogFor, jobs, publicJob } from "./web-jobs.js";
 
 // 삭제후보 프로젝트에 옮겨 둔 대화 현황: 프로젝트 이름, 건수, 가장 오래 둔 대화의 경과 일수.
-export function trashSummary(dataDir, nowMs = Date.now()) {
+function trashSummary(dataDir, nowMs = Date.now()) {
   const trash = readTrash(dataDir);
   const times = trash.items.map((item) => Date.parse(item.trashedAt || "")).filter(Number.isFinite);
   return {
     project: trash.project, count: trash.items.length,
     oldestDays: times.length ? Math.floor((nowMs - Math.min(...times)) / 86400000) : null,
   };
-}
-
-export function workspaceStatus(workspaceValue) {
-  const { workspace, dataDir } = validateMaintenanceWorkspace(workspaceValue);
-  const lock = lockStatus({ dataDir });
-  const pointer = readPointer(workspace, dataDir);
-  return {
-    ok: true,
-    workspace,
-    dataDir,
-    lock: lock.locked
-      ? { device: lock.holder?.device || null, acquiredAt: lock.holder?.acquiredAt || null, stale: lock.stale }
-      : null,
-    currentRun: pointer ? publicPointer(pointer) : null,
-  };
-}
-
-// 검토 화면용 요약: 저장된 결정이 있으면 그것을, 없으면 제안을 기준으로 "무엇이 바뀌는가"를 계산한다.
-export function summaryData(workspace, dataDir) {
-  const pointer = readPointer(workspace, dataDir);
-  if (!pointer || !existsSync(pointer.inventoryPath)) return { ready: false };
-  const inventory = readJson(pointer.inventoryPath, "인벤토리");
-  const catalogPath = inventory.catalogFile && existsSync(inventory.catalogFile) ? inventory.catalogFile
-    : runFiles(pointer.runDir).catalog;
-  if (!existsSync(catalogPath)) return { ready: false };
-  const catalog = readJson(catalogPath, "카탈로그");
-  const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
-  const proposal = existsSync(proposalPath) ? readJson(proposalPath, "분류안") : null;
-  const decisionsPath = runFiles(pointer.runDir).decisions;
-  let rows;
-  let source;
-  if (existsSync(decisionsPath)) {
-    rows = rowsFromDecisions(readJson(decisionsPath, "검토된 결정"), inventory, proposal);
-    source = "decisions";
-  } else if (proposal) {
-    rows = rowsFromProposal(proposal, inventory);
-    source = "proposal";
-  } else return { ready: false };
-  return { ready: true, source, summary: buildReviewSummary({ catalog, rows }) };
 }
 
 // 화면 첫 진입에 필요한 모든 상태를 한 번에 준다: 연결, 알려진 프로젝트, 삭제후보 현황, 현재 실행, 작업, 단계.
@@ -222,39 +182,5 @@ export function catalogData(workspace, dataDir) {
     })),
     currentRun: pointer ? publicPointer(pointer) : null,
     conversations,
-  };
-}
-
-export function reviewedDecisionsSummary(inventory, decisions) {
-  const existingProjects = new Set((inventory.projects || []).map((project) => project.projectName));
-  const newProjectNames = new Set();
-  const counts = { keep: 0, delete: 0, rename: 0 };
-  for (const decision of decisions.decisions) {
-    counts[decision.decision]++;
-    if (decision.newTitle) counts.rename++;
-    if (decision.decision === "keep" && decision.projectName && !existingProjects.has(decision.projectName)) {
-      newProjectNames.add(decision.projectName);
-    }
-  }
-  return {
-    candidateCount: inventory.conversations.length,
-    decidedCount: decisions.decisions.length,
-    counts,
-    newProjectNames: [...newProjectNames].sort(),
-  };
-}
-
-export function reviewedDecisionsData(workspace, dataDir) {
-  const pointer = readPointer(workspace, dataDir);
-  if (!pointer) return { ready: false, run: null };
-  const decisionsPath = runFiles(pointer.runDir).decisions;
-  if (!existsSync(decisionsPath)) return { ready: false, run: publicPointer(pointer) };
-  const inventory = readJson(pointer.inventoryPath, "인벤토리");
-  const decisions = readJson(decisionsPath, "검토된 결정");
-  return {
-    ready: true,
-    run: publicPointer(pointer),
-    ...reviewedDecisionsSummary(inventory, decisions),
-    decisions: decisions.decisions,
   };
 }

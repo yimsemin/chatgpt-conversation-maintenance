@@ -22,8 +22,8 @@ function prepareRunDirectory(path) {
 // 조사 범위. kind: "unassigned"(프로젝트 없는 대화) | "project"(projectName 프로젝트) | "recent"(최근 days일 안에 수정) |
 // "all"(모든 대화, 보관된 것 포함 — 전체 재정비용).
 export const SCOPE_KINDS = ["unassigned", "project", "recent", "all"];
-export const MAX_RECENT_DAYS = 3650;
-export const MAX_SCOPE_PROJECTS = 20;
+const MAX_RECENT_DAYS = 3650;
+const MAX_SCOPE_PROJECTS = 20;
 
 export function validateScope(scope) {
   assert(scope && typeof scope === "object" && !Array.isArray(scope), "조사 범위가 올바르지 않습니다");
