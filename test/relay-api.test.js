@@ -164,3 +164,24 @@ test("a silent owner is taken over only after the liveness window passes", () =>
   assert.deepEqual(broker.connect(next), { connected: true });
   assert.throws(() => broker.next(owner), /not connected/);
 });
+
+test("a window that cannot deliver a waiting request loses the relay to the window that asks for it", async () => {
+  let clock = 0;
+  const broker = createRelayBroker({ timeoutMs: 120000, livenessMs: 120000, stuckMs: 20000, now: () => clock });
+  const stuck = "11111111-1111-4111-8111-111111111111";
+  const active = "22222222-2222-4222-8222-222222222222";
+  broker.connect(stuck);
+  const first = broker.request({ op: "accountInfo", params: {} });
+  first.catch(() => {});
+  clock = 10000;
+  assert.deepEqual(broker.connect(active), { connected: false, reason: "relay-owned" }, "not yet stuck");
+  clock = 25000;
+  assert.deepEqual(broker.connect(active), { connected: true });
+  await assert.rejects(first, /replaced/);
+  assert.equal(broker.trace.list().some((event) => /stuck; taken over/.test(event.note || "")), true);
+  // 새 소유 창이 일을 받는다.
+  const second = broker.request({ op: "accountInfo", params: {} });
+  assert.equal(broker.next(active).request.op, "accountInfo");
+  second.catch(() => {});
+  broker.disconnect(active);
+});

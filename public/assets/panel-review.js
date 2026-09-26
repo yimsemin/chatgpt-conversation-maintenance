@@ -15,6 +15,7 @@ export async function loadReview() {
     if (!proposal.ready) { fill($("panel"), h("p", { text: "분류 제안이 아직 없습니다." })); return; }
     loadOverrides();
     drawReview();
+    if (!S.live.includes(syncApplyBar)) S.live.push(syncApplyBar);
   } catch (e) { fail(e); }
 }
 
@@ -67,7 +68,6 @@ function drawReview() {
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
   if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — 아래 목록에서 제목을 고쳐 주세요`);
-  if (!S.session.relay?.connected) blockers.push("ChatGPT 연결이 끊겨 있습니다 — chatgpt.com 탭에서 북마클릿을 눌러 주세요");
   const moveList = ex.moves.slice(0, 200);
   const panel = $("panel");
   fill(panel, 
@@ -92,8 +92,21 @@ function drawReview() {
     c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true, "", "개") : null,
     ex.manualRemoves.length ? section("직접 빼야 하는 대화", ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, `현재 프로젝트: ${m.project} — 앱은 프로젝트에서 뺄 수 없어 결과 화면에 안내합니다`, [])), false) : null,
     reviseGuide(),
-    h("div", { class: "applybar" }, h("div", {}, h("strong", { text: summary.headline }), blockers.length ? h("div", { class: "small down", text: blockers.join(" · ") }) : null),
-      h("button", { class: "btn", type: "button", disabled: blockers.length > 0 || !S.session.relay?.connected, onclick: () => confirmApply(summary) }, "적용")));
+    h("div", { class: "applybar" }, h("div", {}, h("strong", { text: summary.headline }), h("div", { class: "small down", id: "apply-blockers" })),
+      h("button", { class: "btn", type: "button", id: "apply-button", onclick: () => confirmApply(summary) }, "적용")));
+  S.applyBlockers = blockers;
+  syncApplyBar();
+}
+
+const RELAY_DOWN = "ChatGPT 연결이 끊겨 있습니다 — chatgpt.com 탭에서 북마클릿을 눌러 주세요";
+
+// 적용 버튼과 막힌 이유를 지금 상태(연결 여부 포함)에 맞춘다. 화면이 갱신될 때마다 부른다.
+export function syncApplyBar() {
+  const button = document.getElementById("apply-button"); const box = document.getElementById("apply-blockers");
+  if (!button || !box) return;
+  const reasons = [...(S.applyBlockers || []), ...(S.session?.relay?.connected ? [] : [RELAY_DOWN])];
+  button.disabled = reasons.length > 0;
+  box.textContent = reasons.join(" · "); box.hidden = reasons.length === 0;
 }
 
 // 삭제 후보를 옮겨 둘 프로젝트. auto 는 기본 이름의 삭제후보 프로젝트(없으면 새로 만든다).

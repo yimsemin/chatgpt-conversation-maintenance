@@ -18,7 +18,9 @@ export let pollTimer = null;
 export function schedulePoll() {
   clearTimeout(pollTimer);
   const busy = S.session?.job && !S.session.job.done;
-  pollTimer = setTimeout(async () => { await refreshSession(); schedulePoll(); }, busy ? 1500 : 5000);
+  // 연결이 안 된 동안(창을 막 열어 연결 중일 때 포함)에는 1초마다 확인해 연결되는 즉시 화면이 바뀌게 한다.
+  const disconnected = S.session && !S.session.relay?.connected;
+  pollTimer = setTimeout(async () => { await refreshSession(); schedulePoll(); }, busy ? 1500 : disconnected ? 1000 : 5000);
 }
 
 // ---------- rendering ----------

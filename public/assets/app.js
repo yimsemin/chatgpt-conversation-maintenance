@@ -12,11 +12,15 @@ import { loadReview } from "/assets/panel-review.js";
 import { loadResult } from "/assets/panel-result.js";
 import { loadTrash } from "/assets/panel-trash.js";
 
+const BOOTED_AT = Date.now();
+
 function render() {
   const s = S.session;
   const reachable = Boolean(S.sessionError?.detail);
   const outdated = S.relayLocal?.needsUpdate === true;
-  const relay = outdated ? { level: "bad", label: "북마클릿 업데이트 필요", hint: "chatgpt.com의 북마클릿이 이 앱보다 오래됐습니다. 북마클릿을 다시 설치한 뒤 눌러 주세요." }
+  // 북마클릿으로 막 연 창은 ChatGPT와 연결하는 데 몇 초 걸린다. 그동안은 "끊김"이 아니라 "연결 중"으로 보인다.
+  const connecting = isRelayOwnerWindow() && s && !s.relay?.connected && Date.now() - BOOTED_AT < 20000;
+  const relay = connecting ? { level: "warn", label: "ChatGPT에 연결하는 중…", hint: "" } : outdated ? { level: "bad", label: "북마클릿 업데이트 필요", hint: "chatgpt.com의 북마클릿이 이 앱보다 오래됐습니다. 북마클릿을 다시 설치한 뒤 눌러 주세요." }
     : s?.relay || (reachable ? { level: "warn", label: "작업 폴더를 확인하세요", hint: "" }
       : { level: "bad", label: "서버 응답 없음", hint: "앱 서버가 실행 중인지 확인하세요." });
   $("relay-pill").className = `pill ${relay.level}`;
@@ -40,7 +44,7 @@ function render() {
   renderNow();
   renderSteps();
   const step = currentStep();
-  const key = `${step}:${s?.run?.id || ""}:${s?.run?.hasProposal}:${s?.job?.id || ""}:${s?.report?.finishedAt || ""}`;
+  const key = `${step}:${Boolean(s?.relay?.connected)}:${s?.run?.id || ""}:${s?.run?.hasProposal}:${s?.job?.id || ""}:${s?.report?.finishedAt || ""}`;
   if (key !== S.panelKey) { S.panelKey = key; S.live = []; buildPanel(step); }
   for (const update of S.live) update();
   renderRecent();
@@ -198,7 +202,7 @@ async function boot() {
     if (saved && ["auto", "fixed", "none"].includes(saved.mode)) S.trash = { ...S.trash, mode: saved.mode, ...(saved.name ? { name: saved.name } : {}) };
   } catch {}
   // 북마클릿이 연 창은 연결만 맡는다. 작업 화면을 둘로 나누면 어디서 눌러야 할지 헷갈리고 동시에 두 곳에서 작업을 시작할 수 있다.
-  startRelay({ api, release: meta("app-release"), protocolVersion: Number(meta("relay-protocol")), onState: (state) => { S.relayLocal = state; } });
+  startRelay({ api, release: meta("app-release"), protocolVersion: Number(meta("relay-protocol")), onState: (state) => { S.relayLocal = state; refreshSession(); } });
   await refreshSession();
   schedulePoll();
 }

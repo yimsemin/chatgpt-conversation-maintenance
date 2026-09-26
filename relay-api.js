@@ -10,7 +10,7 @@ const READ_OPS = new Set(["getConversation", "listConversations", "listProjects"
 // timeoutMs: 한 요청의 왕복 제한. 대화 본문은 수 MB 라 목록 조회보다 오래 걸린다.
 // livenessMs: 유지관리 창이 살아있다고 볼 기간(백그라운드 탭은 타이머가 분 단위로 늦어지므로 넉넉히 둔다). 둘을 묶으면 왕복 제한을 늘릴 때
 // "페이지가 연결되지 않았습니다" 판정이 같이 둔해진다.
-export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000,
+export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuckMs = 20000,
   now = () => Date.now(), trace = createRelayTrace({ now }) } = {}) {
   const queue = [];
   const pending = new Map();
@@ -23,12 +23,15 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000,
     // 먼저 연결한 창이 릴레이를 소유한다. 새로 온 창이 빼앗게 하면, 밀려난 창이 페이지의
     // 500ms 하트비트로 루프를 다시 시작해 서로를 무한히 밀어내는 교착에 빠진다(2026-09-12 실측).
     // 소유 창이 조용해져 생존 기간이 지난 뒤에만 인수를 허용한다.
-    if (clientId && clientId !== id && now() - lastSeenAt <= livenessMs) {
+    // 소유 창이 아직 살아 있어 보여도(하트비트가 늦게 오는 백그라운드 창) 요청 하나가 stuckMs 넘게 꺼내지지 않았다면
+    // 그 창은 일을 하지 못하는 상태이므로, 지금 막 연결을 요청한 창에 넘긴다. 그렇지 않으면 사용자는 90초를 기다려 실패만 본다.
+    const ownerStuck = queue.some((entry) => pending.has(entry.id) && now() - entry.enqueuedAt > stuckMs);
+    if (clientId && clientId !== id && now() - lastSeenAt <= livenessMs && !ownerStuck) {
       trace.record("connect-refused", { clientId, note: `owned; ${id.slice(0, 8)} refused` });
       return { connected: false, reason: "relay-owned" };
     }
     if (clientId && clientId !== id) {
-      trace.record("connect-replaced", { clientId, note: `stale; taken over by ${id.slice(0, 8)}` });
+      trace.record("connect-replaced", { clientId, note: `${ownerStuck ? "stuck" : "stale"}; taken over by ${id.slice(0, 8)}` });
       for (const requestId of [...pending.keys()]) cancel(requestId, "Relay client was replaced", { retryable: true });
       queue.length = 0;
     }
