@@ -58,18 +58,21 @@ test("scope validation accepts only the four scope kinds", () => {
   assert.throws(() => validateScope({ kind: "recent", days: 0 }), /일수/);
   assert.throws(() => validateScope({ kind: "recent", days: 1.5 }), /일수/);
   assert.throws(() => validateScope({ kind: "project", projectName: " A " }), /프로젝트 이름/);
+  assert.deepEqual(validateScope({ kind: "project", projectName: "A" }), { kind: "project", projectNames: ["A"] }, "the old single-name form is accepted");
+  assert.deepEqual(validateScope({ kind: "project", projectNames: ["A", "B", "A"] }), { kind: "project", projectNames: ["A", "B"] });
+  assert.throws(() => validateScope({ kind: "project", projectNames: [] }), /1~20/);
   assert.throws(() => validateScope(null), /범위/);
 });
 
 test("the project scope reads only that project and leaves other project counts unknown", async () => {
   const fake = api();
-  const catalog = await collectScopedCatalog(fake, { kind: "project", projectName: "프로젝트 A" }, () => NOW);
+  const catalog = await collectScopedCatalog(fake, { kind: "project", projectNames: ["프로젝트 A"] }, () => NOW);
   assert.deepEqual(catalog.conversations.map((c) => [c.conversationId, c.projectName]), [[ID2, "프로젝트 A"]]);
   assert.equal(fake.calls.list.length, 0, "the general conversation list is not read");
   assert.deepEqual(fake.calls.projectList.map((c) => c.projectId), [PA]);
   assert.deepEqual(catalog.projects.map((p) => [p.projectName, p.conversationCount]), [["프로젝트 A", 1], ["프로젝트 B", null]]);
   assert.equal(catalog.scope.complete, false);
-  await assert.rejects(() => collectScopedCatalog(fake, { kind: "project", projectName: "없는 프로젝트" }, () => NOW), /프로젝트를 찾을 수 없습니다/);
+  await assert.rejects(() => collectScopedCatalog(fake, { kind: "project", projectNames: ["없는 프로젝트"] }, () => NOW), /프로젝트를 찾을 수 없습니다/);
 });
 
 test("the unassigned scope reads the list once, skips archived pages, and treats custom GPTs as projectless", async () => {
@@ -102,7 +105,7 @@ test("a scoped scan collects only the scope and records it in the inventory", as
     assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
     assert.equal(result.catalog.scope.complete, false);
 
-    const empty = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "project", projectName: "프로젝트 B" }, now: () => NOW });
+    const empty = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "project", projectNames: ["프로젝트 B"] }, now: () => NOW });
     assert.equal(empty.inventory.counts.candidates, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -137,4 +140,14 @@ test("the rename order check compares the original order with the times recorded
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("several projects can be scanned at once and each gets its own count and latest activity", async () => {
+  const fake = api();
+  const catalog = await collectScopedCatalog(fake, { kind: "project", projectNames: ["프로젝트 A", "프로젝트 B"] }, () => NOW);
+  assert.deepEqual(fake.calls.projectList.map((c) => c.projectId), [PA, PB]);
+  const byName = Object.fromEntries(catalog.projects.map((p) => [p.projectName, p]));
+  assert.equal(byName["프로젝트 A"].conversationCount, 1);
+  assert.equal(byName["프로젝트 B"].conversationCount, 0);
+  assert.equal(byName["프로젝트 A"].latestUpdate, day(2));
 });

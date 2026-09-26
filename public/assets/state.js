@@ -7,7 +7,7 @@ export const S = {
   workspace: "", session: null, catalog: null, proposal: null, overrides: new Map(),
   forceStep: null, panelKey: "", live: [], relayLocal: { connected: false },
   sessionError: null, lastErrorShown: null, lastScanEmpty: null, view: null, dismissed: new Set(),
-  scope: { kind: "unassigned", projectName: "", days: 7 },
+  scope: { kind: "unassigned", projectNames: [], days: 7 },
   // 삭제 후보 처리 방식(설정 파일의 기본값 위에 사용자가 화면에서 고른 값): mode auto|fixed|none, name, permanent(영구 삭제)
   trash: { mode: "auto", name: "삭제후보", permanent: false }, trashDefault: "삭제후보",
 };

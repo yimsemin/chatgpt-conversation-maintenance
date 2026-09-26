@@ -1,4 +1,5 @@
 @echo off
+rem 대화 정리 앱을 켠다. 이 창이 앱이다: 창을 닫거나 Ctrl+C 를 누르면 앱이 종료된다.
 setlocal
 set "SCRIPT_DIR=%~dp0"
 where node >nul 2>nul
@@ -7,5 +8,8 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+cd /d "%SCRIPT_DIR%"
 node "%SCRIPT_DIR%launcher.js"
-if errorlevel 1 pause
+echo.
+echo The app has stopped. You can close this window.
+pause

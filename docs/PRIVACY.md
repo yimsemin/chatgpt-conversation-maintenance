@@ -10,7 +10,7 @@
 
 **있어야 하는 것**: 코드, 테스트, `docs/`, 기준 문서(`AGENTS.md`, `README.md`, `API_COMPATIBILITY.md`, `CLASSIFICATION_WORKFLOW.md`), `templates/`, `.gitignore`의 `/data/`
 
-**없어야 하는 것**: `data/`, `.local/`, 세션·쿠키·브라우저 프로필 파일, 대화 제목·프로젝트명이 담긴 파일, ChatGPT 프로젝트 주소·ID
+**없어야 하는 것**: `data/`, `.local/`, 세션·쿠키·브라우저 프로필 파일, 대화 제목·프로젝트명이 담긴 파일, ChatGPT 프로젝트 주소·ID(데이터 폴더의 `known-projects.json`은 Git 밖이라 예외)
 
 ## 공개 직전 확인
 

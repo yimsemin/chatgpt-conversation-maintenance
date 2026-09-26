@@ -14,7 +14,7 @@ import { prepareProjectRouting, projectRoutingStatus, runProjectRouting, validat
 import { compileProjectRouting, compileReviewedDecisions } from "./decision-compile.js";
 import { writeClassificationReview } from "./classification-review.js";
 import { addTrashed, readTrash, removeTrashed } from "./trash.js";
-import { collectScopedCatalog, listProjectNames } from "./catalog.js";
+import { collectScopedCatalog, listProjectsWithRecency } from "./catalog.js";
 import { writeKnownProjects } from "./known-projects.js";
 import { buildResultReport, reportMarkdown, rowsFromDecisions } from "./summary.js";
 import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
@@ -52,7 +52,7 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
     const scanResult = await untilDone(job, "확인", () => scanMaintenanceRun({
       runDir, api, scope: validScope, onProgress: (info) => reportProgress(job, info),
     }));
-    writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => project.projectName));
+    writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => ({ name: project.projectName, updatedAt: project.latestUpdate })));
     const counts = scanResult.inventory.counts;
     const candidateCount = Number(counts?.candidates || 0);
     const pointer = {
@@ -269,7 +269,8 @@ function finishRun({ workspace, dataDir, pointer, job, afterCatalog, renameOrder
   try { report = writeResultReport(pointer, afterCatalog, renameOrder); }
   catch (error) { jobEvent(job, "report", `결과 보고서를 만들지 못했습니다: ${error.message}`); }
   if (report) jobEvent(job, "report", `결과: ${report.headline}`);
-  const result = { counts: afterCatalog.counts, deletes, proposalCount: decisionCount, headline: report?.headline || null };
+  const result = { counts: afterCatalog.counts, deletes, proposalCount: decisionCount, headline: report?.headline || null,
+    scope: pointer.result?.scope };
   writePointer(workspace, { ...pointer, phase: PHASE.COMPLETE, result });
   jobEvent(job, "complete", "원격 적용을 완료했습니다. 대화별 재조회로 검증한 결과가 영수증에 남았습니다.");
   job.result = { phase: PHASE.COMPLETE, ...result };
@@ -308,7 +309,7 @@ export async function trashSyncWorkflow(workspace, dataDir, api, job) {
     jobEvent(job, "scan", `삭제후보 프로젝트 「${trash.project}」의 지금 대화를 읽습니다(읽기 전용).`);
     let present = new Set();
     try {
-      const catalog = await untilDone(job, "삭제후보 확인", () => collectScopedCatalog(api, { kind: "project", projectName: trash.project },
+      const catalog = await untilDone(job, "삭제후보 확인", () => collectScopedCatalog(api, { kind: "project", projectNames: [trash.project] },
         () => new Date(), (info) => reportProgress(job, info)));
       present = new Set(catalog.conversations.map((item) => item.conversationId));
     } catch (error) {
@@ -328,8 +329,8 @@ export async function trashSyncWorkflow(workspace, dataDir, api, job) {
 // 프로젝트 이름 목록 읽기(읽기 전용, 요청 1~2회): 범위 선택의 프로젝트 목록을 채운다.
 export async function projectListWorkflow(dataDir, api, job) {
   jobEvent(job, "scan", "ChatGPT 프로젝트 이름 목록을 읽습니다(읽기 전용).");
-  const names = await untilDone(job, "프로젝트 목록", () => listProjectNames(api));
-  writeKnownProjects(dataDir, names);
-  jobEvent(job, "complete", `프로젝트 ${names.length}개를 읽었습니다.`);
-  job.result = { projects: names.length };
+  const projects = await untilDone(job, "프로젝트 목록", () => listProjectsWithRecency(api));
+  writeKnownProjects(dataDir, projects);
+  jobEvent(job, "complete", `프로젝트 ${projects.length}개를 읽었습니다.`);
+  job.result = { projects: projects.length };
 }

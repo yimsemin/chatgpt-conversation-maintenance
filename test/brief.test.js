@@ -14,10 +14,10 @@ function fixture({ pointer = null, files = [] } = {}) {
   mkdirSync(join(root, ".local"), { recursive: true });
   if (pointer) {
     writeFileSync(join(root, ".local", "maintenance-web.json"), JSON.stringify({
-      version: 1, runDir, ...pointer,
+      version: 1, runDir, result: { scope: { kind: "project", projectNames: ["A"] } }, ...pointer,
     }));
   }
-  writeFileSync(join(runDir, "inventory.json"), JSON.stringify({ counts: { candidates: 3 }, source: { mode: "scope", scope: { kind: "project", projectName: "A" } } }));
+  writeFileSync(join(runDir, "inventory.json"), JSON.stringify({ counts: { candidates: 3 }, source: { mode: "scope", scope: { kind: "project", projectNames: ["A"] } } }));
   for (const name of files) writeFileSync(join(runDir, name), "{}");
   return { root, dataDir };
 }
@@ -69,4 +69,13 @@ test("a live lock takes priority over other steps", () => {
     run: { phase: "awaiting-proposal", hasProposal: false },
   });
   assert.match(action.text, /잠금/);
+});
+
+test("a run made before scopes existed is ignored", () => {
+  const { root } = fixture({ pointer: { phase: "awaiting-proposal", result: { counts: { candidates: 130 } } }, files: ["review.json"] });
+  try {
+    const brief = buildBrief({ appRoot: root, now: NOW });
+    assert.equal(brief.run, null);
+    assert.match(brief.next.text, /조사 범위/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

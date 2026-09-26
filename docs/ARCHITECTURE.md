@@ -8,7 +8,7 @@
 
 `127.0.0.1:8523`에서만 동작하는 웹 화면. 외부에 배포되지 않는다. **AI를 호출하지 않는다** — 분류는 계층 C로 넘긴다.
 
-**화면**(`public/app.html` + `public/assets/*`, 엄격한 CSP: 외부·인라인 스크립트 없음)은 정리 흐름 하나를 중심으로 한다: 조사 범위 선택 → 확인 → 제안 → 검토 → 적용 → 결과. 검토는 요약(무엇이 바뀌는가, 프로젝트별 증감)과 예외 목록만 보이고, 삭제후보 확인(삭제·복원 확정)은 별도 화면이다. 화면과 서버가 공유하는 순수 계산(`summary.js`, `title-rules.js`)은 `/assets/shared/`로 그대로 서빙한다.
+**화면**(`public/app.html` + `public/assets/*`, 엄격한 CSP: 외부·인라인 스크립트 없음)은 정리 흐름 하나를 중심으로 한다: 조사 범위 선택 → 확인 → 제안 → 검토 → 적용 → 결과. 검토는 요약(무엇이 바뀌는가, 프로젝트별 증감)과 예외 목록만 보이고, 삭제후보 확인(삭제·복원 확정)은 별도 화면이다. 화면과 서버가 공유하는 순수 계산(`summary.js`, `title-rules.js`, `project-link.js`)은 `/assets/shared/`로 그대로 서빙한다.
 
 **서버**는 라우트 표(`maintenance-web.js`)와 역할별 모듈로 나뉜다. 위 계층이 아래를 부르고 거꾸로는 부르지 않는다(`test/architecture.test.js`가 강제한다).
 
@@ -23,6 +23,7 @@
 
 | 영역 | 모듈 | 책임 |
 | --- | --- | --- |
+| 실행·상태 | `launcher.js`, `server.js`, `app-status.js` | 앱을 터미널 프로세스로 켜고(하나만) 끄기·상태 확인, `/health`·`/app/shutdown`, 프로세스·시작 시각·코드 변경 여부 |
 | 카탈로그 | `catalog.js`, `known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 나머지는 대화 목록 + 프로젝트별 표본 제목), 알려진 프로젝트 이름 사본 |
 | 스캔·결과 확정 | `scan.js`, `finalize.js` | 조사 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
 | 분류 | `classification-criteria.js`, `classification-review.js`, `proposal-validation.js`, `decision-compile.js`, `workflow.js`(로컬 명령) | 판단 기준 압축본, `review.json`·요청문, 제안 검증, 결정 → 실행 계획 |

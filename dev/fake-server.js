@@ -46,7 +46,7 @@ const news = [
 news.forEach(([title], i) => fake.addConversation({ id: fakeConversationId(100 + i), title }));
 
 process.chdir(root);
-// --drop-relay-after=N: N번째 요청에서 연결 창이 바뀐 것처럼 끊고 새 창을 붙인다(중단 복구 시험).
+// --drop-relay-after=N: N번째 요청에서 정리 창이 바뀐 것처럼 끊고 새 창을 붙인다(중단 복구 시험).
 const dropArg = process.argv.find((item) => item.startsWith("--drop-relay-after="));
 if (dropArg && !noRelay) {
   let left = Number(dropArg.split("=")[1]);
@@ -76,7 +76,7 @@ setInterval(() => {
     const verdicts = inventory.conversations.map((item, i) => {
       const junk = /테스트|임시/.test(item.title);
       const title = item.title.includes(" — ") ? null : `${item.title.replace(/[—]/g, "").trim()} — 정리한 결과`;
-      return junk ? { id: item.conversationId, decision: "delete", confidence: "high", why: "테스트·임시 대화" }
+      return junk ? { id: item.conversationId, decision: "delete", title, confidence: "high", why: "테스트·임시 대화" }
         : { id: item.conversationId, decision: i % 5 === 0 ? "undecided" : "keep", title, project: PROJECTS[i % PROJECTS.length],
           confidence: i % 5 === 0 ? "low" : "medium", why: "모의 분류", projectWhy: "모의 배치" };
     }).map((v) => (v.decision === "undecided" ? { ...v, decision: "keep", confidence: "medium" } : v));

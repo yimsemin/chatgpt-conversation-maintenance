@@ -84,11 +84,24 @@ test("assemble derives project actions and passes the proposal validator", () =>
     mkdirSync(dir);
     writeFileSync(join(dir, "v.json"), JSON.stringify([
       { id: ID1, decision: "keep", title: "일반 대화 검토 — 제목과 프로젝트 정리", project: null, confidence: "high", why: "고유 결과" },
-      { id: ID2, decision: "delete", confidence: "high", why: "잡음" },
+      { id: ID2, decision: "delete", title: "잡음 대화 — 삭제 후보", confidence: "high", why: "잡음" },
     ]));
     const { validation } = assembleProposal(inventoryPath, dir, join(root, "proposal.json"));
     assert.deepEqual(validation.decisionCounts, { keep: 1, delete: 1, undecided: 0 });
     const proposal = JSON.parse(readFileSync(join(root, "proposal.json"), "utf8"));
     assert.equal(proposal.items.find((i) => i.conversationId === ID1).suggestedProjectAction, "none");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a deletion candidate with a non-standard title needs a standard title in the proposal", () => {
+  const { root, inventoryPath } = setup();
+  try {
+    const dir = join(root, "verdicts");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "v.json"), JSON.stringify([
+      { id: ID1, decision: "keep", title: "일반 대화 검토 — 제목과 프로젝트 정리", project: null, confidence: "high", why: "유지" },
+      { id: ID2, decision: "delete", confidence: "high", why: "잡음" },
+    ]));
+    assert.throws(() => assembleProposal(inventoryPath, dir, join(root, "proposal.json")), /standard/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

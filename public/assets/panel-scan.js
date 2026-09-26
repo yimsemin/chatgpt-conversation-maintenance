@@ -1,7 +1,8 @@
 // 확인 패널(조사 범위 선택)과 적용 대기 패널.
 import { S, hooks } from "/assets/state.js";
 import { ago, h } from "/assets/dom.js";
-import { fail, post } from "/assets/net.js";
+import { fail, post, toast } from "/assets/net.js";
+import { projectIdFromLink } from "/assets/shared/project-link.js";
 import { refreshSession } from "/assets/session-client.js";
 
 // ---------- step 1: scan ----------
@@ -11,7 +12,10 @@ const SCOPE_KINDS = [["unassigned", "프로젝트에 넣지 않은 대화"], ["p
 function saveScope() { try { localStorage.setItem("app_scan_scope", JSON.stringify(S.scope)); } catch {} }
 
 export function loadScope() {
-  try { const saved = JSON.parse(localStorage.getItem("app_scan_scope") || "null"); if (saved?.kind) S.scope = { ...S.scope, ...saved }; } catch {}
+  try {
+    const saved = JSON.parse(localStorage.getItem("app_scan_scope") || "null");
+    if (saved?.kind) S.scope = { ...S.scope, ...saved, projectNames: Array.isArray(saved.projectNames) ? saved.projectNames : (saved.projectName ? [saved.projectName] : []) };
+  } catch {}
   if (!SCOPE_KINDS.some(([value]) => value === S.scope.kind)) S.scope.kind = "unassigned";
 }
 
@@ -22,30 +26,74 @@ const SCOPE_HINTS = {
   all: "모든 대화(보관한 것 포함)의 본문을 받아 처음부터 다시 분류합니다. 수 분~수 시간 걸리고 끊기면 이어받습니다.",
 };
 
+// 프로젝트가 마지막으로 쓰인 때를 사람이 읽는 말로(알 때만).
+function since(iso) {
+  const ms = Date.parse(iso || ""); if (!Number.isFinite(ms)) return "";
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  return days <= 0 ? "오늘" : `${days}일 전`;
+}
+
 // 조사 범위를 고른다. 후보는 고른 범위의 대화 전부이며 지난 확인과 비교하지 않는다.
 function scopePicker() {
   const s = S.session;
   const kind = h("select", { onchange: (e) => { S.scope.kind = e.target.value; saveScope(); S.panelKey = ""; hooks.render(); } },
     ...SCOPE_KINDS.map(([value, label]) => h("option", { value, text: label })));
   kind.value = S.scope.kind;
-  const names = s.knownProjects?.names || [];
-  if (S.scope.kind === "project" && !names.includes(S.scope.projectName)) S.scope.projectName = names[0] || "";
-  const project = h("select", { onchange: (e) => { S.scope.projectName = e.target.value; saveScope(); } },
-    ...names.map((name) => h("option", { value: name, text: name })));
-  project.value = S.scope.projectName;
   const days = h("input", { type: "number", min: "1", max: "3650", value: String(S.scope.days || 7), size: "4",
     onchange: (e) => { S.scope.days = Math.max(1, Math.min(3650, Math.floor(Number(e.target.value)) || 7)); saveScope(); } });
+  // 한 줄: 범위 선택 + (최근 N일이면 일수 입력)
+  const line = h("div", { class: "row" }, h("label", { class: "field inline" }, "조사 범위", kind),
+    S.scope.kind === "recent" ? h("label", { class: "field inline" }, "최근", days, "일") : null);
+  return h("div", {}, line, S.scope.kind === "project" ? projectChooser() : null, h("p", { class: "muted small", text: SCOPE_HINTS[S.scope.kind] }));
+}
+
+// 프로젝트를 여러 개 고른다. 최근에 쓴 프로젝트가 앞에 온다(수정 시각을 알 수 있으면 그 순서, 아니면 ChatGPT 목록 순서).
+function projectChooser() {
+  const s = S.session;
+  const projects = s.knownProjects?.projects || [];
+  const chosen = new Set(S.scope.projectNames);
+  const count = h("span", { class: "muted small", text: `선택 ${chosen.size}개` });
+  const items = projects.map((project) => {
+    const box = h("input", { type: "checkbox", checked: chosen.has(project.name) ? true : null, onchange: (e) => {
+      if (e.target.checked) chosen.add(project.name); else chosen.delete(project.name);
+      S.scope.projectNames = projects.map((p) => p.name).filter((name) => chosen.has(name));
+      count.textContent = `선택 ${chosen.size}개`; saveScope();
+    } });
+    return h("label", { class: "check project-item" }, box, project.name, project.updatedAt ? h("span", { class: "muted small", text: ` · ${since(project.updatedAt)}` }) : null);
+  });
+  // 프로젝트 링크(ChatGPT에서 프로젝트를 열었을 때 주소창 주소)를 붙여 넣으면 그 프로젝트를 고른다.
+  const link = h("input", { type: "text", size: "34", placeholder: "프로젝트 링크 붙여넣기", onchange: (e) => {
+    const id = projectIdFromLink(e.target.value); e.target.value = "";
+    const project = id ? projects.find((p) => p.id === id) : null;
+    if (!id) { toast("프로젝트 링크가 아닙니다", "ChatGPT에서 프로젝트를 연 주소(…/g/g-p-…/project)를 붙여 넣어 주세요."); return; }
+    if (!project) { toast("목록에 없는 프로젝트입니다", "‘프로젝트 목록 새로 읽기’를 누른 뒤 다시 붙여 넣어 보세요."); return; }
+    if (!chosen.has(project.name)) { chosen.add(project.name); S.scope.projectNames = projects.map((p) => p.name).filter((name) => chosen.has(name)); saveScope(); }
+    toast("프로젝트를 골랐습니다", project.name); S.panelKey = ""; hooks.render();
+  } });
   return h("div", {},
-    h("div", { class: "row" }, h("label", { class: "field" }, "조사 범위 ", kind),
-      S.scope.kind === "project" ? h("label", { class: "field" }, "프로젝트 ", project,
-        h("button", { class: "btn ghost", type: "button", disabled: !s.relay?.connected, onclick: startProjectList }, names.length ? "목록 새로 읽기" : "프로젝트 목록 읽기")) : null,
-      S.scope.kind === "recent" ? h("label", { class: "field" }, "최근 ", days, " 일") : null),
-    h("p", { class: "muted small", text: SCOPE_HINTS[S.scope.kind] }));
+    h("div", { class: "row" }, count, link,
+      h("button", { class: "btn ghost", type: "button", disabled: !s.relay?.connected, onclick: startProjectList }, projects.length ? "프로젝트 목록 새로 읽기" : "프로젝트 목록 읽기")),
+    projects.length ? h("div", { class: "project-list" }, items) : h("p", { class: "muted small", text: "먼저 ‘프로젝트 목록 읽기’를 누르세요(요청 몇 번, 몇 초 걸립니다). 한 번 읽으면 저장해 두고 이후에는 다시 읽지 않아도 됩니다." }));
+}
+
+// 실행(run)에 기록된 조사 범위를 사람이 읽는 말로.
+export function scopeLabel(scope) {
+  if (!scope) return "";
+  if (scope.kind === "project") return `프로젝트 ${(scope.projectNames || []).map((name) => `「${name}」`).join(", ")}`;
+  if (scope.kind === "recent") return `최근 ${scope.days}일`;
+  if (scope.kind === "all") return "모든 대화";
+  return "프로젝트에 넣지 않은 대화";
+}
+
+// 진행 중인 분류·검토가 있으면 새 확인을 시작할 때 버려진다는 것을 알린다.
+function pendingRun() {
+  const run = S.session?.run;
+  return run && run.phase !== "complete" ? run : null;
 }
 
 export function scanBody() {
-  const { kind, projectName, days } = S.scope;
-  if (kind === "project") return { scope: { kind, projectName } };
+  const { kind, projectNames, days } = S.scope;
+  if (kind === "project") return { scope: { kind, projectNames } };
   if (kind === "recent") return { scope: { kind, days } };
   return { scope: { kind } };
 }
@@ -63,12 +111,19 @@ function trashCallout() {
 export function scanPanel() {
   const s = S.session;
   const last = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport ? s.run : null;
+  const pending = pendingRun();
   return h("div", {},
     h("h2", { text: "1. 대화 확인" }),
+    pending ? h("div", { class: "callout" }, h("strong", { text: "진행 중인 정리가 있습니다" }),
+      ` — ${scopeLabel(pending.scope)} 후보 ${pending.candidates ?? "?"}건이 분류·검토를 기다리고 있습니다. 아래에서 새로 확인을 시작하면 그 정리는 버려집니다(ChatGPT는 바뀌지 않습니다). `,
+      h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = null; S.panelKey = ""; hooks.render(); } }, "그 정리로 돌아가기")) : null,
+    s.discardedRun ? h("div", { class: "callout" }, h("strong", { text: "이전 방식으로 만든 정리는 쓸 수 없어 버렸습니다" }),
+      ` — 예전 버전에서 시작한 정리(후보 ${s.discardedRun.candidates ?? "?"}건)는 지금의 조사 범위 방식과 맞지 않습니다. ChatGPT는 바뀌지 않았습니다. 아래에서 범위를 골라 새로 확인하세요.`) : null,
     h("p", { class: "muted", text: "정리할 범위를 고르고 ‘이 범위 확인’을 누르세요. 그 범위의 대화를 후보로 삼습니다. ChatGPT는 바꾸지 않고 읽기만 합니다." }),
     scopePicker(),
+    h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, "이 범위 확인")),
     last ? h("p", { class: "chip good", text: `이 범위에는 정리할 대화가 없습니다 · ${ago(last.updatedAt)} 확인` }) : null,
-    !s.relay?.connected ? h("p", { class: "muted small", text: `${s.relay?.hint || ""} 연결되면 위의 ‘이 범위 확인’ 버튼이 켜집니다.` }) : null,
+    !s.relay?.connected ? h("p", { class: "muted small", text: `${s.relay?.hint || ""} 연결되면 ‘이 범위 확인’ 버튼이 켜집니다.` }) : null,
     trashCallout());
 }
 
@@ -82,6 +137,9 @@ export function applyReadyPanel() {
 }
 
 export async function startScan() {
+  if (S.scope.kind === "project" && !S.scope.projectNames.length) { toast("프로젝트를 고르세요", "확인할 프로젝트를 하나 이상 골라 주세요."); return; }
+  const pending = pendingRun();
+  if (pending && !confirm(`진행 중인 정리(${scopeLabel(pending.scope)}, 후보 ${pending.candidates ?? "?"}건)는 버려지고 새로 확인합니다. ChatGPT는 바뀌지 않습니다. 계속할까요?`)) return;
   if (S.scope.kind === "all" && !confirm("모든 대화 본문을 받습니다(수백 건, 수 분~수 시간). ChatGPT는 바뀌지 않으며 끊기면 이어받습니다. 시작할까요?")) return;
   try { S.forceStep = null; await post("/maintenance/scan", scanBody()); await refreshSession(); } catch (e) { fail(e); }
 }

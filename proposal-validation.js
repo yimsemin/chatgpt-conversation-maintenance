@@ -19,6 +19,16 @@ function titleLength(title) {
   return [...title].length;
 }
 
+// 제목의 주제(` — ` 앞)가 소속 프로젝트의 이름·핵심어를 그대로 되풀이하는지(동어반복). 프로젝트 이름의 앞 연월(YYMM)·gh_ 접두어는 뺀다.
+export function repeatsProjectName(title, projectName) {
+  if (!projectName) return false;
+  const squash = (text) => text.replace(/[\s_·]+/g, " ").trim();
+  const core = squash(projectName.replace(/^\d{4}\s*/, "").replace(/^gh_/, ""));
+  const topic = squash(String(title).split(" — ")[0]);
+  if ([...core].length < 4 || [...topic].length < 4) return false;
+  return topic.includes(core) || core.startsWith(topic);
+}
+
 export function validateClassificationProposals(inventoryPath, proposalPath) {
   const inventoryRaw = readFileSync(inventoryPath);
   const proposalRaw = readFileSync(proposalPath);
@@ -88,10 +98,13 @@ export function validateClassificationProposals(inventoryPath, proposalPath) {
     decisionCounts[item.suggestedDecision]++;
 
     if (item.suggestedDecision === "delete") {
-      // 삭제 후보는 삭제후보 프로젝트로 옮겨질 수 있으므로 표준 제목을 제안할 수 있다(영구 삭제에서는 쓰이지 않는다).
-      assert(item.suggestedNewTitle === undefined || item.suggestedNewTitle === null
-        || (nonEmptyString(item.suggestedNewTitle) && isNormalizedTitle(item.suggestedNewTitle)),
-      `${label} deletion proposals may only suggest a title in the exact "topic — work/result" form`);
+      // 삭제 후보도 표준 제목을 갖는 것이 원칙이다(삭제후보 프로젝트로 옮긴 뒤 살릴 수도 있다).
+      // 현재 제목이 표준이 아니면 표준 제목을 반드시 제안해야 하고, 표준이면 null 이거나 더 나은 표준 제목이어야 한다.
+      const deletionTitle = item.suggestedNewTitle;
+      assert(deletionTitle === undefined || deletionTitle === null || (nonEmptyString(deletionTitle) && isNormalizedTitle(deletionTitle)),
+        `${label} deletion proposals may only suggest a title in the exact "topic — work/result" form`);
+      assert(isNormalizedTitle(source.title) || nonEmptyString(deletionTitle),
+        `${label} must suggest a standard "topic — work/result" title even for a deletion candidate whose current title is not standard`);
       assert(item.suggestedProjectAction === "none",
         `${label} deletion proposals must use project action none`);
       assert(item.suggestedProjectName === undefined || item.suggestedProjectName === null,
@@ -116,6 +129,10 @@ export function validateClassificationProposals(inventoryPath, proposalPath) {
       warnings.push(`${item.conversationId}: final title length ${length} is outside the recommended 15-35 characters`);
     }
     finalTitles.set(item.conversationId, finalTitle);
+    const finalProject = item.suggestedProjectName || source.projectName || null;
+    if (repeatsProjectName(finalTitle, finalProject)) {
+      warnings.push(`${item.conversationId}: title repeats its project name "${finalProject}"; describe what distinguishes the conversation inside the project`);
+    }
 
     if (item.suggestedProjectName === undefined || item.suggestedProjectName === null) {
       // 프로젝트 없음. 이미 프로젝트 안에 있으면 API로 뺄 수 없어 사용자가 수동으로 뺀다.

@@ -11,7 +11,8 @@ import { readTrash } from "./trash.js";
 import { readKnownProjects } from "./known-projects.js";
 import { deriveStep, describeRelay } from "./session.js";
 import { buildReviewSummary, rowsFromDecisions, rowsFromProposal } from "./summary.js";
-import { publicPointer, readPointer, validateMaintenanceWorkspace } from "./web-common.js";
+import { APP_ROOT, publicPointer, readPointer, readRawPointer, validateMaintenanceWorkspace } from "./web-common.js";
+import { appStatus } from "./app-status.js";
 import { readJson } from "./fs-json.js";
 import { jobLogFor, jobs, publicJob } from "./web-jobs.js";
 
@@ -77,6 +78,7 @@ export function sessionData(workspace, dataDir) {
     run = {
       id: basename(pointer.runDir), phase: pointer.phase || "unknown", updatedAt: pointer.updatedAt || null,
       candidates: pointer.result?.counts?.candidates ?? null,
+      scope: pointer.result?.scope || null,
       hasProposal: existsSync(proposalPath),
       hasDecisions: existsSync(runFiles(pointer.runDir).decisions),
       hasReport: existsSync(runFiles(pointer.runDir).report),
@@ -92,6 +94,12 @@ export function sessionData(workspace, dataDir) {
   const lock = lockStatus({ dataDir });
   return {
     relay: { ...relay, ...describeRelay(relay) },
+    // 범위 조사 이전 방식으로 만든 실행은 쓸 수 없어 버렸다. 사용자가 왜 사라졌는지 알 수 있게 알린다.
+    discardedRun: (() => {
+      const raw = readRawPointer(workspace, dataDir);
+      return raw && !pointer && raw.phase !== "complete" ? { candidates: raw.result?.counts?.candidates ?? null } : null;
+    })(),
+    app: appStatus(APP_ROOT),
     knownProjects: readKnownProjects(dataDir),
     trash: trashSummary(dataDir),
     run,

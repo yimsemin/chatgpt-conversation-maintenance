@@ -135,7 +135,7 @@ export function prepareTrashFollowUp(workspace, dataDir, inputs) {
       backupBytes: backup.backupBytes, contentSha256: trashed.record.contentSha256,
       messageCount: trashed.record.messageCount, attachmentReferenceCount: trashed.record.attachmentReferenceCount ?? 0 };
   });
-  const scope = { kind: "project", projectName: trash.project };
+  const scope = { kind: "project", projectNames: [trash.project] };
   const catalogPath = runFiles(runDir).catalog;
   const projects = [{ projectName: trash.project, conversationCount: null, sampleTitles: [] }];
   writeJsonAtomic(catalogPath, {
@@ -155,7 +155,7 @@ export function prepareTrashFollowUp(workspace, dataDir, inputs) {
   const inventoryPath = runFiles(runDir).inventory;
   writeJsonAtomic(inventoryPath, inventory);
   const pointer = { version: 1, phase: PHASE.READY_TO_APPLY, runDir, inventoryPath, reviewPath: null,
-    proposalPath: runFiles(runDir).proposal, result: { counts: { candidates: conversations.length }, warnings: [] } };
+    proposalPath: runFiles(runDir).proposal, result: { counts: { candidates: conversations.length }, warnings: [], scope } };
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs.map((input) => ({
     conversationId: input.conversationId, decision: input.decision === "delete" ? "delete" : "keep",
     projectName: input.decision === "delete" ? "" : (input.projectName || ""),

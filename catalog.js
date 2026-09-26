@@ -84,9 +84,11 @@ async function discoverProjects(api) {
       const gizmo = unwrapSidebarGizmo(entry);
       const projectId = gizmo.id || "";
       if (!projectId.startsWith("g-p-")) continue;
+      const updated = timeMilliseconds(gizmo.updated_at ?? gizmo.updatedAt ?? entry?.updated_at ?? entry?.updatedAt ?? null);
       projects.push({
         projectId,
         projectName: gizmo.display?.name || gizmo.name || projectId,
+        ...(updated !== null ? { updatedAt: new Date(updated).toISOString() } : {}),
       });
     }
     const next = data.list?.cursor || data.cursor || data.next_cursor || null;
@@ -98,9 +100,10 @@ async function discoverProjects(api) {
   return projects;
 }
 
-// 소유한 프로젝트 이름 목록(요청 1~2회).
-export async function listProjectNames(api) {
-  return (await discoverProjects(api)).map((project) => project.projectName);
+// 소유한 프로젝트 목록(요청 1~2회): 이름과, 알 수 있으면 마지막 수정 시각. ChatGPT가 주는 순서를 그대로 둔다.
+export async function listProjectsWithRecency(api) {
+  return (await discoverProjects(api)).map((project) => ({ name: project.projectName, id: project.projectId,
+    ...(project.updatedAt ? { updatedAt: project.updatedAt } : {}) }));
 }
 
 export async function collectConversationCatalog(api, now = () => new Date(), onProgress = () => {}) {
@@ -181,6 +184,16 @@ export async function collectConversationCatalog(api, now = () => new Date(), on
 
 const SAMPLE_PAGE_SIZE = 10;
 
+// 읽은 대화 중 가장 최근 수정 시각(ISO). 프로젝트가 마지막으로 쓰인 때를 가늠하는 데 쓴다.
+function latestOf(items) {
+  let best = null;
+  for (const item of items) {
+    const ms = timeMilliseconds(item.update_time);
+    if (ms !== null && (best === null || ms > best)) best = ms;
+  }
+  return best === null ? null : new Date(best).toISOString();
+}
+
 // 프로젝트 하나의 대화를 (한 페이지 또는 끝까지) 읽는다. onlyFirstPage 는 프로젝트 성격을 알려 주는 표본 제목용이다.
 async function readProjectConversations(api, project, { onlyFirstPage = false } = {}) {
   const items = [];
@@ -214,7 +227,7 @@ function catalogRecord(item, projectName) {
   };
 }
 
-// 범위 수집. scope.kind: "project"(projectName) | "unassigned" | "recent"(days). 완전 수집은 collectConversationCatalog 다.
+// 범위 수집. scope.kind: "project"(projectNames) | "unassigned" | "recent"(days). 완전 수집은 collectConversationCatalog 다.
 // 반환하는 카탈로그는 complete:false 이며, 읽지 않은 프로젝트의 대화 수는 null 이다(요약이 그 수를 지어내지 않게).
 export async function collectScopedCatalog(api, scope, now = () => new Date(), onProgress = () => {}) {
   assert(api?.listProjectSidebar && api?.listProjectConversations && api?.listConversations,
@@ -227,18 +240,22 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
   const known = new Map(); // 프로젝트 이름 -> { count, samples }
 
   if (scope.kind === "project") {
-    const target = projects.find((project) => project.projectName === scope.projectName);
-    assert(target, `프로젝트를 찾을 수 없습니다: ${scope.projectName}`);
-    onProgress({ phase: "projects", index: 0, total: 1, projectName: target.projectName });
-    const items = await readProjectConversations(api, target);
-    for (const item of items) records.set(item.id, catalogRecord(item, target.projectName));
-    known.set(target.projectName, { count: items.length, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean) });
+    for (const [index, name] of scope.projectNames.entries()) {
+      const target = projects.find((project) => project.projectName === name);
+      assert(target, `프로젝트를 찾을 수 없습니다: ${name}`);
+      onProgress({ phase: "projects", index, total: scope.projectNames.length, projectName: target.projectName });
+      const items = await readProjectConversations(api, target);
+      for (const item of items) records.set(item.id, catalogRecord(item, target.projectName));
+      known.set(target.projectName, { count: items.length, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean),
+        latestUpdate: latestOf(items) });
+    }
   } else {
     // 다른 프로젝트로 옮길 후보를 고르는 데 쓰이도록 프로젝트마다 표본 제목만 읽는다.
     for (const [index, project] of projects.entries()) {
       onProgress({ phase: "projects", index, total: projects.length, projectName: project.projectName });
       const items = await readProjectConversations(api, project, { onlyFirstPage: true });
-      known.set(project.projectName, { count: null, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean) });
+      known.set(project.projectName, { count: null, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean),
+        latestUpdate: latestOf(items) });
     }
     const cutoff = scope.kind === "recent" ? now().getTime() - scope.days * 86400000 : null;
     let offset = 0;
@@ -272,7 +289,8 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
   const catalog = buildCatalog({ projects, now, conversations: [...records.values()] });
   catalog.projects = projects.map((project) => {
     const info = known.get(project.projectName) || { count: null, samples: [] };
-    return { projectName: project.projectName, conversationCount: info.count, sampleTitles: info.samples };
+    return { projectName: project.projectName, conversationCount: info.count, sampleTitles: info.samples,
+      ...(info.latestUpdate ? { latestUpdate: info.latestUpdate } : {}) };
   }).sort((left, right) => left.projectName.localeCompare(right.projectName));
   catalog.scope = { ...catalog.scope, complete: false, collected: scope };
   return catalog;

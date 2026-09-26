@@ -9,13 +9,15 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
-    "start": "node server.js",
+    "start": "node launcher.js",
     "app": "node launcher.js",
     "dev:fake": "node dev/fake-server.js",
     "brief": "node brief.js",
     "lock": "node maintenance-lock.js",
     "test": "node --test",
-    "repo:check": "node repo-check.js"
+    "repo:check": "node repo-check.js",
+    "stop": "node launcher.js stop",
+    "status": "node launcher.js status"
   },
   "engines": {
     "node": ">=24"

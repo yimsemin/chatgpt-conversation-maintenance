@@ -78,6 +78,9 @@ input.title-input { width:min(420px,100%); grid-column:1 / -1; }
 input.invalid { border-color:var(--danger); }
 .field { display:flex; flex-direction:column; gap:4px; font-size:var(--fs-meta); color:var(--muted); }
 .field input { color:var(--text); }
+.field.inline { flex-direction:row; align-items:center; gap:var(--s1); white-space:nowrap; }
+.project-list { display:flex; flex-direction:column; gap:6px; max-height:240px; overflow:auto; padding:var(--s1); border:1px solid var(--line, #ddd); border-radius:8px; margin:var(--s1) 0; }
+.project-item { align-items:center; }
 .check { display:flex; gap:var(--s1); align-items:flex-start; font-size:var(--fs-meta); color:var(--muted); }
 
 /* ---- 진행률·로그 ---- */
@@ -126,8 +129,3 @@ details.nested { border-top:0; } details.nested > summary { padding:var(--s1) 0;
 dialog { border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--text); max-width:min(520px,calc(100% - 32px)); padding:22px; }
 dialog::backdrop { background:rgba(0,0,0,.55); }
 dialog form > * + * { margin-top:var(--s2); }
-
-/* ---- 북마클릿이 연 연결 창 ---- */
-.relay-window-card { max-width:560px; margin:var(--s4) auto; padding:var(--s3); background:var(--surface); border:1px solid var(--line); border-radius:16px; }
-.relay-window-card > * + * { margin-top:var(--s2); }
-body.relay-window main, body.relay-window .relay-hint, body.relay-window .relay-note, body.relay-window .aside { display:none; }

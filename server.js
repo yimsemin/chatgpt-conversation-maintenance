@@ -9,7 +9,7 @@
 
 import { createServer } from "node:http";
 import { Buffer } from "node:buffer";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,8 @@ import { CONFIG } from "./config.js";
 import { DEFAULT_TRASH_PROJECT, configuredTrash, resolveDataDir } from "./data-dir.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
 import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
+import { appStatus } from "./app-status.js";
+import { jobs } from "./web-jobs.js";
 
 // 새로 만드는 파일·디렉터리를 현재 OS 사용자로 제한한다(플랫폼이 umask를 지원하는 경우).
 try { process.umask(0o077); } catch {}
@@ -42,7 +44,7 @@ const STRICT_CSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:
 
 // 화면이 쓰는 정적 자원. 파일 이름은 고정 목록/패턴만 허용하고 경로 이동은 받지 않는다.
 const ASSET_TYPES = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
-const SHARED_MODULES = new Set(["summary.js", "title-rules.js"]);
+const SHARED_MODULES = new Set(["summary.js", "title-rules.js", "project-link.js"]);
 
 function serveAsset(res, pathname) {
   const match = pathname.match(/^\/assets\/(shared\/)?([a-z0-9-]+\.(?:js|css))$/);
@@ -118,6 +120,16 @@ async function readRequestJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+// 화면이 기본으로 쓰는 작업 폴더. 실행한 폴더(cwd)가 유지관리 프로젝트일 때만 그것을 쓰고(모의 서버의 임시 폴더),
+// 아니면 이 저장소 폴더다. 엉뚱한 폴더에서 켜도 작업 폴더가 깨지지 않게 한다.
+function defaultWorkspace() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+    if (pkg?.name === "chatgpt-conversation-maintenance") return process.cwd();
+  } catch {}
+  return MODULE_DIR;
+}
+
 const server = createServer(async (req, res) => {
   const expectedHost = `${HOST}:${PORT}`;
   const expectedOrigin = `http://${expectedHost}`;
@@ -137,13 +149,25 @@ const server = createServer(async (req, res) => {
   // 로컬 런처가 쓰는 준비 상태 확인
   } else if (req.method === "GET" && req.url === "/health") {
     jsonResponse(res, 200, { ok: true, service: "chatgpt-conversation-maintenance",
-      release: APP_RELEASE, relayProtocolVersion: RELAY_PROTOCOL_VERSION });
+      relayProtocolVersion: RELAY_PROTOCOL_VERSION, ...appStatus(MODULE_DIR) });
+
+  // 앱 종료. 실행 중인 작업이 있으면 force 없이는 거절한다(작업이 도중에 끊기지 않게).
+  } else if (req.method === "POST" && req.url === "/app/shutdown") {
+    let force = false;
+    try { force = (await readRequestJson(req))?.force === true; } catch {}
+    const running = [...jobs.values()].filter((job) => !job.done).length;
+    if (running && !force) {
+      jsonResponse(res, 409, { error: { message: "진행 중인 작업이 있어 종료하지 않았습니다. 작업이 끝나거나 중단된 뒤 다시 종료하세요." } });
+    } else {
+      jsonResponse(res, 200, { stopping: true, pid: process.pid });
+      setTimeout(() => process.exit(0), 200);
+    }
 
   // 화면이 쓰는 최소 설정 (기본 작업 폴더, 데이터 폴더 위치)
   } else if (req.method === "GET" && req.url === "/config") {
     let dataDir = null;
     try { dataDir = resolveDataDir({ appRoot: MODULE_DIR }); } catch {}
-    jsonResponse(res, 200, { platform: process.platform, workspace: process.cwd(), dataDir,
+    jsonResponse(res, 200, { platform: process.platform, workspace: defaultWorkspace(), dataDir,
       trash: { ...configuredTrash(MODULE_DIR), defaultName: DEFAULT_TRASH_PROJECT },
       release: APP_RELEASE, relayProtocolVersion: RELAY_PROTOCOL_VERSION });
 
@@ -167,12 +191,17 @@ const server = createServer(async (req, res) => {
 
 const LOCAL_URL = `http://${HOST}:${PORT}`;
 
-server.on("error", (failure) => {
+server.on("error", async (failure) => {
   const code = failure?.code || "";
   if (code === "EADDRINUSE") {
-    // 이미 떠 있는 앱이 있다는 뜻이므로 실패로 취급하지 않는다.
-    console.error(`\n이미 ${LOCAL_URL} 에서 앱이 실행 중입니다. 브라우저에서 그 주소를 여세요.\n`);
-    process.exit(0);
+    // 같은 포트에 이미 앱이 떠 있다. 하나만 켜 둘 수 있으므로 새로 켜지 않고, 떠 있는 앱이 무엇인지 알려 준다.
+    let running = null;
+    try { running = await (await fetch(`${LOCAL_URL}/health`, { signal: AbortSignal.timeout(1500) })).json(); } catch {}
+    console.error(running?.service === "chatgpt-conversation-maintenance"
+      ? `\n이미 대화 정리 앱이 실행 중입니다 (프로세스 ${running.pid}, ${running.startedAt} 시작). 새로 켜지 않습니다.\n`
+        + `끄려면 그 앱을 켠 터미널 창에서 Ctrl+C 를 누르거나 이 창에서 \`npm run stop\` 을 실행한 뒤 다시 켜세요.\n`
+      : `\n${LOCAL_URL} 를 다른 프로그램이 이미 쓰고 있어 앱을 켤 수 없습니다.\n`);
+    process.exit(1);
   }
   console.error(`\n로컬 서버를 시작할 수 없습니다: ${code || failure?.message || "알 수 없는 오류"}\n`);
   process.exit(1);
@@ -197,14 +226,29 @@ function revealInBrowser(target) {
   } catch {}
 }
 
+// 아직 한 번도 정리를 해 보지 않았는가(작업 로그가 없다).
+function isFirstUse() {
+  try { return readdirSync(join(resolveDataDir({ appRoot: MODULE_DIR }), "jobs")).length === 0; } catch { return true; }
+}
+
 export function startServer() {
   server.listen(PORT, HOST, () => {
-    console.log(`\n대화 유지관리 앱: ${LOCAL_URL}`);
-    console.log("종료하려면 Ctrl+C 를 누르세요.\n");
-    if (!NO_OPEN) revealInBrowser(LOCAL_URL);
+    const line = "─".repeat(58);
+    const first = isFirstUse();
+    console.log(`\n${line}\n 대화 정리 앱이 실행 중입니다 (프로세스 ${process.pid})\n 주소: ${LOCAL_URL}\n`
+      + ` 이 터미널 창이 앱입니다. 창을 닫거나 Ctrl+C 를 누르면 앱이 종료됩니다.\n\n`
+      + ` 다음: chatgpt.com 에 로그인한 탭에서 북마클릿(ChatGPT → 유지관리)을 누르세요.\n`
+      + ` 그러면 '대화 정리' 창이 열리고, 정리 작업은 그 창 하나에서 합니다.\n`
+      + (first ? ` (처음이면 북마클릿 설치 안내를 브라우저에 열었습니다: ${LOCAL_URL}/auth/bookmarklet)\n` : "")
+      + `${line}\n`);
+    // 브라우저 창을 미리 열지 않는다(정리 창은 북마클릿이 연다). 처음 쓰는 사람에게만 북마클릿 설치 안내를 보여 준다.
+    if (!NO_OPEN && first) revealInBrowser(`${LOCAL_URL}/auth/bookmarklet`);
   });
 
-  for (const signal of ["SIGINT", "SIGTERM"]) {
+  // 터미널 창을 닫으면(SIGHUP) 앱도 함께 종료된다. 창이 이미 없어져 출력이 실패해도 종료를 막지 않는다.
+  process.stdout.on("error", () => {});
+  process.stderr.on("error", () => {});
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => process.exit(0));
   }
 }

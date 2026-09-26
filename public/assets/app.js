@@ -5,7 +5,7 @@ import { $, ago, duration, fill, h, meta } from "/assets/dom.js";
 import { api, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
-import { applyReadyPanel, loadScope, scanPanel, startScan } from "/assets/panel-scan.js";
+import { applyReadyPanel, loadScope, scanPanel, scopeLabel, startScan } from "/assets/panel-scan.js";
 import { renderGuide, stepHint } from "/assets/help.js";
 import { proposalPanel } from "/assets/panel-proposal.js";
 import { loadReview } from "/assets/panel-review.js";
@@ -27,10 +27,14 @@ function render() {
   if (relay.hint && s && !s.relay?.connected) {
     hint.append(" ", h("a", { href: "/auth/bookmarklet", target: "_blank", rel: "noopener", text: "북마클릿 설치 안내" }));
   }
-  // 연결을 맡은 창은 북마클릿이 연 창이다. 다른 창에서 보고 있으면 그 창을 닫지 말라고 알려 준다.
+  // 정리 창 하나로 통합했다: 북마클릿이 여는 창이 정리 화면이면서 ChatGPT 연결도 맡는다.
   const note = $("relay-note");
-  note.hidden = !(s?.relay?.connected && window.name !== "chatgptMaintenance");
-  note.textContent = "이 창은 작업 창이라 닫아도 됩니다(작업은 계속됩니다). 제목이 “🔒 ChatGPT 연결 창”인 창과 chatgpt.com 탭은 닫거나 최소화하지 마세요.";
+  const owner = isRelayOwnerWindow();
+  note.hidden = !s?.relay?.connected;
+  note.textContent = owner
+    ? "이 창이 ChatGPT와 연결된 정리 창입니다. 작업이 끝날 때까지 이 창과 chatgpt.com 탭을 닫거나 최소화하지 마세요."
+    : "ChatGPT 연결은 북마클릿으로 연 정리 창이 맡고 있습니다. 이 탭에서 작업해도 되지만 그 창을 닫으면 연결이 끊깁니다. 창을 하나로 쓰려면 그 정리 창에서 작업하세요.";
+  renderAppInfo();
   renderTitle();
   renderFailure();
   renderNow();
@@ -40,6 +44,16 @@ function render() {
   if (key !== S.panelKey) { S.panelKey = key; S.live = []; buildPanel(step); }
   for (const update of S.live) update();
   renderRecent();
+}
+
+// 지금 돌고 있는 앱 프로세스를 항상 보여 준다: 무엇이 돌고 있는지, 어떻게 끄는지, 시작한 뒤 코드가 바뀌었는지.
+function renderAppInfo() {
+  const box = $("app-info"); const app = S.session?.app;
+  if (!app) { box.hidden = true; return; }
+  box.hidden = false;
+  const since = duration(app.uptimeSeconds);
+  box.textContent = `● 앱 실행 중 · 프로세스 ${app.pid} · ${since} 전에 켜짐. 이 앱을 켠 터미널 창이 앱입니다 — 창을 닫거나 Ctrl+C 를 누르면 종료됩니다. 이 탭을 닫아도 앱은 계속 켜져 있습니다.`;
+  if (app.codeChanged) box.textContent += " ⚠ 앱이 켜진 뒤 코드가 바뀌었습니다. 새 코드를 쓰려면 터미널에서 Ctrl+C 로 끄고 다시 켜세요.";
 }
 
 // 가장 최근 작업이 실패했고 그 뒤에 성공이 없으면 원인과 조치를 화면 맨 위에 보인다.
@@ -53,30 +67,26 @@ function renderFailure() {
   const copyText = [explain.title, message && message !== explain.title ? message : "", `작업: ${last.kind} ${last.startedAt || ""}`].filter(Boolean).join("\n");
   fill(box, h("strong", { text: explain.title }), h("p", { class: "small", text: explain.action }),
     h("div", { class: "row" },
-      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; await startScan(); } }, "같은 범위를 다시 확인") : null,
+      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; if (S.session.run?.scope) { S.scope = { ...S.scope, ...S.session.run.scope }; } await startScan(); } }, "같은 범위를 다시 확인") : null,
       h("button", { class: "btn ghost", type: "button", onclick: (e) => { navigator.clipboard.writeText(copyText); e.target.textContent = "복사됨"; } }, "오류 복사"),
       h("button", { class: "btn ghost", type: "button", onclick: () => { S.dismissed.add(last.id); render(); } }, "닫기")));
   box.hidden = false;
 }
 
-// 탭 제목에 상태를 넣어 다른 탭에서도 진행·완료를 알아볼 수 있게 한다.
-// 탭 제목으로 두 창을 구분한다: 연결 창은 닫으면 안 되고, 작업 창은 닫아도 된다.
+// 탭 제목에 상태를 넣어 다른 탭에서도 진행·완료를 알아볼 수 있게 한다. ChatGPT 연결을 맡은 정리 창은 연결 상태를 제목 앞에 붙인다.
 function renderTitle() {
-  if (window.name === "chatgptMaintenance") {
-    document.title = S.session?.relay?.connected ? "🔒 ChatGPT 연결 창 — 닫지 마세요" : "⚠ ChatGPT 연결 창 — 연결 끊김";
-    return;
-  }
   const job = S.session?.job; const step = currentStep();
-  document.title = job && !job.done ? `(진행 중${job.progress?.etaSeconds ? ` · ${duration(job.progress.etaSeconds)}` : ""}) 대화 정리 · 작업 창`
-    : step === "review" ? "(검토 필요) 대화 정리 · 작업 창" : step === "result" ? "(완료) 대화 정리 · 작업 창" : "대화 정리 · 작업 창";
+  const link = isRelayOwnerWindow() ? (S.session?.relay?.connected ? "🔗 " : "⚠ 연결 끊김 · ") : "";
+  document.title = link + (job && !job.done ? `(진행 중${job.progress?.etaSeconds ? ` · ${duration(job.progress.etaSeconds)}` : ""}) 대화 정리`
+    : step === "review" ? "(검토 필요) 대화 정리" : step === "result" ? "(완료) 대화 정리" : "대화 정리");
 }
 
-// 이 실행을 그만두고 최신 상태로 다시 시작한다(ChatGPT에서 그동안 직접 바꾼 것이 있을 때 등).
+// 북마클릿이 연 창(ChatGPT 탭이 열어 준 창)인가. 이 창이 ChatGPT와의 연결을 맡는다.
+function isRelayOwnerWindow() { return window.name === "chatgptMaintenance" && Boolean(window.opener); }
+
+// 이 정리를 두고 다른 범위를 고르러 간다(새 확인을 시작하기 전에는 아무것도 버려지지 않는다).
 function restartButton() {
-  return h("button", { class: "btn ghost", type: "button", disabled: !S.session?.relay?.connected, onclick: async () => {
-    if (!confirm("지금까지의 분류·검토 내용을 버리고 확인부터 다시 합니다(조사 범위는 지금 고른 것). 이미 ChatGPT에 적용된 것은 그대로 유지됩니다. 계속할까요?")) return;
-    S.forceStep = null; S.view = null; await startScan();
-  } }, "처음부터 다시 확인");
+  return h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.view = null; S.panelKey = ""; render(); } }, "범위 다시 고르기");
 }
 
 function renderNow() {
@@ -99,12 +109,11 @@ function renderNow() {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
     headline = allClear ? "이 범위에는 정리할 대화가 없습니다" : "정리할 범위를 골라 확인하세요";
     sub = s.run ? `마지막 확인 ${ago(s.run.updatedAt)}` : "아직 확인한 기록이 없습니다";
-    action = h("button", { class: "btn", type: "button", disabled: !s?.relay?.connected, onclick: startScan }, "이 범위 확인");
   } else if (step === "proposal") {
-    headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = "AI 에이전트에게 분류를 맡기세요.";
+    headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = `${scopeLabel(s.run?.scope)} · AI 에이전트에게 분류를 맡기세요.`;
     action = restartButton();
   } else if (step === "review") {
-    headline = "분류 제안을 검토하세요"; sub = "바뀌는 내용을 확인하고 적용을 누르면 됩니다.";
+    headline = "분류 제안을 검토하세요"; sub = `${scopeLabel(s.run?.scope)} · 후보 ${s.run?.candidates ?? "?"}건 · 바뀌는 내용을 확인하고 적용을 누르면 됩니다.`;
     action = restartButton();
   } else if (step === "result") {
     headline = s.report?.headline || "정리가 끝났습니다"; sub = `${ago(s.report?.finishedAt)} 완료`;
@@ -156,10 +165,19 @@ async function boot() {
   });
   $("relay-pill").addEventListener("click", () => { const hint = S.session?.relay?.hint; if (hint) toast(S.session.relay.label, hint); });
   renderGuide();
-  $("workspace").addEventListener("change", () => { S.workspace = $("workspace").value.trim(); try { localStorage.setItem("app_workspace", S.workspace); } catch {} refreshSession(); });
+  $("app-stop").addEventListener("click", async () => {
+    if (!confirm("앱을 종료합니다. 이 화면은 더 이상 동작하지 않고, 다시 쓰려면 터미널에서 다시 켜야 합니다. 종료할까요?")) return;
+    try {
+      const response = await fetch("/app/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) { toast("종료하지 못했습니다", body?.error?.message || `HTTP ${response.status}`); return; }
+      document.body.innerHTML = "<main><h1>앱이 종료되었습니다</h1><p>이 탭과 앱을 켰던 터미널 창을 닫아도 됩니다. 다시 쓰려면 터미널에서 <code>npm run app</code> 을 실행하세요.</p></main>";
+    } catch (e) { toast("종료하지 못했습니다", String(e?.message || e)); }
+  });
   const config = await api("/config").catch(() => ({}));
-  S.workspace = (() => { try { return localStorage.getItem("app_workspace"); } catch { return null; } })() || config.workspace || "";
-  $("workspace").value = S.workspace;
+  // 작업 폴더는 앱이 있는 저장소 폴더로 고정이다(사용자가 바꾸지 않는다). 예전에 저장된 값은 지운다.
+  S.workspace = config.workspace || "";
+  try { localStorage.removeItem("app_workspace"); } catch {}
   loadScope();
   // 삭제 후보 처리 방식의 기본값은 설정 파일(.local/config.json)에서 오고, 화면에서 고른 값이 있으면 그것이 우선한다.
   S.trashDefault = config.trash?.defaultName || "삭제후보";
@@ -169,8 +187,6 @@ async function boot() {
     if (saved && ["auto", "fixed", "none"].includes(saved.mode)) S.trash = { ...S.trash, mode: saved.mode, ...(saved.name ? { name: saved.name } : {}) };
   } catch {}
   // 북마클릿이 연 창은 연결만 맡는다. 작업 화면을 둘로 나누면 어디서 눌러야 할지 헷갈리고 동시에 두 곳에서 작업을 시작할 수 있다.
-  if (window.name === "chatgptMaintenance") document.body.classList.add("relay-window");
-  $("relay-window").hidden = window.name !== "chatgptMaintenance";
   startRelay({ api, release: meta("app-release"), protocolVersion: Number(meta("relay-protocol")), onState: (state) => { S.relayLocal = state; } });
   await refreshSession();
   schedulePoll();

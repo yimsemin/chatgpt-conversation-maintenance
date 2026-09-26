@@ -1,4 +1,5 @@
 #!/bin/zsh
+# 대화 정리 앱을 켠다. 이 터미널 창이 앱이다: 창을 닫거나 Ctrl+C 를 누르면 앱이 종료된다.
 
 set -u
 
@@ -25,7 +26,14 @@ if [ -z "$NODE_BIN" ]; then
   exit 1
 fi
 
-if ! "$NODE_BIN" "$SCRIPT_DIR/launcher.js"; then
-  read -r "?실행에 실패했습니다. Enter를 누르면 닫힙니다."
-  exit 1
+cd "$SCRIPT_DIR" || exit 1
+"$NODE_BIN" "$SCRIPT_DIR/launcher.js"
+STATUS=$?
+echo
+if [ "$STATUS" -eq 0 ]; then
+  echo "앱이 종료되었습니다. 이 창을 닫아도 됩니다."
+else
+  echo "앱을 켜지 못했거나 비정상 종료되었습니다(위 안내 참고)."
 fi
+read -r "?Enter를 누르면 닫힙니다."
+exit "$STATUS"

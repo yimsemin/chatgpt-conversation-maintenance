@@ -23,14 +23,19 @@ function prepareRunDirectory(path) {
 // "all"(모든 대화, 보관된 것 포함 — 전체 재정비용).
 export const SCOPE_KINDS = ["unassigned", "project", "recent", "all"];
 export const MAX_RECENT_DAYS = 3650;
+export const MAX_SCOPE_PROJECTS = 20;
 
 export function validateScope(scope) {
   assert(scope && typeof scope === "object" && !Array.isArray(scope), "조사 범위가 올바르지 않습니다");
   assert(SCOPE_KINDS.includes(scope.kind), "조사 범위 종류가 올바르지 않습니다");
   if (scope.kind === "project") {
-    assert(typeof scope.projectName === "string" && scope.projectName.trim() === scope.projectName
-      && scope.projectName.length > 0 && scope.projectName.length <= 100, "프로젝트 이름이 올바르지 않습니다");
-    return { kind: "project", projectName: scope.projectName };
+    // 프로젝트 여러 개를 고를 수 있다(projectNames). 하나만 적은 옛 형식(projectName)도 받는다.
+    const names = Array.isArray(scope.projectNames) ? scope.projectNames : [scope.projectName];
+    assert(names.length >= 1 && names.length <= MAX_SCOPE_PROJECTS, `프로젝트는 1~${MAX_SCOPE_PROJECTS}개를 고르세요`);
+    for (const name of names) {
+      assert(typeof name === "string" && name.trim() === name && name.length > 0 && name.length <= 100, "프로젝트 이름이 올바르지 않습니다");
+    }
+    return { kind: "project", projectNames: [...new Set(names)] };
   }
   if (scope.kind === "recent") {
     assert(Number.isInteger(scope.days) && scope.days >= 1 && scope.days <= MAX_RECENT_DAYS,
@@ -41,7 +46,7 @@ export function validateScope(scope) {
 }
 
 export function describeScope(scope) {
-  if (scope.kind === "project") return `프로젝트 「${scope.projectName}」`;
+  if (scope.kind === "project") return `프로젝트 ${scope.projectNames.map((name) => `「${name}」`).join(", ")}`;
   if (scope.kind === "recent") return `최근 ${scope.days}일 안에 수정된 대화`;
   if (scope.kind === "all") return "모든 대화";
   return "프로젝트에 넣지 않은 대화";

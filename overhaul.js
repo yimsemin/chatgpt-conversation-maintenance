@@ -133,7 +133,9 @@ export function assembleProposal(inventoryPath, verdictsDir, outputPath) {
       confidence: verdict.confidence,
       rationale: verdict.why,
     };
-    if (verdict.decision === "delete") return { ...base, suggestedProjectAction: "none" };
+    if (verdict.decision === "delete") {
+      return { ...base, suggestedProjectAction: "none", ...(verdict.title ? { suggestedNewTitle: verdict.title } : {}) };
+    }
     const project = verdict.project ?? null;
     const current = source.projectName ?? null;
     const suggestedProjectAction = project === null ? (current ? "manual-remove" : "none")

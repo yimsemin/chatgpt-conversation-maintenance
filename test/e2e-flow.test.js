@@ -19,12 +19,13 @@ async function startDev(port, extraArgs = [], env = {}) {
     child.stdout.on("data", (chunk) => {
       output += chunk;
       const match = output.match(/작업 폴더 (.+)\n/);
-      if (match && output.includes("종료하려면")) { workspace = match[1].trim(); clearTimeout(timer); resolve(); }
+      if (match && output.includes("이 터미널 창이 앱입니다")) { workspace = match[1].trim(); clearTimeout(timer); resolve(); }
     });
     child.stderr.on("data", (chunk) => { output += chunk; });
     child.on("exit", (code) => reject(new Error(`dev server exited ${code}: ${output}`)));
   });
-  await ready;
+  // 시작에 실패해도 자식 프로세스를 남기지 않는다(남으면 다음 시험이 같은 포트에서 막힌다).
+  try { await ready; } catch (error) { child.kill("SIGKILL"); throw error; }
   const base = `http://127.0.0.1:${port}`;
   const call = async (path, body = null) => {
     const response = await fetch(`${base}${path}`, body === null ? {} : {
@@ -72,7 +73,7 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     session = await untilProposal(dev);
     // 프로젝트에 넣지 않은 대화: 처음부터 프로젝트 없던 8개와 새로 생긴 6개.
     assert.equal(session.run.candidates, 14);
-    assert.ok(session.knownProjects.names.length >= 5, "the scan fills the known project list for the scope picker");
+    assert.ok(session.knownProjects.projects.length >= 5, "the scan fills the known project list for the scope picker");
 
     const summary = (await dev.get("/maintenance/summary")).summary;
     assert.equal(summary.totals.candidates, 14);
@@ -105,8 +106,8 @@ test("a project scope scans only that project and applies without a baseline", a
   try {
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
-    const name = (await dev.get("/maintenance/session")).knownProjects.names[0];
-    const project = await dev.waitJob((await dev.call("/maintenance/scan", { scope: { kind: "project", projectName: name } })).jobId);
+    const name = (await dev.get("/maintenance/session")).knownProjects.projects[0].name;
+    const project = await dev.waitJob((await dev.call("/maintenance/scan", { scope: { kind: "project", projectNames: [name] } })).jobId);
     assert.equal(project.ok, true, JSON.stringify(project.error));
     assert.ok(project.events.some((event) => /프로젝트 「/.test(event.message)));
     const session = await untilProposal(dev);

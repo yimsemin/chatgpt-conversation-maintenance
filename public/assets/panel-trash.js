@@ -12,7 +12,7 @@ export async function loadTrash() {
   try {
     const data = await api(`/maintenance/trash?${wsq()}`);
     const choices = new Map(data.items.map((i) => [i.conversationId, { decision: "delete", project: i.intendedTarget || i.fromProject || "", title: "" }]));
-    const projectNames2 = (S.session?.knownProjects?.names || []).filter((n) => n !== data.project);
+    const projectNames2 = (S.session?.knownProjects?.projects || []).map((p) => p.name).filter((n) => n !== data.project);
     const draw = () => {
       const deletes = [...choices.values()].filter((c) => c.decision === "delete").length;
       fill($("panel"), h("h2", { text: `삭제후보 ${data.items.length}건` }),
