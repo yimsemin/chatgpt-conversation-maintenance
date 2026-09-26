@@ -65,6 +65,13 @@ get("/maintenance/jobs", (ctx) => {
   const recent = jobLogFor(ctx.dataDir).recent(10).filter((item) => !active.some((job) => job.id === item.id));
   return { active, recent };
 });
+// 최근 작업 기록 지우기: 이 컴퓨터의 작업 로그(data/jobs)만 지운다. 정리 결과(runs/)와 ChatGPT는 그대로다.
+post("/maintenance/jobs/clear", (ctx) => {
+  const active = [...jobs.values()].filter((job) => job.workspace === ctx.workspace && !job.done);
+  const removed = jobLogFor(ctx.dataDir).clear(active.map((job) => job.logFile).filter(Boolean));
+  for (const [id, job] of jobs) if (job.workspace === ctx.workspace && job.done) jobs.delete(id);
+  return { removed };
+});
 post("/maintenance/cancel", { workspace: "none" }, (ctx) => {
   const job = jobs.get(ctx.body.jobId);
   if (!job || job.done) return { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: "진행 중인 작업이 없습니다" } } };

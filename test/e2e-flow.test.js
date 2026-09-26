@@ -95,6 +95,12 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     assert.ok(jobs.recent.length >= 2);
     assert.equal(jobs.recent.every((job) => job.done), true);
 
+    // 최근 작업 기록 지우기: 이 컴퓨터의 작업 로그만 지우고 정리 결과는 그대로다.
+    const cleared = await dev.call("/maintenance/jobs/clear", {});
+    assert.ok(cleared.removed >= 2);
+    assert.deepEqual((await dev.get("/maintenance/jobs")).recent, []);
+    assert.equal((await dev.get("/maintenance/session")).step, "result", "the finished run is untouched");
+
     // 적용한 범위를 다시 읽으면 남은 대화는 정리를 마친 것(표준 제목)뿐이다.
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(again.ok, true, JSON.stringify(again.error));

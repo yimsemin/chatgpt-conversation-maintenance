@@ -3,7 +3,8 @@ import { buildReviewSummary, rowsFromProposal } from "/assets/shared/summary.js"
 import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
 import { $, fill, h, meta } from "/assets/dom.js";
-import { api, fail, post, wsq } from "/assets/net.js";
+import { projectIdFromLink } from "/assets/shared/project-link.js";
+import { api, fail, post, toast, wsq } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
 
 // ---------- step 3: review ----------
@@ -65,15 +66,16 @@ function drawReview() {
   const invalid = rows.filter((r) => r.decision === "keep" && !isNormalizedTitle(r.newTitle || r.title));
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
-  if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건`);
+  if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — 아래 목록에서 제목을 고쳐 주세요`);
+  if (!S.session.relay?.connected) blockers.push("ChatGPT 연결이 끊겨 있습니다 — chatgpt.com 탭에서 북마클릿을 눌러 주세요");
   const moveList = ex.moves.slice(0, 200);
   const panel = $("panel");
   fill(panel, 
     h("h2", { text: "3. 바뀌는 내용 검토" }),
     h("p", { class: "lead", text: summary.headline }),
-    h("div", { class: "chips" }, h("span", { class: "chip", text: `후보 ${t.candidates}건` }), h("span", { class: "chip good", text: `보존 ${t.keep}` }),
-      h("span", { class: t.delete ? "chip warn" : "chip", text: `삭제 ${t.delete}` }), t.trashed ? h("span", { class: "chip", text: `삭제후보로 이동 ${t.trashed}` }) : null, t.marked ? h("span", { class: "chip", text: `삭제 표시 ${t.marked}` }) : null, t.undecided ? h("span", { class: "chip bad", text: `미결정 ${t.undecided}` }) : null,
-      c.remove ? h("span", { class: "chip warn", text: `직접 빼야 할 대화 ${c.remove}` }) : null),
+    h("div", { class: "chips" }, h("span", { class: "chip", text: `후보 ${t.candidates}건` }), h("span", { class: "chip good", text: `보존 ${t.keep}건` }),
+      h("span", { class: t.delete ? "chip warn" : "chip", text: `삭제 ${t.delete}건` }), t.trashed ? h("span", { class: "chip", text: `삭제후보로 이동 ${t.trashed}건` }) : null, t.marked ? h("span", { class: "chip", text: `삭제 표시 ${t.marked}건` }) : null, t.undecided ? h("span", { class: "chip bad", text: `미결정 ${t.undecided}건` }) : null,
+      c.remove ? h("span", { class: "chip warn", text: `직접 빼야 할 대화 ${c.remove}건` }) : null),
     projectTable(summary),
     trashControl(t.delete + t.trashed + t.marked),
     section("삭제후보 프로젝트로 옮길 대화", ex.trashed.length, ex.trashed.map((d) => trashItem(d, rows)), false),
@@ -87,8 +89,9 @@ function drawReview() {
       projectSelect(m.to, (v) => patch(m.conversationId, { project: v }))])), false, ex.moves.length > 200 ? `처음 200건만 표시(전체 ${ex.moves.length}건)` : ""),
     section("제목 변경", ex.renames.length, ex.renames.slice(0, 200).map((r) => titleItem(r)), false),
     section("확신이 낮은 항목", ex.lowConfidence.length, ex.lowConfidence.map((d) => item(d.title, d.why || "", [])), false),
-    c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true) : null,
+    c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true, "", "개") : null,
     ex.manualRemoves.length ? section("직접 빼야 하는 대화", ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, `현재 프로젝트: ${m.project} — 앱은 프로젝트에서 뺄 수 없어 결과 화면에 안내합니다`, [])), false) : null,
+    reviseGuide(),
     h("div", { class: "applybar" }, h("div", {}, h("strong", { text: summary.headline }), blockers.length ? h("div", { class: "small down", text: blockers.join(" · ") }) : null),
       h("button", { class: "btn", type: "button", disabled: blockers.length > 0 || !S.session.relay?.connected, onclick: () => confirmApply(summary) }, "적용")));
 }
@@ -107,19 +110,51 @@ function trashTarget() {
 // 삭제 후보를 어떻게 다룰지 고른다. 기본은 삭제후보 프로젝트로 옮기는 것이며 영구 삭제는 고급 접힘 안에 있다.
 function saveTrash() { try { localStorage.setItem("app_trash", JSON.stringify({ mode: S.trash.mode, name: S.trash.name })); } catch {} }
 
+// 마음에 들지 않을 때: 화면에서 직접 고치거나, 제안 자체를 에이전트에게 고쳐 달라고 요청한다.
+// 요청문의 회색 이탤릭 부분이 사용자가 바꿔 적을 자리다(복사하면 그 문구가 그대로 붙으니 지우고 내용을 적는다).
+const REVISE_HEAD = "이 저장소에서 `npm run brief`를 실행해 현재 분류 제안(proposal.json)을 읽고, 아래만 고쳐서 다시 저장한 뒤 validate-proposal로 검증해줘. 나머지는 그대로 둬.";
+const REVISE_FILL = "바꾸고 싶은 내용을 여기에 적으세요. 예) 「대화 제목」은 삭제하지 말고 보존 / 「대화 제목」의 제목을 ○○로 / 「대화 제목」을 ○○ 프로젝트로";
+const REVISE_PROMPT = `${REVISE_HEAD}\n- ${REVISE_FILL}`;
+
+function reviseGuide() {
+  return h("details", {}, h("summary", { text: "제안이 마음에 들지 않으면" }), h("div", { class: "body" },
+    h("p", { class: "small", text: "작은 수정은 위 목록에서 직접 고치세요. 제안 자체를 바꾸고 싶으면 아래 요청문을 복사해 회색 이탤릭 부분을 지우고 바꿀 내용을 적어 에이전트에게 전달한 뒤 ‘제안 다시 불러오기’를 누르세요." }),
+    h("div", { class: "callout" }, h("div", { text: REVISE_HEAD }), h("div", {}, "- ", h("em", { class: "fill", text: REVISE_FILL }))),
+    h("div", { class: "row" },
+      h("button", { class: "btn ghost", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(REVISE_PROMPT); e.target.textContent = "복사됨"; } }, "요청문 복사"),
+      h("button", { class: "btn ghost", type: "button", onclick: () => loadReview() }, "제안 다시 불러오기"))));
+}
+
 function trashControl(candidates) {
   if (!candidates) return null;
   const set = (changes) => { Object.assign(S.trash, changes); saveTrash(); drawReview(); };
   const radio = (value) => h("input", { type: "radio", name: "trash-mode", checked: S.trash.mode === value && !S.trash.permanent ? true : null,
     onchange: () => set({ mode: value, permanent: false }) });
-  const name = h("input", { type: "text", value: S.trash.name === S.trashDefault ? "" : S.trash.name, size: "16", placeholder: "프로젝트 이름",
-    onchange: (e) => { const v = e.target.value.trim(); set(v ? { name: v, mode: "fixed", permanent: false } : { mode: "auto", name: S.trashDefault }); } });
+  // 정해 둔 프로젝트는 이름을 손으로 쓰지 않고 목록에서 고른다. 목록에 없으면 새 이름으로 만들거나 프로젝트 링크를 붙여 넣는다.
+  const known = S.session?.knownProjects?.projects || [];
+  const names = [...new Set([...known.map((p) => p.name), ...(S.catalog?.projects || []).map((p) => p.projectName)])].filter((n) => n !== S.trashDefault);
+  const NEW = "__new__";
+  const isListed = names.includes(S.trash.name);
+  const select = h("select", { onchange: (e) => {
+    if (e.target.value === NEW) set({ mode: "fixed", name: "", permanent: false, choosingNew: true });
+    else set({ mode: "fixed", name: e.target.value, permanent: false, choosingNew: false });
+  } }, h("option", { value: "", text: "프로젝트 고르기…" }), ...names.map((n) => h("option", { value: n, text: n })), h("option", { value: NEW, text: "＋ 새 프로젝트 이름으로 만들기" }));
+  select.value = S.trash.choosingNew ? NEW : (isListed ? S.trash.name : "");
+  const newName = S.trash.choosingNew ? h("input", { type: "text", size: "20", placeholder: "새 프로젝트 이름", value: S.trash.name,
+    onchange: (e) => { const v = e.target.value.trim(); set(v ? { mode: "fixed", name: v, permanent: false, choosingNew: true } : {}); } }) : null;
+  const link = h("input", { type: "text", size: "24", placeholder: "또는 프로젝트 링크 붙여넣기", onchange: (e) => {
+    const id = projectIdFromLink(e.target.value); e.target.value = "";
+    const project = id ? known.find((p) => p.id === id) : null;
+    if (!id) toast("프로젝트 링크가 아닙니다", "ChatGPT에서 프로젝트를 연 주소(…/g/g-p-…/project)를 붙여 넣어 주세요.");
+    else if (!project) toast("목록에 없는 프로젝트입니다", "첫 화면의 ‘프로젝트 목록 새로 읽기’ 뒤 다시 붙여 넣어 보세요.");
+    else set({ mode: "fixed", name: project.name, permanent: false, choosingNew: false });
+  } });
   const target = trashTarget();
   return h("div", { class: "callout" },
     h("strong", { text: "삭제 후보는 이렇게 처리합니다" }),
     h("label", { class: "check" }, radio("auto"), `삭제후보 프로젝트를 자동으로 쓰고, 없으면 새로 만들어 옮깁니다 → 「${S.trashDefault}」(기본)`),
-    h("label", { class: "check" }, radio("fixed"), "정해 둔 프로젝트로 옮깁니다 → ", name,
-      S.trash.mode === "fixed" && target.fallback ? h("span", { class: "small down", text: ` 그런 프로젝트가 없어 「${target.name}」를 새로 만들어 옮깁니다` }) : null),
+    h("label", { class: "check" }, radio("fixed"), "정해 둔 프로젝트로 옮깁니다 → ", select, newName, link,
+      S.trash.mode === "fixed" && (!S.trash.name || target.fallback) ? h("span", { class: "small down", text: S.trash.name ? ` 그런 프로젝트가 없어 「${target.name}」를 새로 만들어 옮깁니다` : " 프로젝트를 고르지 않으면 「" + target.name + "」로 옮깁니다" }) : null),
     h("label", { class: "check" }, radio("none"), "옮기지 않고 삭제 후보로 표시만 합니다 (프로젝트 안에 있는 대화는 API로 뺄 수 없어 직접 빼야 합니다)"),
     h("details", { class: "advanced" }, h("summary", { text: "고급 — 영구 삭제" }), h("div", { class: "body" },
       h("label", { class: "check" }, h("input", { type: "checkbox", checked: S.trash.permanent ? true : null, onchange: (e) => set({ permanent: e.target.checked }) }),
@@ -136,9 +171,9 @@ function trashItem(d, rows) {
     h("div", { class: "m", text: `${d.project || "프로젝트 없음"} · ${d.why || ""}` }), input);
 }
 
-export function section(title, count, items, open, note = "") {
+export function section(title, count, items, open, note = "", unit = "건") {
   if (!count) return null;
-  return h("details", { open: open || null }, h("summary", { text: `${title} (${count})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, items));
+  return h("details", { open: open || null }, h("summary", { text: `${title} (${count}${unit})` }), h("div", { class: "body" }, note ? h("p", { class: "muted small", text: note }) : null, items));
 }
 
 export function item(title, meta, controls) {
@@ -155,7 +190,7 @@ function titleItem(r) {
 function projectTable(summary) {
   const rows = summary.projects.filter((p) => p.delta !== 0 || p.isNew);
   if (!rows.length) return null;
-  return h("details", { open: true }, h("summary", { text: `프로젝트별 변화 (${rows.length})` }), h("div", { class: "body" },
+  return h("details", { open: true }, h("summary", { text: `프로젝트별 변화 (${rows.length}개)` }), h("div", { class: "body" },
     h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "프로젝트" }), h("th", { class: "num", text: "이전" }), h("th", { class: "num", text: "이후" }), h("th", { class: "num", text: "변화" }))),
       h("tbody", {}, rows.map((p) => h("tr", {}, h("td", { text: `${p.name}${p.isNew ? " (신규)" : ""}` }), h("td", { class: "num", text: p.before ?? "—" }), h("td", { class: "num", text: p.after ?? "—" }),
         h("td", { class: `num ${p.delta > 0 ? "up" : "down"}`, text: `${p.delta > 0 ? "+" : ""}${p.delta}` })))))));

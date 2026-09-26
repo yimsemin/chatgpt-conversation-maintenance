@@ -17,7 +17,7 @@ export function progressBlock(kind) {
     const p = job.progress;
     if (p?.total > 0) { barWrap.classList.remove("indeterminate"); bar.style.width = `${Math.min(100, Math.round(p.index / p.total * 100))}%`; }
     else barWrap.classList.add("indeterminate");
-    label.textContent = [p ? `${p.label}${p.total ? ` (${p.index}/${p.total})` : ""}` : "준비 중", p?.etaSeconds ? `남은 시간 약 ${duration(p.etaSeconds)}` : "", `경과 ${duration(job.elapsedSeconds)}`].filter(Boolean).join(" · ");
+    label.textContent = [p ? `${p.label}${p.total ? ` (${p.index}/${p.total}${p.phase === "projects" ? "개" : "건"})` : ""}` : "준비 중", p?.etaSeconds ? `남은 시간 약 ${duration(p.etaSeconds)}` : "", `경과 ${duration(job.elapsedSeconds)}`].filter(Boolean).join(" · ");
     fill(log, ...job.events.slice(-10).map((e) => h("div", { class: e.stage === "rate-limit" ? "rl" : e.stage === "error" ? "er" : "" }, `${clock(e.at)}  ${e.message}`)));
     log.scrollTop = log.scrollHeight;
   });

@@ -79,7 +79,7 @@ function projectChooser() {
 // 실행(run)에 기록된 조사 범위를 사람이 읽는 말로.
 export function scopeLabel(scope) {
   if (!scope) return "";
-  if (scope.kind === "project") return `프로젝트 ${(scope.projectNames || []).map((name) => `「${name}」`).join(", ")}`;
+  if (scope.kind === "project") return `프로젝트 ${(scope.projectNames || (scope.projectName ? [scope.projectName] : [])).map((name) => `「${name}」`).join(", ")}`;
   if (scope.kind === "recent") return `최근 ${scope.days}일`;
   if (scope.kind === "all") return "모든 대화";
   return "프로젝트에 넣지 않은 대화";

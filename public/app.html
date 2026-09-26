@@ -29,27 +29,34 @@
 </main>
 
 <div class="aside">
-  <details class="guide" id="guide"></details>
-  <details class="advanced" id="advanced">
-    <summary>고급 — 자주 쓰지 않는 작업</summary>
+  <div class="tabs" role="tablist">
+    <button class="tab" type="button" data-tab="guide" role="tab">사용 안내</button>
+    <button class="tab" type="button" data-tab="recent" role="tab">최근 작업</button>
+    <button class="tab" type="button" data-tab="advanced" role="tab">고급</button>
+  </div>
+  <section class="tabpanel" id="tab-guide" hidden><div id="guide" class="body"></div></section>
+  <section class="tabpanel" id="tab-recent" hidden>
     <div class="body">
-      <p class="muted small">평소에는 위의 ‘이 범위 확인’만 쓰면 됩니다. 아래는 특별한 경우에만 필요합니다. (전체를 처음부터 다시 정리하려면 조사 범위에서 ‘모든 대화’를 고르세요.)</p>
+      <p class="muted small">이 컴퓨터의 <code>data/jobs</code> 폴더에 저장된 작업 기록입니다. ChatGPT에는 저장되지 않습니다. 지워도 정리 결과나 ChatGPT의 대화에는 영향이 없습니다.</p>
+      <div id="recent" class="recent"></div>
+      <div class="row"><button class="btn ghost" id="recent-clear" type="button">최근 작업 지우기</button></div>
+    </div>
+  </section>
+  <section class="tabpanel" id="tab-advanced" hidden>
+    <div class="body">
+      <p class="muted small">평소에는 필요 없습니다. 전체를 처음부터 다시 정리하려면 조사 범위에서 ‘모든 대화’를 고르세요.</p>
       <div class="acts">
         <div class="act">
           <a class="btn ghost" href="/auth/bookmarklet" target="_blank" rel="noopener">ChatGPT 연결 방법</a>
-          <p class="muted small">연결이 끊겼거나 처음 설치할 때 봅니다. 북마클릿을 만들고 chatgpt.com 탭에서 누르는 방법을 안내합니다.</p>
+          <p class="muted small">연결이 끊겼거나 처음 설치할 때 봅니다.</p>
         </div>
-      </div>
-      <div class="acts">
         <div class="act">
           <button class="btn ghost" id="app-stop" type="button">앱 종료</button>
-          <p class="muted small">이 앱 프로세스를 끕니다. 평소에는 앱을 켠 터미널 창을 닫거나 Ctrl+C 를 누르면 됩니다. 진행 중인 작업이 있으면 끝나거나 중단된 뒤에 종료됩니다.</p>
+          <p class="muted small">앱을 끕니다. 평소에는 앱을 켠 터미널 창을 닫거나 Ctrl+C 를 누르면 됩니다.</p>
         </div>
       </div>
-      <h3>최근 작업</h3>
-      <div id="recent" class="recent"></div>
     </div>
-  </details>
+  </section>
 </div>
 
 <dialog id="confirm"><form method="dialog" id="confirm-form"></form></dialog>

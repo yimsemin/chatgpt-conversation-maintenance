@@ -1,6 +1,6 @@
 // 작업(스캔·적용) 로그를 파일에 남겨 화면을 닫거나 서버가 죽어도 상태를 복원한다.
 // 작업마다 JSON Lines 파일 하나: 첫 줄 start, 이벤트들, 마지막 줄 end. end 가 없으면 중단된 작업이다.
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 const MAX_LINE = 2000;
@@ -76,6 +76,18 @@ export function createJobLog(dir) {
       return closed;
     },
     // 최근 작업 요약(최신순). 이벤트 전문 대신 마지막 몇 줄만 돌려준다.
+    // 끝난 작업의 기록 파일을 지운다(진행 중인 작업의 파일은 keepFiles 로 남긴다). 지운 개수를 돌려준다.
+    clear(keepFiles = []) {
+      if (!existsSync(dir)) return 0;
+      const keep = new Set(keepFiles);
+      let removed = 0;
+      for (const name of readdirSync(dir).filter((item) => item.endsWith(".jsonl"))) {
+        const path = join(dir, name);
+        if (keep.has(path)) continue;
+        try { unlinkSync(path); removed += 1; } catch {}
+      }
+      return removed;
+    },
     recent(limit = 10, tail = 12) {
       if (!existsSync(dir)) return [];
       return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort().reverse().slice(0, limit).map((name) => {

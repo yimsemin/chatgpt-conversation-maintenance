@@ -2,7 +2,7 @@
 import { startRelay } from "/assets/relay-client.js";
 import { S, STEPS, hooks } from "/assets/state.js";
 import { $, ago, duration, fill, h, meta } from "/assets/dom.js";
-import { api, toast } from "/assets/net.js";
+import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
 import { applyReadyPanel, loadScope, scanPanel, scopeLabel, startScan } from "/assets/panel-scan.js";
@@ -95,7 +95,6 @@ function renderNow() {
     const reachable = Boolean(S.sessionError?.detail);
     fill($("now"), h("div", {}, h("p", { class: "headline", text: reachable ? "작업 폴더를 확인하세요" : "앱 서버에 연결하지 못했습니다" }),
       h("p", { class: "sub", text: reachable ? (S.sessionError.detail.explain?.title || S.sessionError.message) : "터미널에서 `npm start`로 서버를 켠 뒤 새로고침하세요." })));
-    if (reachable) $("advanced").open = true;
     return;
   }
   let headline = "확인 중…"; let sub = ""; let action = null;
@@ -165,6 +164,18 @@ async function boot() {
   });
   $("relay-pill").addEventListener("click", () => { const hint = S.session?.relay?.hint; if (hint) toast(S.session.relay.label, hint); });
   renderGuide();
+  // 아래쪽 탭: 사용 안내 / 최근 작업 / 고급. 같은 탭을 다시 누르면 접힌다.
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => {
+      const open = !tab.classList.contains("on");
+      for (const other of document.querySelectorAll(".tab")) other.classList.toggle("on", open && other === tab);
+      for (const panel of document.querySelectorAll(".tabpanel")) panel.hidden = !(open && panel.id === `tab-${tab.dataset.tab}`);
+    });
+  }
+  $("recent-clear").addEventListener("click", async () => {
+    if (!confirm("이 컴퓨터에 저장된 최근 작업 기록을 지웁니다. 정리 결과와 ChatGPT의 대화는 그대로입니다. 지울까요?")) return;
+    try { const r = await post("/maintenance/jobs/clear"); toast("최근 작업을 지웠습니다", `${r.removed}건`); await refreshSession(); } catch (e) { fail(e); }
+  });
   $("app-stop").addEventListener("click", async () => {
     if (!confirm("앱을 종료합니다. 이 화면은 더 이상 동작하지 않고, 다시 쓰려면 터미널에서 다시 켜야 합니다. 종료할까요?")) return;
     try {

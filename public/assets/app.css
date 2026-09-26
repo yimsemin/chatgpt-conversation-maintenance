@@ -51,12 +51,14 @@ main > * + * { margin-top:var(--s3); }
 
 /* ---- 작업 영역: 소제목 → 도입문 → 내용. 블록 사이는 항상 --s2, 소제목(h3)만 --s3 ---- */
 .panel > * + *, .panel > div > * + * { margin-top:var(--s2); }
+/* 가로로 늘어놓는 묶음(칩·버튼 줄)의 항목에는 위쪽 간격을 주지 않는다 */
+.panel .chips > *, .panel .row > * { margin-top:0; }
 .panel > h3, .panel > div > h3 { margin-top:var(--s3); }
 .panel h2 + p { margin-top:var(--s1); }
 .panel .lead { font-size:var(--fs-h2); font-weight:650; margin:0; }
 .row { display:flex; gap:var(--s1); flex-wrap:wrap; align-items:center; }
-.chips { display:flex; gap:var(--s1); flex-wrap:wrap; }
-.chip { background:var(--bg); border-radius:999px; padding:2px 12px; font-size:var(--fs-meta); }
+.chips { display:flex; gap:var(--s1); flex-wrap:wrap; align-items:center; }
+.chip { background:var(--bg); border-radius:999px; padding:2px 12px; font-size:var(--fs-meta); white-space:nowrap; line-height:1.6; }
 .chip.warn { color:var(--warn); } .chip.bad { color:var(--danger); } .chip.good { color:var(--good); }
 
 /* ---- 알림(강조가 필요할 때만): 하나의 모양 ---- */
@@ -78,6 +80,10 @@ input.title-input { width:min(420px,100%); grid-column:1 / -1; }
 input.invalid { border-color:var(--danger); }
 .field { display:flex; flex-direction:column; gap:4px; font-size:var(--fs-meta); color:var(--muted); }
 .field input { color:var(--text); }
+.tabs { display:flex; gap:var(--s1); border-bottom:1px solid var(--line); margin-top:var(--s3); }
+.tab { background:none; border:0; border-bottom:2px solid transparent; padding:var(--s1) var(--s2); color:var(--muted); cursor:pointer; font:inherit; }
+.tab.on { color:var(--text); border-bottom-color:var(--text); font-weight:600; }
+.tabpanel { padding:var(--s2) 0; }
 .field.inline { flex-direction:row; align-items:center; gap:var(--s1); white-space:nowrap; }
 .project-list { display:flex; flex-direction:column; gap:6px; max-height:240px; overflow:auto; padding:var(--s1); border:1px solid var(--line, #ddd); border-radius:8px; margin:var(--s1) 0; }
 .project-item { align-items:center; }
@@ -113,8 +119,7 @@ details > summary::after { content:"＋"; color:var(--muted); } details[open] > 
 details .body { padding:0 0 var(--s2); }
 .aside details:last-child { border-bottom:1px solid var(--line); }
 .aside .body > * + * { margin-top:var(--s2); }
-.guide-steps { padding-left:var(--s3); margin:0; } .guide-steps li { margin:var(--s1) 0; } .guide .who { color:var(--muted); font-style:normal; font-size:var(--fs-meta); }
-.glossary { margin:0; } .glossary dt { font-weight:600; margin-top:var(--s1); } .glossary dd { margin:2px 0 0; color:var(--muted); font-size:var(--fs-meta); }
+.guide-steps { padding-left:var(--s3); margin:0; } .guide-steps li { margin:var(--s1) 0; } #guide .who { color:var(--muted); font-style:normal; font-size:var(--fs-meta); }
 details.nested { border-top:0; } details.nested > summary { padding:var(--s1) 0; color:var(--accent); font-weight:500; }
 .acts { display:grid; gap:var(--s2); } .act p { margin:var(--s1) 0 0; }
 .recent .job { padding:var(--s1) 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
@@ -129,3 +134,4 @@ details.nested { border-top:0; } details.nested > summary { padding:var(--s1) 0;
 dialog { border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--text); max-width:min(520px,calc(100% - 32px)); padding:22px; }
 dialog::backdrop { background:rgba(0,0,0,.55); }
 dialog form > * + * { margin-top:var(--s2); }
+em.fill { color:var(--muted); font-style:italic; }

@@ -131,23 +131,23 @@ test("web approval refuses undecided but now accepts manual project moves", () =
 test("jobEvent updates a running progress line in place instead of piling up", () => {
   const job = { events: [] };
   jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
-  jobEvent(job, "progress", "후보 대화 다운로드 중 (1/3, 33%)");
-  jobEvent(job, "progress", "후보 대화 다운로드 중 (2/3, 66%)");
-  jobEvent(job, "progress", "후보 대화 다운로드 중 (3/3, 100%)");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (1/3건, 33%)");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (2/3건, 66%)");
+  jobEvent(job, "progress", "후보 대화 다운로드 중 (3/3건, 100%)");
   jobEvent(job, "ready", "3개 후보의 분류 요청 준비가 끝났습니다.");
   assert.equal(job.events.length, 3);
   assert.equal(job.events[1].stage, "progress");
-  assert.equal(job.events[1].message, "후보 대화 다운로드 중 (3/3, 100%)");
+  assert.equal(job.events[1].message, "후보 대화 다운로드 중 (3/3건, 100%)");
   assert.equal(job.events[2].stage, "ready");
 });
 
 test("formatScanProgress renders a percentage once a total is known", () => {
   assert.equal(formatScanProgress({ phase: "downloads", index: 42, total: 139 }),
-    "후보 대화 다운로드 중 (42/139, 30%)");
+    "후보 대화 다운로드 중 (42/139건, 30%)");
   assert.equal(formatScanProgress({ phase: "active", index: 100, total: 424 }),
-    "활성 대화 목록 확인 중 (100/424, 24%)");
+    "활성 대화 목록 확인 중 (100/424건, 24%)");
   assert.equal(formatScanProgress({ phase: "projects", index: 2, total: 9, projectName: "오디오" }),
-    "프로젝트 목록 확인 중: 오디오 (3/9)");
+    "프로젝트 목록 확인 중: 오디오 (3/9개)");
   assert.equal(formatScanProgress({ phase: "removed", index: 0, total: 0 }), "삭제된 대화 확인 중");
 });
 

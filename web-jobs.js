@@ -86,12 +86,13 @@ const SCAN_PROGRESS_LABELS = {
 
 export function formatScanProgress({ phase, index, total, projectName }) {
   const label = SCAN_PROGRESS_LABELS[phase] || phase;
+  const unit = phase === "projects" ? "개" : "건";
   if (phase === "projects" && projectName) {
-    return `${label}: ${projectName} (${index + 1}/${total})`;
+    return `${label}: ${projectName} (${index + 1}/${total}${unit})`;
   }
   if (Number.isFinite(total) && total > 0) {
     const percent = Math.min(100, Math.round((index / total) * 100));
-    return `${label} (${index}/${total}, ${percent}%)`;
+    return `${label} (${index}/${total}${unit}, ${percent}%)`;
   }
   return `${label}${Number.isFinite(index) && index > 0 ? ` (${index}건)` : ""}`;
 }

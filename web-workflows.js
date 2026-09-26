@@ -68,7 +68,7 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
       writeClassificationReview(inventoryPath, reviewPath);
       writePointer(workspace, pointer);
       job.result = { phase: PHASE.AWAITING_PROPOSAL, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
-      jobEvent(job, "ready", `${candidateCount}개 후보의 분류 요청 준비가 끝났습니다.`);
+      jobEvent(job, "ready", `후보 ${candidateCount}건의 분류 요청 준비가 끝났습니다.`);
       return;
     }
     writePointer(workspace, pointer);
@@ -166,7 +166,7 @@ function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDe
     deletes = proposal.items.filter((item) => item.suggestedDecision === "delete").length;
     decisionCount = proposal.items.length;
   }
-  assert(deletes === 0 || confirmDeletes === true, `${deletes}개 삭제 후보에 대한 별도 확인이 필요합니다`);
+  assert(deletes === 0 || confirmDeletes === true, `삭제 후보 ${deletes}건에 대한 별도 확인이 필요합니다`);
   return { deletes, decisionCount };
 }
 
@@ -213,7 +213,7 @@ async function applyManagementPlans({ files, api, accountId, job }) {
   const prepare = preparePlanSet(files.plans);
   if (!(prepare.summary?.remainingActions > 0)) return;
   const planTotal = prepare.summary.remainingActions;
-  jobEvent(job, "apply", `${planTotal}개 제목 변경 또는 삭제를 적용합니다.`);
+  jobEvent(job, "apply", `제목 변경·삭제 ${planTotal}건을 적용합니다.`);
   reportProgress(job, { phase: "apply-plan", index: 0, total: planTotal });
   await untilDone(job, "제목 변경·삭제", async () => {
     const remaining = preparePlanSet(files.plans).summary;
@@ -238,7 +238,7 @@ async function routingStage({ files, api, accountId, job }) {
   const routingPrepare = prepareProjectRouting(routing);
   const routingStatus = projectRoutingStatus(routing);
   if (routingStatus.pendingTargets > 0) {
-    jobEvent(job, "routing", `${routingPrepare.conversationCount}개 대화를 승인된 프로젝트에 배치합니다.`);
+    jobEvent(job, "routing", `대화 ${routingPrepare.conversationCount}건을 승인된 프로젝트에 배치합니다.`);
     reportProgress(job, { phase: "routing", index: routingStatus.completedConversations, total: routingStatus.totalConversations });
     await untilDone(job, "프로젝트 배치", async () => {
       if (projectRoutingStatus(routing).pendingTargets === 0) return;
