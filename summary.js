@@ -20,10 +20,12 @@ export function rowsFromProposal(proposal, inventory) {
   });
 }
 
-export function rowsFromDecisions(decisions, inventory) {
+export function rowsFromDecisions(decisions, inventory, proposal = null) {
   const byId = new Map((inventory.conversations || []).map((item) => [item.conversationId, item]));
+  const noteById = new Map((proposal?.items || []).map((item) => [item.conversationId, item]));
   return (decisions.decisions || []).map((item) => {
     const source = byId.get(item.conversationId) || {};
+    const note = noteById.get(item.conversationId) || {};
     return {
       conversationId: item.conversationId,
       title: source.title ?? "",
@@ -34,8 +36,8 @@ export function rowsFromDecisions(decisions, inventory) {
       marked: item.marked === true,
       newTitle: item.newTitle || null,
       project: item.decision === "delete" ? null : (item.projectName ?? null),
-      confidence: null,
-      why: item.rationale || "",
+      confidence: note.confidence || null,
+      why: item.rationale || note.rationale || "",
       action: null,
     };
   });

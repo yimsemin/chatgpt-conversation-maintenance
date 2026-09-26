@@ -41,6 +41,7 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
     acquireLock({ dataDir });
     lockHeld = true;
     const id = runId();
+    // 전체 범위는 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
     const runDir = validScope.kind === "all" ? overhaulRunDir(dataDir) : join(runsDir(dataDir), id);
     const inventoryPath = runFiles(runDir).inventory;
     const reviewPath = runFiles(runDir).review;

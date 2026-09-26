@@ -116,7 +116,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     entry.resolve(validated);
     return { accepted: true };
   }
-  // retryable: 연결(정리 창)이 바뀌거나 끊겨서 취소된 요청은 새 연결로 다시 보낼 수 있다. 사용자 취소는 다시 보내지 않는다.
+  // retryable: 연결 창이 바뀌거나 끊겨서 취소된 요청은 새 연결로 다시 보낼 수 있다. 사용자 취소는 다시 보내지 않는다.
   function cancel(requestId, message = "Remote operation was cancelled", { retryable = false } = {}) {
     const entry = pending.get(requestId);
     if (!entry) return false;
