@@ -24,7 +24,7 @@ export function timeMilliseconds(value) {
 // 수정시각 순으로 주고 offset 으로 페이지를 넘기므로, 제목을 대량 변경한 직후에는
 // 일부 대화가 주 목록에서 밀려 프로젝트 목록에서만 수집된다. 그 응답에는 create_time 이
 // 없을 수 있는데, 정보가 없는 것을 변경 증거로 취급하면 실제로 바뀌지 않은 대화 때문에
-// 전체 작업이 멈춘다(2026-09-12 실측: createTime 드리프트로 checkpoint 2회 실패).
+// 전체 작업이 멈춘다(2026-09-12 실측: createTime 드리프트로 검증 2회 실패).
 export function sameTime(left, right) {
   const a = timeMilliseconds(left);
   const b = timeMilliseconds(right);

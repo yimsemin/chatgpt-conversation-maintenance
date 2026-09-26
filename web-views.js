@@ -64,7 +64,7 @@ export function summaryData(workspace, dataDir) {
   return { ready: true, source, summary: buildReviewSummary({ catalog, rows }) };
 }
 
-// 화면 첫 진입에 필요한 모든 상태를 한 번에 준다: 연결, 기준선, 현재 실행, 작업, 단계.
+// 화면 첫 진입에 필요한 모든 상태를 한 번에 준다: 연결, 알려진 프로젝트, 삭제후보 현황, 현재 실행, 작업, 단계.
 export function sessionData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   const relay = relayBroker.status();
@@ -86,7 +86,7 @@ export function sessionData(workspace, dataDir) {
   if (run?.hasReport) {
     try { const data = readJson(runFiles(pointer.runDir).report, "결과"); report = { headline: data.headline, finishedAt: data.finishedAt }; } catch {}
   }
-  // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·빠른 검증·기준선 확정)이 있으면 결과 화면으로 되돌리지 않는다.
+  // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·삭제후보 다시 확인)이 있으면 결과 화면으로 되돌리지 않는다.
   const reportAt = Date.parse(report?.finishedAt || "") || 0;
   const resultSuperseded = jobLogFor(dataDir).recent(10).some((job) => job.kind === "scan" && job.ok && Date.parse(job.finishedAt || "") > reportAt);
   const lock = lockStatus({ dataDir });

@@ -24,7 +24,7 @@ export function progressBlock(kind) {
   return box;
 }
 
-const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["checkpoint", "적용 결과 검증"], ["routing", "프로젝트 배치"], ["verify", "배치 검증"], ["report", "결과 정리"]];
+const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["routing", "프로젝트 배치"], ["verify", "결과 확인"], ["report", "결과 정리"]];
 
 export function applyStages() {
   const list = h("ol", { class: "steps" });

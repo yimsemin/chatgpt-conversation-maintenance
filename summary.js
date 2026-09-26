@@ -99,7 +99,7 @@ export function buildReviewSummary({ catalog, rows }) {
       continue;
     }
     if (row.trashed) {
-      // 삭제 후보를 임시 보관 프로젝트로 옮기는 행. 삭제가 아니라 이동이며 사용자가 나중에 직접 확인한다.
+      // 삭제 후보를 삭제후보 프로젝트로 옮기는 행. 삭제가 아니라 이동이며 사용자가 나중에 직접 확인한다.
       totals.trashed += 1;
       changes.trashed += 1;
       bump(row.currentProject, -1);

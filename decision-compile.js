@@ -59,7 +59,7 @@ export function compileReviewedDecisions(inventoryPath, decisionsPath, outputDir
     if (newTitle !== undefined) assert(typeof newTitle === "string" && newTitle.trim(), `${label}.newTitle is invalid`);
     assert(!(decision.decision === "delete" && newTitle), `${label} cannot rename a conversation that will be deleted`);
     if (decision.decision !== "delete") {
-      // 삭제예정(trashed)으로 옮기는 대화도 표준 제목을 갖는다.
+      // 삭제후보(trashed)으로 옮기는 대화도 표준 제목을 갖는다.
       assert(isNormalizedTitle(newTitle || source.title),
         `${label} must preserve or set the exact "topic — work/result" title form`);
       assertOptionalProjectName(decision.projectName, `${label}.projectName`);

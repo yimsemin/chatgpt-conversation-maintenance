@@ -1,4 +1,4 @@
-// 원격에 닿는 워크플로: 스캔, 기준선 확정, 적용. 잠금·영수증·체크포인트를 다룬다.
+// 원격에 닿는 워크플로: 스캔, 적용, 삭제후보 다시 확인, 프로젝트 목록 읽기. 잠금·영수증을 다룬다.
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { PHASE } from "./phases.js";
 import { join } from "node:path";
@@ -23,7 +23,7 @@ import { jobEvent, reportProgress, untilDone } from "./web-jobs.js";
 import { proposalData } from "./web-views.js";
 import { buildReviewedDecisions } from "./web-decisions.js";
 
-// 전수 수집은 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
+// 전체 범위 수집은 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
 function overhaulRunDir(dataDir) {
   const root = runsDir(dataDir);
   const open = existsSync(root)
@@ -79,12 +79,12 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
   }
 }
 
-// 적용이 끝난 뒤 검토 대기 목록을 맞춘다: 새로 보관한 대화를 더하고, 후속 실행으로 처리한 대화를 뺀다.
+// 적용이 끝난 뒤 삭제후보 목록을 맞춘다: 새로 보관한 대화를 더하고, 후속 실행으로 처리한 대화를 뺀다.
 // 후속 실행에서 삭제하거나 되돌린 대화는 이번 결과 카탈로그에서 보관 프로젝트에 남아 있지 않다.
 function settleTrash(pointer, dataDir, afterCatalog) {
   const metaPath = runFiles(pointer.runDir).trashMeta;
   if (existsSync(metaPath)) {
-    const meta = readJson(metaPath, "임시 보관 정보");
+    const meta = readJson(metaPath, "삭제후보 이동 정보");
     addTrashed(dataDir, { project: meta.project, items: meta.items });
   }
   const followPath = runFiles(pointer.runDir).followUp;
@@ -113,9 +113,9 @@ function writeResultReport(pointer, afterCatalog, renameOrder) {
 const PLAN_HALT_MESSAGES = {
   "changed-after-apply": "이미 적용한 결과(영수증)가 있는데 결정이 바뀌었습니다. "
     + "이 실행의 계획은 안전하게 다시 만들 수 없으므로 여기서 멈춥니다. "
-    + "‘새 대화 확인’으로 현재 ChatGPT 상태를 다시 확인한 뒤 새 실행에서 결정하세요.",
+    + "같은 범위의 ‘대화 확인’으로 현재 ChatGPT 상태를 다시 확인한 뒤 새 실행에서 결정하세요.",
   "unknown-source-after-apply": "이 실행의 계획이 어떤 결정에서 나왔는지 확인할 수 없고 적용 결과(영수증)도 있습니다. "
-    + "안전을 위해 멈춥니다. ‘새 대화 확인’으로 다시 확인한 뒤 새 실행에서 결정하세요.",
+    + "안전을 위해 멈춥니다. 같은 범위의 ‘대화 확인’으로 다시 확인한 뒤 새 실행에서 결정하세요.",
 };
 
 // 이미 컴파일된 plans/·routing.json 을 지금의 승인(reviewed-decisions.json)에 그대로 써도 되는지 판정한다.
@@ -133,7 +133,7 @@ export function planReuseDecision({ hasCompiledArtifacts, stampDigest, decisions
 // 로 남으므로 정상적인 재시도는 그대로 통과한다.
 export function assertApplyablePhase(phase) {
   assert(phase !== PHASE.COMPLETE,
-    "이 실행은 이미 적용을 마쳤습니다. 새 변경은 ‘새 대화 확인’으로 다시 확인한 뒤 결정하세요.");
+    "이 실행은 이미 적용을 마쳤습니다. 새 변경은 같은 범위의 ‘대화 확인’으로 다시 확인한 뒤 결정하세요.");
   return true;
 }
 
@@ -232,7 +232,7 @@ async function applyManagementPlans({ files, api, accountId, job }) {
   });
 }
 
-// 프로젝트 배치·이동(25건 단위 타깃)을 적용하고 결과를 기준선에 반영한다.
+// 프로젝트 배치·이동(25건 단위 타깃)을 적용하고 결과를 반영한다.
 async function routingStage({ files, api, accountId, job }) {
   const routing = validateProjectRouting(readJson(files.routing, "프로젝트 배치 계획"));
   const routingPrepare = prepareProjectRouting(routing);
@@ -261,7 +261,7 @@ async function routingStage({ files, api, accountId, job }) {
   }
 }
 
-// 검토 대기 목록·결과 보고서·포인터를 마무리한다. 보고서 실패는 적용 자체를 실패로 만들지 않는다.
+// 삭제후보 목록·결과 보고서·포인터를 마무리한다. 보고서 실패는 적용 자체를 실패로 만들지 않는다.
 function finishRun({ workspace, dataDir, pointer, job, afterCatalog, renameOrder, deletes, decisionCount }) {
   try { settleTrash(pointer, dataDir, afterCatalog); }
   catch (error) { jobEvent(job, "report", `삭제후보 목록을 갱신하지 못했습니다: ${error.message}`); }

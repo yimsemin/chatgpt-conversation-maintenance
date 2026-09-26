@@ -214,7 +214,7 @@ test("copyable diagnostics redact tokens and the private workspace path", () => 
   const workspace = join(tmpdir(), "private-workspace");
   const token = "eyJheader.payload.signature";
   const result = createSafeDiagnostic("scan", new Error(
-    `Bearer ${token} failed in ${workspace}/data/state.json`,
+    `Bearer ${token} failed in ${workspace}/data/runs/x.json`,
   ), workspace, "run-1");
   const serialized = JSON.stringify(result);
   assert.equal(result.stage, "scan");

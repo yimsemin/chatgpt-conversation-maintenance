@@ -88,7 +88,7 @@ export function validateClassificationProposals(inventoryPath, proposalPath) {
     decisionCounts[item.suggestedDecision]++;
 
     if (item.suggestedDecision === "delete") {
-      // 삭제 후보는 삭제예정 프로젝트로 옮겨질 수 있으므로 표준 제목을 제안할 수 있다(영구 삭제에서는 쓰이지 않는다).
+      // 삭제 후보는 삭제후보 프로젝트로 옮겨질 수 있으므로 표준 제목을 제안할 수 있다(영구 삭제에서는 쓰이지 않는다).
       assert(item.suggestedNewTitle === undefined || item.suggestedNewTitle === null
         || (nonEmptyString(item.suggestedNewTitle) && isNormalizedTitle(item.suggestedNewTitle)),
       `${label} deletion proposals may only suggest a title in the exact "topic — work/result" form`);

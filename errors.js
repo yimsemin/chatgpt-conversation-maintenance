@@ -1,20 +1,14 @@
 // 내부 오류 문장(영문·검증 메시지)을 사용자가 바로 행동할 수 있는 "무슨 일 + 무엇을 하면 되는가"로 바꾼다.
 // 순서가 중요하다: 더 구체적인 패턴이 앞에 온다.
-// recovery: 화면이 오류 옆에 보여 줄 "다시 시작" 동작. rescan = 새 대화 확인으로 최신 상태를 다시 읽는다.
+// recovery: 화면이 오류 옆에 보여 줄 "다시 시작" 동작. rescan = 같은 범위를 다시 확인해 최신 상태를 읽는다.
 const RULES = [
   { test: /Remote title does not match|Backup title does not match|Remote conversation ID does not match/i,
     title: "확인한 뒤 ChatGPT에서 대화 제목이 바뀌어 적용을 멈췄습니다",
-    action: "이 실행의 결정은 예전 제목을 기준으로 해서 더 진행할 수 없습니다. 이미 적용된 부분은 그대로 유지됩니다. ‘새 대화 확인’으로 최신 상태를 다시 읽으면 남은 대화가 새 후보로 나오니 그때 다시 검토하세요.",
+    action: "이 실행의 결정은 예전 제목을 기준으로 해서 더 진행할 수 없습니다. 이미 적용된 부분은 그대로 유지됩니다. 같은 범위를 다시 확인하면 남은 대화가 새 후보로 나오니 그때 다시 검토하세요.",
     recovery: "rescan" },
-  { test: /New conversation appeared during maintenance|빠른 검증 가정 위반/i,
-    title: "적용하는 동안 다른 대화가 바뀐 것이 발견되었습니다",
-    action: "‘적용 뒤 간단히 확인하기’는 그동안 아무것도 바뀌지 않았다고 보고 최근 수정된 대화만 확인합니다. 고급에서 그 항목을 끄고 다시 적용하면 전체를 다시 읽어 확인합니다. 또는 ‘새 대화 확인’으로 다시 읽어도 됩니다.", recovery: "rescan" },
   { test: /Uncertain in-progress receipt actions/i,
     title: "결과가 불확실한 작업이 남아 있습니다",
     action: "같은 작업을 자동으로 다시 하지 않고 멈췄습니다. ChatGPT에서 해당 대화의 현재 상태를 확인한 뒤 에이전트에게 오류 내용을 붙여넣어 알려 주세요." },
-  { test: /Maintenance state changed after this scan/i,
-    title: "확인한 뒤 기록이 바뀌어 적용을 멈췄습니다",
-    action: "‘새 대화 확인’을 다시 실행한 뒤 결정하세요.", recovery: "rescan" },
   { test: /\block\b|잠금/i,
     title: "다른 작업이 정리를 진행 중이거나 잠금이 남아 있습니다",
     action: "진행 중인 작업이 없다면 터미널에서 `node maintenance-lock.js release`로 잠금을 푸세요(6시간이 지나면 자동으로 풀립니다)." },

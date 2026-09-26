@@ -132,8 +132,8 @@ export function finalizeMaintenanceRun({ inventoryPath, decisionsPath, plansDir 
         `Reviewed projectName for ${decision.conversationId}`);
       // A decision.projectName that differs from the conversation's current
       // project is a real move between two existing projects, handled by
-      // compileProjectRouting()/runProjectRouting() after this checkpoint —
-      // not something this checkpoint needs to reject.
+      // compileProjectRouting()/runProjectRouting() after the management plans —
+      // not something this finalize step needs to reject.
     }
   }
   const mutations = mutationDecisions(decisionsFile.decisions);

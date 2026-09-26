@@ -13,7 +13,7 @@ cookies-*.json
 .chrome-profile/
 **/chrome-profile/
 
-# User data: baseline, per-run artifacts and the maintenance lock (never commit)
+# User data: per-run artifacts, the trash-project list and the maintenance lock (never commit)
 /data/
 
 # Conversation bodies and completed local audit artifacts
