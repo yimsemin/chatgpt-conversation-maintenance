@@ -37,7 +37,7 @@ test("remote results reject successful body snippets", () => {
 
 // 실제 ChatGPT 대화 ID 는 RFC 4122 버전 1~5 가 아니다. 버전·variant 를 제한하면
 // 실제 계정의 모든 getConversation 이 거부된다(2026-09-12 실측, r9 장애 원인).
-test("real ChatGPT conversation IDs outside RFC 4122 versions are accepted", () => {
+test("conversation IDs accept real ChatGPT IDs outside RFC 4122 versions and reject anything not 8-4-4-4-12 hexadecimal", () => {
   for (const id of [
     "6aa3d0e3-2eac-83e9-8c48-711ba461efde",
     "11111111-1111-4111-8111-111111111111",
@@ -46,9 +46,7 @@ test("real ChatGPT conversation IDs outside RFC 4122 versions are accepted", () 
   ]) {
     assert.equal(validateRemoteOperation({ op: "getConversation", params: { id } }).params.id, id);
   }
-});
-
-test("conversation IDs still reject anything that is not 8-4-4-4-12 hexadecimal", () => {
+  // 그래도 8-4-4-4-12 16진수가 아닌 것은 모두 거부한다.
   for (const id of [
     "../../etc/passwd",
     "6aa3d0e3-2eac-83e9-8c48-711ba461efde/extra",

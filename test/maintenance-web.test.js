@@ -153,25 +153,7 @@ test("GUI decisions validate against every maintenance candidate", () => {
   }
 });
 
-test("a rename the user unchecked (keepTitle) may keep an unformatted title; without the flag it is rejected", () => {
-  const { root, pointer, inventory } = inventoryFixture();
-  try {
-    const kept = buildReviewedDecisionsFromInputs(pointer, inventory, [
-      { conversationId: "c-new", decision: "keep", newTitle: "임시 제목", keepTitle: true, projectName: "" },
-      { conversationId: "c-proj", decision: "keep", projectName: "조사" },
-    ]);
-    assert.equal(kept.decisions[0].keepTitle, true);
-    assert.equal(kept.decisions[0].newTitle, undefined);
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
-      { conversationId: "c-new", decision: "keep", projectName: "" },
-      { conversationId: "c-proj", decision: "keep", projectName: "조사" },
-    ]), /주제 — 작업\/결과/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("GUI decisions reject partial coverage and bad titles, but now allow cross-project moves", () => {
+test("GUI decisions reject partial coverage and bad titles (unless the rename was unchecked), and allow cross-project moves", () => {
   const { root, pointer, inventory } = inventoryFixture();
   try {
     assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
@@ -190,6 +172,16 @@ test("GUI decisions reject partial coverage and bad titles, but now allow cross-
       { conversationId: "c-new", decision: "delete", newTitle: "주제 — 결과" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /제목은 바꿀 수 없습니다/);
+    const kept = buildReviewedDecisionsFromInputs(pointer, inventory, [
+      { conversationId: "c-new", decision: "keep", newTitle: "임시 제목", keepTitle: true, projectName: "" },
+      { conversationId: "c-proj", decision: "keep", projectName: "조사" },
+    ]);
+    assert.equal(kept.decisions[0].keepTitle, true);
+    assert.equal(kept.decisions[0].newTitle, undefined);
+    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+      { conversationId: "c-new", decision: "keep", projectName: "" },
+      { conversationId: "c-proj", decision: "keep", projectName: "조사" },
+    ]), /주제 — 작업\/결과/);
     const projectless = buildReviewedDecisionsFromInputs(pointer, inventory, [
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },

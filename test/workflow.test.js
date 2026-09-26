@@ -510,7 +510,7 @@ test("maintenance reviewed decisions reject unresolved or archive-only states", 
   }
 });
 
-test("maintenance compiler rejects a kept title outside the canonical separator form", () => {
+test("maintenance compiler rejects a kept title outside the canonical separator form unless the user unchecked the rename (keepTitle)", () => {
   const root = fixture();
   try {
     const source = buildInventory(root).conversations[0];
@@ -532,29 +532,9 @@ test("maintenance compiler rejects a kept title outside the canonical separator 
     }));
     assert.throws(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")),
       /exact "topic — work\/result" title form/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("maintenance compiler accepts an unformatted title only when the user unchecked the rename (keepTitle)", () => {
-  const root = fixture();
-  try {
-    const source = buildInventory(root).conversations[0];
-    const inventoryPath = join(root, "maintenance-invalid-title.json");
-    writeFileSync(inventoryPath, JSON.stringify({
-      version: 1,
-      kind: "conversation-maintenance-inventory",
-      warnings: [],
-      conversations: [{ ...source, title: "Unformatted title" }],
-    }));
-    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-    const decisionsPath = join(root, "maintenance-invalid-decisions.json");
+    // 사용자가 제목 변경을 해제한 대화(keepTitle)만 예외다.
     writeFileSync(decisionsPath, JSON.stringify({
-      version: 1,
-      kind: "reviewed-decisions",
-      inventoryDigest,
-      receiptDir: join(root, "receipts"),
+      version: 1, kind: "reviewed-decisions", inventoryDigest, receiptDir: join(root, "receipts"),
       decisions: [{ conversationId: source.conversationId, decision: "keep", keepTitle: true, reviewed: true }],
     }));
     assert.doesNotThrow(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")));

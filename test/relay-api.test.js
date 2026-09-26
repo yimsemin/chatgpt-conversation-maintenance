@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRelayApi, createRelayBroker } from "../src/relay-api.js";
+import { createRelayTrace } from "../src/relay-trace.js";
+import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "../src/app-version.js";
+import { validateRelayVersion } from "../src/remote-relay.js";
 
 test("broker queues one validated operation and resolves its result", async () => {
   const broker = createRelayBroker({ timeoutMs: 1000 });
@@ -184,4 +187,42 @@ test("a window that cannot deliver a waiting request loses the relay to the wind
   assert.equal(broker.next(active).request.op, "accountInfo");
   second.catch(() => {});
   broker.disconnect(active);
+});
+
+test("the trace keeps only fixed diagnostic fields and truncates identifiers", () => {
+  const trace = createRelayTrace({ now: () => 1000 });
+  const event = trace.record("post-to-page", {
+    op: "listConversations",
+    requestId: "abcdef01-2345-6789-abcd-ef0123456789",
+    clientId: "11111111-2222-3333-4444-555555555555",
+    status: 200,
+    elapsedMs: 42,
+  });
+  assert.equal(event.requestId, "abcdef01");
+  assert.equal(event.clientId, "11111111");
+  assert.equal(event.op, "listConversations");
+  assert.equal(event.status, 200);
+});
+
+test("the trace refuses unknown stages and non-string notes", () => {
+  const trace = createRelayTrace();
+  assert.equal(trace.record("exfiltrate", { op: "x" }), null);
+  assert.equal(trace.list().length, 0);
+  const event = trace.record("loop-error", { note: { secret: "token" }, status: "200" });
+  assert.equal(event.note, null);
+  assert.equal(event.status, null);
+});
+
+test("the trace caps its buffer", () => {
+  const trace = createRelayTrace({ max: 3 });
+  for (let index = 0; index < 10; index++) trace.record("enqueue", { op: "accountInfo" });
+  assert.equal(trace.list().length, 3);
+  assert.equal(trace.list().at(-1).seq, 10);
+});
+
+
+test("relay connection accepts only the current release and protocol", () => {
+  assert.doesNotThrow(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION));
+  assert.throws(() => validateRelayVersion("old-release", RELAY_PROTOCOL_VERSION), /version mismatch/);
+  assert.throws(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION - 1), /version mismatch/);
 });

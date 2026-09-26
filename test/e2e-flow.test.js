@@ -78,6 +78,12 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 90000);
     assert.equal(applied.ok, true, JSON.stringify(applied.error));
 
+    // 요청이 다른 작업 폴더를 가리킬 수 없다.
+    const base = "http://127.0.0.1:18601";
+    assert.equal((await fetch(`${base}/maintenance/session?workspace=/tmp`)).status, 400);
+    assert.equal((await fetch(`${base}/maintenance/scan`, { method: "POST", headers: { "Content-Type": "application/json", Origin: base },
+      body: JSON.stringify({ ...UNASSIGNED, workspace: "/tmp" }) })).status, 400);
+
     session = await dev.get("/maintenance/session");
     assert.equal(session.step, "result");
     const report = (await dev.get("/maintenance/report")).report;
@@ -155,18 +161,6 @@ test("a second job is refused while one runs, and a cancelled scan can be starte
     assert.equal(cancelled.ok, false);
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId, 120000);
     assert.equal(again.ok, true, JSON.stringify(again.error));
-  } finally { await dev.stop(); }
-});
-
-test("a request cannot point the app at another folder", async () => {
-  const dev = await startDev(18609, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
-    const get = await fetch("http://127.0.0.1:18609/maintenance/session?workspace=/tmp");
-    assert.equal(get.status, 400);
-    const post = await fetch("http://127.0.0.1:18609/maintenance/scan", { method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:18609" }, body: JSON.stringify({ ...UNASSIGNED, workspace: "/tmp" }) });
-    assert.equal(post.status, 400);
-    assert.equal((await fetch("http://127.0.0.1:18609/maintenance/session")).status, 200);
   } finally { await dev.stop(); }
 });
 

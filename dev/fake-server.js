@@ -30,7 +30,7 @@ for (let i = 1; i <= 60; i++) {
   conversations.push({ id: fakeConversationId(i), title: `${TITLES[i % 5]} ${i}`, gizmo_id: i % 7 === 0 ? null : projects[i % 5].id });
 }
 const fake = createFakeChatGPT({ projects, conversations });
-if (slow) fake.setLatency(400);
+if (slow) fake.setLatency(150);
 if (rateLimited) fake.inject({ op: "getConversation", status: 429, times: 4 });
 // --inject=op:status:times (여러 번 지정 가능). 예: --inject=patchConversation:429:2
 for (const arg of process.argv.filter((item) => item.startsWith("--inject="))) {

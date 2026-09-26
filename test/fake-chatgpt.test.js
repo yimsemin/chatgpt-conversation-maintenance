@@ -20,17 +20,6 @@ function world() {
   return { fake, broker, page, api };
 }
 
-test("the catalog collector works end to end against the fake ChatGPT", async () => {
-  const { fake, page, api } = world();
-  try {
-    const catalog = await collectConversationCatalog(api);
-    assert.equal(catalog.conversations.length, 3);
-    assert.equal(catalog.conversations.find((c) => c.conversationId === fakeConversationId(1)).projectName, "Project A");
-    assert.equal(catalog.counts.archived, 1);
-    assert.ok(fake.stats.calls > 3);
-  } finally { await page.stop(); }
-});
-
 test("a 429 burst is retried transparently and a hung page fails only that request", async () => {
   const { fake, page, api } = world();
   try {

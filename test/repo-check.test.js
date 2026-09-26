@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { basename } from "node:path";
 
 import { findRepoIssues, personalPathPatterns } from "../src/repo-check.js";
 
@@ -62,8 +61,4 @@ test("flags case-insensitive path collisions", () => {
     secretPatterns: [],
   });
   assert.ok(errors.some((e) => e.includes("conflicts by case")));
-});
-
-test("personalPathPatterns basename sanity", () => {
-  assert.equal(basename("/Users/someone"), "someone");
 });

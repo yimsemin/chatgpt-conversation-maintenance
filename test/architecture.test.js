@@ -69,3 +69,15 @@ test("environment variables are read only in config.js", () => {
     assert.doesNotMatch(readFileSync(join(SRC, name), "utf8"), /process\.env\./, `${name} reads process.env directly`);
   }
 });
+
+// Node 쪽에서 ChatGPT 로 직접 나가는 HTTP 호출은 없다(TLS 핑거프린트로 막히고, 원격 호출은 브라우저가 한다).
+// 로컬 앱을 부르는 launcher·server 의 fetch 와 서버를 여는 server 의 node:http 만 허용한다.
+test("only the launcher and server call fetch (to the local app) and only the server imports node:http", () => {
+  for (const name of files) {
+    const source = readFileSync(join(SRC, name), "utf8");
+    if (["launcher.js", "server.js"].includes(name)) {
+      for (const match of source.matchAll(/\bfetch\(([^)]*)/g)) assert.match(match[1], /^`\$\{(?:URL|LOCAL_URL)\}\//, `${name} fetches ${match[1]}`);
+    } else assert.doesNotMatch(source, /\bfetch\(/, `${name} calls fetch`);
+    if (name !== "server.js") assert.doesNotMatch(source, /node:https?["']/, `${name} imports an HTTP module`);
+  }
+});
