@@ -1,5 +1,5 @@
 #!/bin/sh
-# 커밋 메시지에서 AI 생성 표식과 Claude co-author 트레일러를 제거한다.
+# 커밋 메시지에서 AI 생성 표식과 Claude co-author 트레일러를 제거하고, 영어 Conventional Commits 형식을 검사한다.
 #
 # 이 훅은 권고가 아니라 하드 게이트다. `git commit -m`, 에디터 커밋, amend,
 # cherry-pick, revert 등 커밋 메시지가 만들어지는 모든 경로에서 실행된다.
@@ -36,4 +36,22 @@ awk '
 ' "$tmp" > "$msg_file"
 
 rm -f "$tmp"
+
+# 형식 검사: 영어 Conventional Commits 접두어가 있어야 한다(docs/GIT.md).
+# 자동 생성 메시지(Merge/Revert/fixup/squash)는 통과시킨다.
+subject="$(grep -vaE '^[[:space:]]*(#|$)' "$msg_file" | head -n 1)"
+if printf '%s' "$subject" | grep -qaE '^(Merge |Revert |fixup! |squash! )'; then
+  exit 0
+fi
+if ! printf '%s' "$subject" | grep -qaE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^[:space:]]'; then
+  echo "커밋 메시지 형식 오류: '<type>(<scope>): <english summary>' 형식이어야 한다." >&2
+  echo "type: feat fix docs style refactor perf test build ci chore revert (docs/GIT.md)" >&2
+  exit 1
+fi
+# 요약에 한글이 섞이는 것은 허용한다. 영어 단어가 하나도 없는 한글 전용 요약만 거부한다.
+summary="${subject#*: }"
+if ! printf '%s' "$summary" | grep -qaE '[A-Za-z]'; then
+  echo "커밋 요약에는 영어 단어가 있어야 한다(한글이 섞이는 것은 괜찮지만 한글만 쓰면 안 된다)." >&2
+  exit 1
+fi
 exit 0

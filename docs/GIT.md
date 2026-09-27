@@ -21,8 +21,9 @@
 ## 커밋
 
 - 논리 단위로 나눈다. 관련 없는 변경을 한 커밋에 섞지 않는다.
+- **같은 목적의 후속 수정은 새 커밋으로 쌓지 않고 직전 커밋에 `--amend`(또는 squash)한다.** 오타·누락·문구 보완처럼 같은 작업의 연장이면 합친다. 푸시 전 커밋은 묻지 않고 합쳐도 된다. 히스토리는 작업 단위마다 커밋 하나가 되도록 깔끔하게 유지한다.
 - 모든 커밋은 `npm test`, `npm run repo:check`, `git diff --check` 통과 상태여야 한다.
-- 메시지는 한국어 명사구 요약이며 필요할 때만 본문을 붙인다. 유형은 브랜치 접두어가 나타내므로 Conventional 접두어는 쓰지 않는다.
+- 메시지는 **영어를 기본**으로 쓰고(한글이 섞여도 되지만 한글로만 쓰면 안 된다) **Conventional Commits 접두어를 반드시** 붙인다: `<type>(<선택 scope>): <소문자 명령형 요약>` (예: `feat(review): add per-item apply toggle`). type은 `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `style` `revert` 중 하나다. 요약은 72자 안쪽, 끝에 마침표를 찍지 않고, 필요할 때만 본문을 붙인다. `.githooks/commit-msg`가 접두어와 "영어 단어 포함 여부"를 검사해 어긋나면 커밋을 거부한다(`Merge`·`Revert`로 시작하는 자동 메시지는 통과).
 - AI 생성 표식이나 co-author 트레일러(`Generated with Claude Code`, `Co-Authored-By: Claude`)를 넣지 않는다. `.githooks/commit-msg`가 이런 줄을 제거한다(`core.hooksPath=.githooks`, `npm install` 시 자동 설정). `.claude/settings.json`의 `attribution`도 비워 둔다.
 - `data/`, `.local/`, 세션·토큰·쿠키·대화 본문·개인 절대경로는 커밋하지 않는다. `repo:check`가 막지만 `git status --ignored`로도 확인한다.
 
@@ -41,11 +42,11 @@ git branch -d <브랜치>
 
 - **명시적 승인이 있을 때만 푸시한다.** 승인은 그 순간에만 유효하며 이후 푸시로 이어지지 않는다.
 - CI(`Verify`, macOS·Windows)는 push와 pull_request에서 돌므로, 푸시 뒤 결과를 확인하고 실패하면 알린다.
-- `main`과 공유 브랜치에 force-push·히스토리 재작성 금지. 지금까지 사용자 승인 아래 두 번 수행했다.
+- `main`과 공유 브랜치에 force-push·히스토리 재작성은 **사용자가 그 대화에서 명시적으로 요청했을 때만** 한다. 에이전트가 먼저 제안하거나 스스로 시작하지 않는다(푸시 전 커밋의 amend는 재작성이 아니다).
   - 2026-08-30: `state.json` 히스토리 세탁([PRIVACY.md](PRIVACY.md) 1절)
   - 2026-09-12: 공개 전 커밋 정리 — 전체 히스토리를 의미 단위 4개로 압축
-  - 2026-09-25: 75개 커밋을 의미 단위 12개로 압축하고 원격 `main`을 그 이력으로 덮어쓰기로 했다(푸시는 별도 승인). 각 묶음의 마지막 커밋 트리를 그대로 써서 파일 내용은 바뀌지 않았고, 묶음마다 시험을 통과했다. 원격의 쓸모없는 브랜치(`chore/dedupe-shared-utils`, `feat/agent-brief`)도 함께 정리한다.
-- 이후 추가 히스토리 재작성은 하지 않으며, 사용자가 명시적으로 다시 허용하지 않는 한 제안도 하지 않는다.
+  - 2026-09-25: 75개 커밋을 의미 단위 12개로 압축(원격 `main`을 그 이력으로 덮어씀). 백업 태그 `backup/pre-squash-2026-09-25`
+  - 2026-09-27: 같은 작업의 후속 커밋이 나열돼 있던 이후 이력을 의미 단위로 다시 묶고 메시지를 영어 Conventional 형식으로 바꿨다. 파일 내용은 그대로이고 묶음마다 시험을 통과했다.
 - 재작성 절차: 작업 브랜치에서 커밋을 마친 뒤 백업 태그를 만들고, 묶음별 마지막 트리로 `git commit-tree`를 이어 새 이력을 만든다. 최종 트리가 같은지·묶음마다 `npm test`와 `repo:check`가 통과하는지 확인한 뒤, 사용자 승인 아래 `git push --force-with-lease`를 쓴다.
 
 ## 하지 않는 것
