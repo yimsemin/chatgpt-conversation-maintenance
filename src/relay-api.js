@@ -172,8 +172,9 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
   assert(broker?.request, "Relay broker is required");
   let cooldownUntil = 0;
   const metrics = { requests: 0, retries: 0, rateLimits: 0, retryWaitMs: 0, pacingWaitMs: 0 };
-  async function call(op, params, retry = true) {
-    const retryLimit = retry ? maxRetries : 0;
+  // tries 를 주면 재시도 상한(maxRetries) 대신 그 횟수만큼만 시도한다(첫 시도 포함).
+  async function call(op, params, retry = true, tries = null) {
+    const retryLimit = retry ? (tries ? tries - 1 : maxRetries) : 0;
     for (let attempt = 0; attempt <= retryLimit; attempt++) {
       const cooldown = Math.max(0, cooldownUntil - now(), pacer?.cooldownLeft() || 0);
       if (cooldown) await sleep(cooldown);
@@ -204,7 +205,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
   return {
     metrics,
     accountInfo: () => call("accountInfo", {}, false),
-    getConversation: (id) => call("getConversation", { id }),
+    getConversation: (id, { tries = null } = {}) => call("getConversation", { id }, true, tries),
     listConversations: ({ archived = false, offset = 0, limit = 100 } = {}) => call("listConversations", { archived, offset, limit }),
     listProjectSidebar: ({ cursor = "", limit = 20 } = {}) => call("listProjects", { cursor, limit }),
     listProjectConversations: (projectId, { cursor = "", limit = 50 } = {}) => call("listProjectConversations", { projectId, cursor, limit }),

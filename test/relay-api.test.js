@@ -26,6 +26,18 @@ test("relay adapter preserves no-retry semantics for ambiguous writes", async ()
   assert.equal(calls, 2);
 });
 
+test("getConversation tries can cap the read retries (599 is retried up to that many attempts)", async () => {
+  let calls = 0;
+  const broker = { request: async () => { calls++; return { ok: false, status: 599, data: null, contentType: "application/json" }; } };
+  const api = createRelayApi({ broker, requestDelayMs: 0, maxRetries: 8, sleep: async () => {} });
+  const result = await api.getConversation("11111111-1111-4111-8111-111111111111", { tries: 4 });
+  assert.equal(result.status, 599);
+  assert.equal(calls, 4);
+  calls = 0;
+  await api.getConversation("11111111-1111-4111-8111-111111111111");
+  assert.equal(calls, 9, "the default keeps 8 retries after the first attempt");
+});
+
 test("invalid page results reject immediately and clear the pending operation", async () => {
   const broker = createRelayBroker({ timeoutMs: 1000 });
   const clientId = "11111111-1111-4111-8111-111111111111";
