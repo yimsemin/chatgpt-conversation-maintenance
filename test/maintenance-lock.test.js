@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hostname } from "node:os";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -42,6 +44,23 @@ test("a live lock blocks a second acquire", () => {
     acquireLock({ dataDir, device: "macbook", runId: "run-1" });
     assert.throws(() => acquireLock({ dataDir, device: "desktop", runId: "run-2" }),
       /held by macbook/);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("a lock whose process died on this computer is taken over at once, but a live one is not", () => {
+  const dataDir = dataDirFixture();
+  try {
+    const dead = spawnSync(process.execPath, ["-e", ""]).pid; // 이미 끝난 프로세스의 pid
+    const write = (pid) => writeFileSync(lockFilePath(dataDir),
+      JSON.stringify({ version: 1, runId: "r", device: hostname(), pid, acquiredAt: new Date().toISOString() }));
+    write(dead);
+    assert.equal(lockStatus({ dataDir }).stale, true);
+    assert.equal(acquireLock({ dataDir, runId: "run-2" }).runId, "run-2");
+    write(process.ppid); // 살아 있는 다른 프로세스
+    assert.equal(lockStatus({ dataDir }).stale, false);
+    assert.throws(() => acquireLock({ dataDir }), /maintenance lock held/);
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }

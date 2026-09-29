@@ -22,12 +22,19 @@ function readHolder(path) {
   catch { return null; }
 }
 
+// 같은 컴퓨터에서 잠금을 잡은 프로세스가 이미 없으면(서버 종료·강제 종료) 6시간을 기다리지 않고 남은 잠금으로 본다.
+function holderIsDead(holder, { device = hostname() } = {}) {
+  if (!holder || holder.device !== device || !Number.isInteger(holder.pid) || holder.pid === process.pid) return false;
+  try { process.kill(holder.pid, 0); return false; }
+  catch (error) { return error.code === "ESRCH"; }
+}
+
 export function lockStatus({ dataDir, now = () => Date.now() } = {}) {
   const path = lockFilePath(dataDir);
   if (!existsSync(path)) return { locked: false, holder: null, stale: false };
   const holder = readHolder(path);
   const startedAt = Date.parse(holder?.acquiredAt || "") || 0;
-  const stale = now() - startedAt > STALE_LOCK_MS;
+  const stale = now() - startedAt > STALE_LOCK_MS || holderIsDead(holder);
   return { locked: true, holder, stale };
 }
 
