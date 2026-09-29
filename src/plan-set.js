@@ -218,6 +218,7 @@ export async function applyPlanSet({
       confirmation: managementConfirmation(manifest),
       reviewedConversationIds: manifest.actions.map((action) => action.conversationId),
       api,
+      onProgress,
     });
     appliedBatches++;
     onProgress({

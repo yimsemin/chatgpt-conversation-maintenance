@@ -5,10 +5,13 @@
 // 프로젝트 없는 대화는 그 실측에서 빠진 적이 없어 목록으로 찾는다.
 import { assert } from "./assert.js";
 import { CONVERSATION_ID } from "./ids.js";
+import { isNormalizedTitle } from "./title-rules.js";
 
 const PAGE_SIZE = 100;
 const PROJECT_PAGE_SIZE = 20;
 const PROJECT_CONVERSATION_PAGE_SIZE = 50;
+// "untidy" 범위: 표준 제목 대화가 수정순으로 이만큼 연달아 나오면 이미 정돈된 구간으로 보고 읽기를 멈춘다.
+export const UNTIDY_STOP_STREAK = 3;
 
 // 같은 시각이 엔드포인트에 따라 ISO 문자열이나 epoch 초 실수로 오므로 정수 밀리초로 맞춘다.
 // Date.parse 는 밀리초 아래를 버리므로 실수 쪽도 내림해야 같은 값이 된다.
@@ -186,11 +189,11 @@ function catalogRecord(item, projectName) {
   };
 }
 
-// 범위 수집. scope.kind: "project"(projectNames) | "unassigned"(days 이내, 없으면 전체) | "recent"(days). 완전 수집은 collectConversationCatalog 다.
+// 범위 수집. scope.kind: "project"(projectNames) | "unassigned"(days 이내, 없으면 전체) | "recent"(days) | "untidy"(표준 제목이 연달아 나올 때까지). 완전 수집은 collectConversationCatalog 다.
 // 반환하는 카탈로그는 complete:false 이며, 읽지 않은 프로젝트의 대화 수는 null 이다(요약이 그 수를 지어내지 않게).
 // 프로젝트 없는 대화는 프로젝트 목록을 읽지 않고 찾는다. 옮길 후보로는 이미 알고 있는 프로젝트(knownProjects 이름)만 문맥으로 쓴다.
 export async function collectScopedCatalog(api, scope, now = () => new Date(), onProgress = () => {}, { knownProjects = [] } = {}) {
-  assert(["project", "unassigned", "recent"].includes(scope?.kind), "Unsupported scope");
+  assert(["project", "unassigned", "recent", "untidy"].includes(scope?.kind), "Unsupported scope");
   assert(api?.listConversations && (scope.kind === "unassigned" || (api.listProjectSidebar && api.listProjectConversations)),
     "Catalog API adapter is incomplete");
   let projects;
@@ -215,6 +218,7 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
     }
   } else {
     const cutoff = scope.days ? now().getTime() - scope.days * 86400000 : null;
+    let streak = []; // untidy: 연달아 나온 표준 제목 대화(이름을 아는 항목만 센다)
     listing: for await (const items of listConversationPages(api, { archived: false, onProgress })) {
       for (const item of items) {
         const updated = timeMilliseconds(item.update_time);
@@ -226,6 +230,15 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
         if (gizmo.startsWith("g-p-") && !nameById.has(gizmo)) continue;
         const projectName = gizmo.startsWith("g-p-") ? nameById.get(gizmo) : null;
         if (scope.kind === "unassigned" && projectName) continue;
+        if (scope.kind === "untidy") {
+          if (isNormalizedTitle(item.title)) {
+            streak.push(item.id);
+            records.set(item.id, catalogRecord(item, projectName));
+            if (streak.length >= UNTIDY_STOP_STREAK) { for (const id of streak) records.delete(id); break listing; }
+            continue;
+          }
+          streak = [];
+        }
         records.set(item.id, catalogRecord(item, projectName));
       }
     }

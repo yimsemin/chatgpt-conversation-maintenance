@@ -8,6 +8,7 @@ import { buildClaudePrompt } from "./classification-review.js";
 import { CLASSIFICATION_CRITERIA } from "./classification-criteria.js";
 import { validateClassificationProposals } from "./proposal-validation.js";
 import { readTrash } from "./trash.js";
+import { findPartialScan } from "./scan.js";
 import { readKnownProjects } from "./known-projects.js";
 import { deriveStep, describeRelay } from "./session.js";
 import { APP_ROOT, publicPointer, readPointer, readRawPointer } from "./web-common.js";
@@ -39,6 +40,7 @@ export function sessionData(workspace, dataDir) {
       id: basename(pointer.runDir), phase: pointer.phase || "unknown", updatedAt: pointer.updatedAt || null,
       candidates: pointer.result?.counts?.candidates ?? null,
       scope: pointer.result?.scope || null,
+      skipped: pointer.result?.skipped || [],
       hasProposal: existsSync(proposalPath),
       hasDecisions: existsSync(runFiles(pointer.runDir).decisions),
       hasReport: existsSync(runFiles(pointer.runDir).report),
@@ -63,6 +65,11 @@ export function sessionData(workspace, dataDir) {
     knownProjects: readKnownProjects(dataDir),
     trash: trashSummary(dataDir),
     run,
+    // 끊긴 확인에서 받아 둔 본문이 있으면 그것만으로 분류를 진행할 수 있다(진행 중인 작업이 없을 때만 알린다).
+    partialScan: activeJob ? null : (() => {
+      const found = findPartialScan(dataDir);
+      return found ? { scope: found.scope, downloaded: found.downloaded, total: found.total } : null;
+    })(),
     report,
     step: deriveStep({ activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
       hasReport: run?.hasReport, hasRun: Boolean(run), resultSuperseded }),

@@ -1,5 +1,5 @@
 // 원격에 닿는 워크플로: 스캔, 적용, 삭제후보 다시 확인, 프로젝트 목록 읽기. 잠금·영수증을 다룬다.
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { PHASE } from "./phases.js";
 import { join } from "node:path";
 import { assert } from "./assert.js";
@@ -9,7 +9,7 @@ import { runsDir } from "./data-dir.js";
 import { acquireLock, releaseLock } from "./maintenance-lock.js";
 import { applyPlanSet, preparePlanSet } from "./plan-set.js";
 import { finalizeMaintenanceRun } from "./finalize.js";
-import { describeScope, scanMaintenanceRun, validateScope } from "./scan.js";
+import { describeScope, findPartialScan, finishPartialScan, scanMaintenanceRun, validateScope } from "./scan.js";
 import { prepareProjectRouting, projectRoutingStatus, runProjectRouting, validateProjectRouting } from "./project-routing.js";
 import { compileProjectRouting, compileReviewedDecisions } from "./decision-compile.js";
 import { writeClassificationReview } from "./classification-review.js";
@@ -23,59 +23,93 @@ import { jobEvent, reportProgress, untilDone } from "./web-jobs.js";
 import { proposalData } from "./web-views.js";
 import { buildReviewedDecisions } from "./web-decisions.js";
 
-// 전체 범위 수집은 도중에 끊겨도 이어받도록 인벤토리가 없는 overhaul- 실행 폴더를 재사용한다.
-function overhaulRunDir(dataDir) {
+// 수집은 도중에 끊겨도(취소·창 닫힘·재시작) 이어받도록, 같은 범위로 시작했고 인벤토리가 없는(=끝나지 않은)
+// 실행 폴더를 재사용한다. 받아 둔 본문이 낡지 않도록 마지막 수정이 RESUME_MAX_AGE_MS 안인 폴더만 쓴다.
+const RESUME_MAX_AGE_MS = 24 * 3600 * 1000;
+
+export function resumableRunDir(dataDir, scope, { now = Date.now() } = {}) {
   const root = runsDir(dataDir);
+  const prefix = scope.kind === "all" ? "overhaul-" : `scan-${sha256(Buffer.from(JSON.stringify(scope))).slice(0, 8)}-`;
   const open = existsSync(root)
-    ? readdirSync(root).filter((name) => name.startsWith("overhaul-")
-      && !existsSync(runFiles(join(root, name)).inventory)).sort().pop()
+    ? readdirSync(root).filter((name) => {
+      if (!name.startsWith(prefix)) return false;
+      const dir = join(root, name);
+      if (existsSync(runFiles(dir).inventory)) return false;
+      try {
+        const jsonDir = join(dir, "json");
+        return now - statSync(existsSync(jsonDir) ? jsonDir : dir).mtimeMs <= RESUME_MAX_AGE_MS;
+      } catch { return false; }
+    }).sort().pop()
     : null;
-  return join(root, open || `overhaul-${runId()}`);
+  return join(root, open || `${prefix}${runId()}`);
 }
 
-export async function scanWorkflow(workspace, dataDir, api, job, { scope }) {
+// 확인 결과(인벤토리)를 현재 실행으로 삼고 분류 요청 준비까지 마친다.
+function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
+  const inventoryPath = runFiles(runDir).inventory;
+  const reviewPath = runFiles(runDir).review;
+  // 프로젝트 없는 대화 범위는 프로젝트 목록을 읽지 않으므로 알려진 프로젝트 기록을 건드리지 않는다.
+  if (scope.kind !== "unassigned") {
+    writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => ({ name: project.projectName, updatedAt: project.latestUpdate })));
+  }
+  const counts = scanResult.inventory.counts;
+  const candidateCount = Number(counts?.candidates || 0);
+  const partial = scanResult.inventory.partial || null;
+  const skipped = scanResult.inventory.skipped || [];
+  const pointer = {
+    phase: candidateCount > 0 ? PHASE.AWAITING_PROPOSAL : PHASE.COMPLETE,
+    runDir,
+    inventoryPath,
+    reviewPath: candidateCount > 0 ? reviewPath : null,
+    proposalPath: runFiles(runDir).proposal,
+    result: { counts, warnings: scanResult.inventory.warnings || [], scope, ...(partial ? { partial } : {}), ...(skipped.length ? { skipped } : {}) },
+  };
+  if (candidateCount > 0) {
+    jobEvent(job, "review", "AI가 읽을 최소 분류 입력을 만듭니다.");
+    writeClassificationReview(inventoryPath, reviewPath);
+    writePointer(workspace, pointer);
+    job.result = { phase: PHASE.AWAITING_PROPOSAL, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
+    jobEvent(job, "ready", `후보 ${candidateCount}건의 분류 요청 준비가 끝났습니다.`);
+    return;
+  }
+  writePointer(workspace, pointer);
+  jobEvent(job, "complete", "이 범위에는 정리할 대화가 없습니다.");
+  job.result = { phase: PHASE.COMPLETE, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
+}
+
+// 끊긴 확인을 지금까지 받은 본문만으로 마무리한다(로컬 작업, ChatGPT는 읽지 않는다).
+export async function partialScanWorkflow(workspace, dataDir, job) {
+  let lockHeld = false;
+  try {
+    jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+    acquireLock({ dataDir });
+    lockHeld = true;
+    const partial = findPartialScan(dataDir);
+    assert(partial, "지금까지 받은 대화로 마무리할 수 있는 끊긴 확인이 없습니다");
+    jobEvent(job, "scan", `끊긴 확인(${describeScope(partial.scope)})을 받아 둔 ${partial.downloaded}/${partial.total}건으로 마무리합니다.`);
+    const scanResult = finishPartialScan({ runDir: partial.runDir });
+    publishScan({ workspace, dataDir, job, runDir: partial.runDir, scanResult, scope: partial.scope });
+  } finally {
+    if (lockHeld) releaseLock({ dataDir });
+  }
+}
+
+export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFailed = false }) {
   const validScope = validateScope(scope);
   let lockHeld = false;
   try {
     jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
     acquireLock({ dataDir });
     lockHeld = true;
-    const id = runId();
-    const runDir = validScope.kind === "all" ? overhaulRunDir(dataDir) : join(runsDir(dataDir), id);
-    const inventoryPath = runFiles(runDir).inventory;
-    const reviewPath = runFiles(runDir).review;
+    const runDir = resumableRunDir(dataDir, validScope);
     jobEvent(job, "scan", validScope.kind === "all"
       ? "전체 조사: 모든 대화 본문을 받습니다. 이미 받은 것은 건너뜁니다(읽기 전용)."
-      : `대화 확인: ${describeScope(validScope)}를 후보로 받습니다(읽기 전용).`);
+      : `대화 확인: ${describeScope(validScope)}를 후보로 받습니다. 끊긴 같은 범위 확인이 있으면 받아 둔 본문은 건너뜁니다(읽기 전용).`);
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
     const scanResult = await untilDone(job, "확인", () => scanMaintenanceRun({
-      runDir, api, scope: validScope, knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
+      runDir, api, scope: validScope, skipFailed, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
-    // 프로젝트 없는 대화 범위는 프로젝트 목록을 읽지 않으므로 알려진 프로젝트 기록을 건드리지 않는다.
-    if (validScope.kind !== "unassigned") {
-      writeKnownProjects(dataDir, scanResult.catalog.projects.map((project) => ({ name: project.projectName, updatedAt: project.latestUpdate })));
-    }
-    const counts = scanResult.inventory.counts;
-    const candidateCount = Number(counts?.candidates || 0);
-    const pointer = {
-      phase: candidateCount > 0 ? PHASE.AWAITING_PROPOSAL : PHASE.COMPLETE,
-      runDir,
-      inventoryPath,
-      reviewPath: candidateCount > 0 ? reviewPath : null,
-      proposalPath: runFiles(runDir).proposal,
-      result: { counts, warnings: scanResult.inventory.warnings || [], scope: validScope },
-    };
-    if (candidateCount > 0) {
-      jobEvent(job, "review", "AI가 읽을 최소 분류 입력을 만듭니다.");
-      writeClassificationReview(inventoryPath, reviewPath);
-      writePointer(workspace, pointer);
-      job.result = { phase: PHASE.AWAITING_PROPOSAL, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
-      jobEvent(job, "ready", `후보 ${candidateCount}건의 분류 요청 준비가 끝났습니다.`);
-      return;
-    }
-    writePointer(workspace, pointer);
-    jobEvent(job, "complete", "이 범위에는 정리할 대화가 없습니다.");
-    job.result = { phase: PHASE.COMPLETE, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
+    publishScan({ workspace, dataDir, job, runDir, scanResult, scope: validScope });
   } finally {
     if (lockHeld) releaseLock({ dataDir });
   }
@@ -220,15 +254,19 @@ async function applyManagementPlans({ files, api, accountId, job }) {
   await untilDone(job, "제목 변경·삭제", async () => {
     const remaining = preparePlanSet(files.plans).summary;
     if (remaining.remainingActions === 0) return;
+    const base = planTotal - remaining.remainingActions;
+    let done = 0;
     const applied = await applyPlanSet({ plansDir: files.plans, confirmation: remaining.expectedConfirmation, accountId, api,
       onProgress: (event) => {
-        if (event.type === "batch-finish") {
-          reportProgress(job, { phase: "apply-plan", total: planTotal,
-            index: planTotal - preparePlanSet(files.plans).summary.remainingActions });
+        if (event.type === "action-finish") {
+          done += 1;
+          reportProgress(job, { phase: "apply-plan", total: planTotal, index: Math.min(planTotal, base + done) });
         }
-        jobEvent(job, "apply", event.type === "batch-start"
-          ? `배치 ${event.batch}: ${event.actions}건 시작`
-          : `배치 완료: ${event.actions}건${event.ok ? "" : " (실패)"}`);
+        if (event.type === "batch-start" || event.type === "batch-finish") {
+          jobEvent(job, "apply", event.type === "batch-start"
+            ? `배치 ${event.batch}: ${event.actions}건 시작`
+            : `배치 완료: ${event.actions}건${event.ok ? "" : " (실패)"}`);
+        }
       } });
     assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
   });

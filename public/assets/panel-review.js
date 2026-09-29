@@ -6,6 +6,7 @@ import { $, fill, h, meta } from "/assets/dom.js";
 import { projectIdFromLink } from "/assets/shared/project-link.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
+import { skippedCallout } from "/assets/panel-scan.js";
 
 // ---------- step 3: review ----------
 export async function loadReview() {
@@ -109,6 +110,7 @@ function drawReview() {
   fill(panel, 
     h("h2", { text: "3. 바뀌는 내용 검토" }),
     h("p", { class: "lead", text: summary.headline }),
+    S.session?.run?.skipped?.length ? skippedCallout(S.session.run.skipped) : null,
     h("div", { class: "chips" }, h("span", { class: "chip", text: `후보 ${t.candidates}건` }), h("span", { class: "chip good", text: `보존 ${t.keep}건` }),
       h("span", { class: t.delete ? "chip warn" : "chip", text: `삭제 ${t.delete}건` }), t.trashed ? h("span", { class: "chip", text: `삭제후보로 이동 ${t.trashed}건` }) : null, t.marked ? h("span", { class: "chip", text: `삭제 표시 ${t.marked}건` }) : null, t.undecided ? h("span", { class: "chip bad", text: `미결정 ${t.undecided}건` }) : null,
       c.remove ? h("span", { class: "chip warn", text: `직접 빼야 할 대화 ${c.remove}건` }) : null),

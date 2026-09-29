@@ -7,6 +7,7 @@ export function runFiles(runDir) {
     jsonDir: join(runDir, "json"),
     inventory: join(runDir, "inventory.json"),
     catalog: join(runDir, "catalog.json"),
+    scanDraft: join(runDir, "scan-draft.json"),
     review: join(runDir, "review.json"),
     prompt: join(runDir, "classification-prompt.md"),
     proposal: join(runDir, "proposal.json"),

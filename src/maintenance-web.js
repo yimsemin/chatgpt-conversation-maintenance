@@ -8,7 +8,7 @@ import { appFolders, createSafeDiagnostic, jsonResponse, readRequestJson } from 
 import { createJob, jobLogFor, jobs, publicJob, relayAccountId, relayApi, startAsyncJob } from "./web-jobs.js";
 import { catalogData, proposalData, reportData, sessionData } from "./web-views.js";
 import { prepareTrashFollowUp, savePastedProposal, writeReviewedDecisions } from "./web-decisions.js";
-import { applyWorkflow, trashSyncWorkflow, projectListWorkflow, scanWorkflow } from "./web-workflows.js";
+import { applyWorkflow, partialScanWorkflow, trashSyncWorkflow, projectListWorkflow, scanWorkflow } from "./web-workflows.js";
 import { validateScope } from "./scan.js";
 
 const RELAY_REQUIRED = "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요";
@@ -71,7 +71,13 @@ post("/maintenance/cancel", (ctx) => {
 
 post("/maintenance/scan", (ctx) => {
   const scope = validateScope(ctx.body.scope);
-  return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope }) });
+  return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope, skipFailed: ctx.body.skipFailed === true }) });
+});
+// 끊긴 확인을 받아 둔 본문만으로 마무리한다. ChatGPT를 읽지 않으므로 릴레이 연결이 필요 없다.
+post("/maintenance/scan/partial", (ctx) => {
+  const job = createJob("scan", ctx.workspace, ctx.dataDir);
+  startAsyncJob(job, "scan", () => partialScanWorkflow(ctx.workspace, ctx.dataDir, job));
+  return { status: 202, value: { jobId: job.id } };
 });
 post("/maintenance/projects", (ctx) => startJob(ctx, {
   run: (api, job) => projectListWorkflow(ctx.dataDir, api, job),

@@ -7,7 +7,7 @@ import test from "node:test";
 import { collectScopedCatalog } from "../src/catalog.js";
 import { orderOldestFirst } from "../src/decision-compile.js";
 import { checkRenameOrder } from "../src/finalize.js";
-import { scanMaintenanceRun, validateScope } from "../src/scan.js";
+import { countDownloaded, finishPartialScan, readScanDraft, scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
@@ -50,7 +50,7 @@ function api() {
   };
 }
 
-test("scope validation accepts only the four scope kinds", () => {
+test("scope validation accepts only the five scope kinds", () => {
   assert.deepEqual(validateScope({ kind: "unassigned" }), { kind: "unassigned" });
   assert.deepEqual(validateScope({ kind: "unassigned", days: 14 }), { kind: "unassigned", days: 14 });
   assert.throws(() => validateScope({ kind: "unassigned", days: 0 }), /기간/);
@@ -100,6 +100,98 @@ test("the recent scope stops paging at the cutoff and drops conversations of unk
   assert.deepEqual(catalog.conversations.map((c) => [c.conversationId, c.projectName]).sort(),
     [[ID1, null], [ID2, "프로젝트 A"], [ID3, null]].sort());
   assert.equal(catalog.conversations.some((c) => c.conversationId === ID5), false);
+});
+
+test("the untidy scope reads newest first and stops after three consecutive standard titles, dropping those three", async () => {
+  const fake = api();
+  const items = [
+    { id: ID1, title: "정리 안 된 제목", update_time: day(1), gizmo_id: null },
+    { id: ID2, title: "표준 — 하나", update_time: day(2), gizmo_id: PA },
+    { id: ID3, title: "표준 아님", update_time: day(3), gizmo_id: null },
+    { id: ID4, title: "표준 — 둘", update_time: day(4), gizmo_id: null },
+    { id: ID5, title: "표준 — 셋", update_time: day(5), gizmo_id: UNKNOWN },
+    { id: "66666666-6666-4666-8666-666666666666", title: "표준 — 넷", update_time: day(6), gizmo_id: null },
+    { id: "77777777-7777-4777-8777-777777777777", title: "표준 — 다섯", update_time: day(7), gizmo_id: null },
+    { id: "88888888-8888-4888-8888-888888888888", title: "더 옛날 미정돈", update_time: day(8), gizmo_id: null },
+  ];
+  fake.listConversations = async ({ archived, offset, limit }) => {
+    fake.calls.list.push({ archived, offset });
+    return ok({ items: items.slice(offset, offset + limit), total: items.length, has_next: offset + limit < items.length });
+  };
+  const catalog = await collectScopedCatalog(fake, { kind: "untidy" }, () => NOW);
+  // ID5(모르는 프로젝트)는 세지 않고, 표준 제목 3건(4·6·7번째)이 연달아 나온 자리에서 멈춘다. 그 3건은 후보에서 뺀다.
+  assert.deepEqual(catalog.conversations.map((c) => c.conversationId).sort(), [ID1, ID2, ID3].sort());
+  assert.equal(catalog.scope.complete, false);
+  assert.deepEqual(catalog.scope.collected, { kind: "untidy" });
+});
+
+test("bodies are downloaded newest modified first", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-order-scan-"));
+  try {
+    const fake = api();
+    const order = [];
+    const get = fake.getConversation;
+    fake.getConversation = async (id) => { order.push(id); return get(id); };
+    await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
+    assert.deepEqual(order, [ID1, ID3, ID4], "ids sort ascending, but bodies follow update time descending");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a resumed scan downloads again the conversations modified since their body was saved", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-resume-modified-"));
+  try {
+    const fake = api();
+    const calls = [];
+    const body = fake.getConversation;
+    let failOnce = true;
+    fake.getConversation = async (id) => {
+      calls.push(id);
+      if (id === ID3 && failOnce) { failOnce = false; return { ok: false, status: 599 }; }
+      const res = await body(id);
+      res.data.update_time = Date.parse(listItems.find((item) => item.id === id).update_time) / 1000 + 0.2; // 목록보다 0.2초 뒤
+      return res;
+    };
+    const runDir = join(root, "run");
+    await assert.rejects(() => scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }), /HTTP 599/);
+    assert.deepEqual(calls, [ID1, ID3]);
+    // 끊긴 사이 ID1 을 새로 수정했다면(목록의 수정 시각이 바뀜) 예전 본문은 재사용하지 않는다.
+    const original = listItems[0].update_time;
+    listItems[0].update_time = day(0);
+    try { await scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }); }
+    finally { listItems[0].update_time = original; }
+    assert.deepEqual(calls, [ID1, ID3, ID1, ID3, ID4], "ID1 is fetched again; the unmodified ones would be reused");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("skipFailed skips a conversation that keeps failing after four tries and records it; without it the scan stops", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-skip-"));
+  try {
+    const fake = api();
+    const body = fake.getConversation;
+    const seen = [];
+    fake.getConversation = async (id, options = {}) => {
+      seen.push([id, options.tries ?? null]);
+      return id === ID3 ? { ok: false, status: 599 } : body(id);
+    };
+    await assert.rejects(() => scanMaintenanceRun({ runDir: join(root, "strict"), api: fake, scope: { kind: "unassigned" }, now: () => NOW }), /HTTP 599/);
+    assert.equal(seen.every(([, tries]) => tries === null), true, "the default keeps the relay's own retry limit");
+
+    seen.length = 0;
+    const skippedEvents = [];
+    const result = await scanMaintenanceRun({ runDir: join(root, "skip"), api: fake, scope: { kind: "unassigned" }, skipFailed: true, now: () => NOW,
+      onSkip: (item) => skippedEvents.push(item.conversationId) });
+    assert.equal(seen.every(([, tries]) => tries === 4), true);
+    assert.deepEqual(result.inventory.skipped, [{ conversationId: ID3, title: "사용자 정의 GPT — 대화", status: 599 }]);
+    assert.deepEqual(skippedEvents, [ID3]);
+    assert.equal(result.inventory.counts.candidates, 2, "the skipped conversation is not a candidate");
+    assert.deepEqual(result.inventory.warnings, [], "skipping does not make the inventory unusable");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("a scoped scan collects only the scope and records it in the inventory", async () => {
@@ -159,4 +251,31 @@ test("several projects can be scanned at once and each gets its own count and la
   assert.equal(byName["프로젝트 A"].conversationCount, 1);
   assert.equal(byName["프로젝트 B"].conversationCount, 0);
   assert.equal(byName["프로젝트 A"].latestUpdate, day(2));
+});
+
+test("an interrupted scan can be finished with only the bodies already downloaded", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-partial-test-"));
+  try {
+    const fake = api();
+    let downloads = 0;
+    const realGet = fake.getConversation;
+    fake.getConversation = async (id) => {
+      if (++downloads === 3) throw new Error("연결 끊김");
+      return realGet(id);
+    };
+    const runDir = join(root, "run");
+    await assert.rejects(() => scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }), /연결 끊김/);
+    const draft = readScanDraft(runDir);
+    assert.equal(draft.selected.length, 3);
+    assert.equal(countDownloaded(runDir, draft), 2);
+
+    const result = finishPartialScan({ runDir });
+    assert.equal(result.inventory.counts.candidates, 2);
+    assert.deepEqual(result.inventory.partial, { downloaded: 2, total: 3 });
+    assert.deepEqual(result.inventory.warnings, []);
+    assert.equal(readScanDraft(runDir), null, "a finished folder is no longer resumable");
+    assert.throws(() => finishPartialScan({ runDir }), /끊긴 확인이 없습니다/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

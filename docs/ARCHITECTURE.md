@@ -24,7 +24,7 @@
 | 영역 | 모듈 | 책임 |
 | --- | --- | --- |
 | 실행·상태 | `src/launcher.js`, `src/server.js`, `src/app-status.js` | 앱을 터미널 프로세스로 켜고(하나만) 끄기·상태 확인, `/health`·`/app/shutdown`, 프로세스·시작 시각·코드 변경 여부 |
-| 카탈로그 | `src/catalog.js`, `src/known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 프로젝트 없는 대화는 프로젝트 목록 없이 대화 목록만, 최근 N일은 목록 + 프로젝트 이름), 알려진 프로젝트 이름 사본 |
+| 카탈로그 | `src/catalog.js`, `src/known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 프로젝트 없는 대화는 프로젝트 목록 없이 대화 목록만, 최근 N일·미정돈(`untidy`, 표준 제목 3건 연속 전까지)은 목록 + 프로젝트 이름), 알려진 프로젝트 이름 사본 |
 | 스캔·결과 확정 | `src/scan.js`, `src/finalize.js` | 조사 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
 | 분류 | `src/classification-criteria.js`, `src/classification-review.js`, `src/proposal-validation.js`, `src/decision-compile.js`, `src/workflow.js`(로컬 명령) | 판단 기준 압축본, `review.json`·요청문, 제안 검증, 결정 → 실행 계획 |
 | 적용 엔진 | `src/management.js`, `src/plan-set.js`, `src/project-management.js`, `src/project-routing.js` | 제목·삭제 계획, 배치 묶음, 프로젝트 생성·배치·이동 |
@@ -60,6 +60,7 @@
 | 파일 | 쓰는 곳 | 읽는 곳 |
 | --- | --- | --- |
 | `runs/<id>/inventory.json`·`src/catalog.json`·`review.json` | `src/scan.js`, `src/classification-review.js`, `src/web-decisions.js`(후속 실행) | `src/proposal-validation.js`, `src/decision-compile.js`, `src/finalize.js`, `src/web-views.js` |
+| `runs/<id>/scan-draft.json`(끊긴 확인이 남기는 범위·카탈로그·받을 목록) | `src/scan.js` | `src/scan.js`(`finishPartialScan`, 받아 둔 본문만으로 인벤토리를 만든다), `src/web-views.js`(끊긴 확인 알림) |
 | `runs/<id>/proposal.json` | AI 에이전트(`src/overhaul.js assemble` 포함) 또는 화면 붙여넣기 | `src/web-views.js`, `src/web-workflows.js` |
 | `runs/<id>/reviewed-decisions.json` | `src/web-decisions.js` | `src/decision-compile.js`, `src/finalize.js`, `src/web-views.js`, `src/web-workflows.js` |
 | `runs/<id>/plans/`·`routing.json`·`receipts/` | `src/decision-compile.js`, 적용 엔진 | `src/plan-set.js`, `src/project-routing.js`, `src/web-workflows.js` |
@@ -67,7 +68,7 @@
 | `runs/<id>/report.json`·`report.md` | `src/web-workflows.js`(`finishRun`) | `src/web-views.js` |
 | `runs/<id>/trash-meta.json`·`followup.json` | `src/web-decisions.js` | `src/web-workflows.js`(`settleTrash`) |
 | `data/trash.json` | `src/trash.js` | `src/web-views.js`, `src/web-decisions.js`, `src/web-workflows.js`, `src/brief.js` |
-| `data/known-projects.json` | `src/known-projects.js`(프로젝트 범위·최근 N일 스캔, 프로젝트 목록 읽기, 적용 뒤 대화를 넣은 프로젝트 기억) | `src/web-views.js`(범위 선택용), `src/scan.js`(프로젝트 없는 대화의 옮길 후보 문맥) |
+| `data/known-projects.json` | `src/known-projects.js`(프로젝트 범위·최근 N일·미정돈 스캔, 프로젝트 목록 읽기, 적용 뒤 대화를 넣은 프로젝트 기억) | `src/web-views.js`(범위 선택용), `src/scan.js`(프로젝트 없는 대화의 옮길 후보 문맥) |
 | `data/jobs/*.jsonl` | `src/jobs.js` | `src/web-views.js` |
 | `.local/maintenance-web.json`(현재 실행 포인터, `src/phases.js` 단계) | `src/web-common.js`(`writePointer`) | `web-*`, `src/brief.js` |
 

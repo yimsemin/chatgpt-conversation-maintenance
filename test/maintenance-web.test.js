@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,7 +8,7 @@ import test from "node:test";
 import { appFolders, createSafeDiagnostic } from "../src/web-common.js";
 import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
 import { formatScanProgress, jobEvent } from "../src/web-jobs.js";
-import { assertApplyablePhase, planReuseDecision } from "../src/web-workflows.js";
+import { assertApplyablePhase, planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
 import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
 
 function inventoryFixture(overrides = {}) {
@@ -395,4 +395,20 @@ test("a corrupted plan source file is treated as unknown origin, not a hard fail
 test("a completed run refuses another apply but a failed one can retry", () => {
   assert.throws(() => assertApplyablePhase("complete"), /이미 적용을 마쳤습니다/);
   assert.equal(assertApplyablePhase("awaiting-proposal"), true);
+});
+
+test("끊긴 같은 범위의 확인은 실행 폴더를 이어받고, 다른 범위·끝난 실행·낡은 폴더는 새로 만든다", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "maintenance-resume-"));
+  try {
+    const scope = { kind: "recent", days: 7 };
+    const first = resumableRunDir(dataDir, scope);
+    mkdirSync(join(first, "json"), { recursive: true });
+    assert.equal(resumableRunDir(dataDir, scope), first);
+    assert.notEqual(resumableRunDir(dataDir, { kind: "recent", days: 14 }), first);
+    assert.notEqual(resumableRunDir(dataDir, scope, { now: Date.now() + 25 * 3600 * 1000 }), first);
+    writeFileSync(join(first, "inventory.json"), "{}");
+    assert.notEqual(resumableRunDir(dataDir, scope), first);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
 });
