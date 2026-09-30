@@ -160,6 +160,7 @@ function finalizeFixture(root, currents, decisions, { source = { mode: "scope", 
 
 test("finalize builds the run's result catalog only when every candidate was reviewed", () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-finalize-test-"));
+  const otherRoot = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-finalize-test-"));
   try {
     const current = conversation(ID1, "대상 — 작업", 2);
     const files = finalizeFixture(root, [current], [{ conversationId: ID1, decision: "keep", projectName: "Project A", reviewed: true }]);
@@ -169,11 +170,12 @@ test("finalize builds the run's result catalog only when every candidate was rev
     assert.equal(JSON.parse(readFileSync(join(root, "after-catalog.json"))).counts.conversations, 1);
 
     const other = conversation(ID2, "다른 — 작업", 3);
-    const two = finalizeFixture(mkdtempSync(join(tmpdir(), "chatgpt-maintenance-finalize-test-")), [current, other],
+    const two = finalizeFixture(otherRoot, [current, other],
       [{ conversationId: ID1, decision: "keep", reviewed: true }]);
     assert.throws(() => finalizeMaintenanceRun(two), /exactly one reviewed decision/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(otherRoot, { recursive: true, force: true });
   }
 });
 

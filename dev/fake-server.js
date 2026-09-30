@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 실계정 없이 화면·흐름 전체를 시험하는 개발용 서버. 모의 ChatGPT 계정을 만들고 릴레이 브로커에 붙인다.
 // 실제 데이터 폴더를 건드리지 않고 임시 앱 폴더를 새로 만든다. 사용: node dev/fake-server.js [--slow] [--rate-limit]
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,6 +17,8 @@ const noRelay = process.argv.includes("--no-relay");
 const renameAfterProposal = process.argv.includes("--rename-after-proposal");
 
 const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-dev-"));
+// 서버가 끝나면(Ctrl+C·종료 신호 포함, server.js 가 종료 신호를 exit 로 바꾼다) 임시 앱 폴더도 지운다.
+process.on("exit", () => { try { rmSync(root, { recursive: true, force: true }); } catch {} });
 mkdirSync(join(root, ".local"), { recursive: true });
 writeFileSync(join(root, "package.json"), JSON.stringify({ name: "chatgpt-conversation-maintenance", type: "module" }));
 writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: join(root, "data") }));
