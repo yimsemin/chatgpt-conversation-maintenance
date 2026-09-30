@@ -51,7 +51,7 @@ export function pointerPath(workspace) {
   return join(workspace, ".local", "maintenance-web.json");
 }
 
-// 조사 범위가 기록되지 않은 실행(범위 조사 이전 방식으로 만든 실행)은 현재 흐름과 맞지 않아 쓰지 않는다.
+// 수집 범위가 기록되지 않은 실행(범위 조사 이전 방식으로 만든 실행)은 현재 흐름과 맞지 않아 쓰지 않는다.
 function isCurrentPointer(pointer) {
   return Boolean(pointer?.result?.scope);
 }

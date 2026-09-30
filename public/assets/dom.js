@@ -48,3 +48,19 @@ export function clock(iso) {
 }
 
 export const $ = (id) => document.getElementById(id);
+
+// 확인 창 하나(app.html 의 #confirm)로 모든 확인을 묻는다. ack 가 있으면 그 문구에 체크해야 진행 버튼이 켜진다. 진행하면 true.
+export function ask({ title, lines = [], ok = "계속", ack = null }) {
+  const dialog = $("confirm");
+  return new Promise((resolve) => {
+    const box = ack ? h("input", { type: "checkbox" }) : null;
+    const go = h("button", { class: "btn", value: "go", disabled: Boolean(ack) }, ok);
+    if (box) box.addEventListener("change", () => { go.disabled = !box.checked; });
+    fill($("confirm-form"), h("h2", { text: title }), ...lines.map((line) => h("p", { class: "small", text: line })),
+      ack ? h("label", { class: "check" }, box, ack) : null,
+      h("div", { class: "row" }, go, h("button", { class: "btn ghost", value: "cancel" }, "취소")));
+    dialog.returnValue = "";
+    dialog.onclose = () => resolve(dialog.returnValue === "go");
+    dialog.showModal();
+  });
+}

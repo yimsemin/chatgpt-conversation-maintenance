@@ -74,14 +74,12 @@ function persistTransient(job, entry) {
 }
 
 const SCAN_PROGRESS_LABELS = {
-  projects: "프로젝트 목록 확인 중",
-  active: "활성 대화 목록 확인 중",
-  archived: "보관 대화 목록 확인 중",
-  removed: "삭제된 대화 확인 중",
-  downloads: "후보 대화 다운로드 중",
-  drift: "최근 수정 대화 대조 중(간단 확인)",
+  projects: "프로젝트 목록 읽는 중",
+  active: "활성 대화 목록 읽는 중",
+  archived: "보관 대화 목록 읽는 중",
+  downloads: "후보 대화 본문 받는 중",
   "apply-plan": "제목 변경·삭제 적용 중",
-  routing: "프로젝트 배치 중",
+  routing: "프로젝트 이동 중",
 };
 
 export function formatScanProgress({ phase, index, total, projectName }) {

@@ -32,7 +32,7 @@ test("the review summary counts what will change and per-project deltas", () => 
   assert.equal(byName.B.after, 2);
   assert.equal(byName.New.isNew, true);
   assert.deepEqual(summary.emptyProjects.sort(), ["A", "Empty"]);
-  assert.match(summary.headline, /삭제 1건 · 프로젝트 이동 2건 · 제목 변경 1건 · 새 프로젝트 1개/);
+  assert.match(summary.headline, /영구 삭제 1건 · 프로젝트 이동 2건 · 제목 변경 1건 · 새 프로젝트 1개/);
   assert.equal(summary.exceptions.lowConfidence.length, 1);
 });
 
@@ -75,7 +75,7 @@ test("rows moved to the trash project count as custody, not deletions or moves",
   assert.equal(summary.totals.trashed, 1);
   assert.equal(summary.totals.delete, 1);
   assert.equal(summary.changes.move, 0);
-  assert.match(summary.headline, /삭제 1건 · 삭제후보 프로젝트로 이동 1건/);
+  assert.match(summary.headline, /영구 삭제 1건 · 삭제후보로 이동 1건/);
   const byName = Object.fromEntries(summary.projects.map((p) => [p.name, p]));
   assert.equal(byName.Park.after, 1);
   assert.equal(byName.A.after, 0);
@@ -87,7 +87,7 @@ test("marked rows stay where they are and become a to-do for the user", () => {
   assert.equal(summary.totals.marked, 1);
   assert.equal(summary.changes.move, 0);
   assert.equal(summary.changes.remove, 0);
-  assert.match(summary.headline, /삭제 표시 1건/);
+  assert.match(summary.headline, /삭제후보 표시 1건/);
   const after = { projects: catalog.projects, conversations: catalog.conversations };
   const report = buildResultReport({ catalogBefore: catalog, catalogAfter: after, rows: marked });
   assert.equal(report.todo.deleteYourself.length, 1);

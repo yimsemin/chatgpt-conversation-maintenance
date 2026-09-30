@@ -8,7 +8,7 @@
 
 `127.0.0.1:8523`에서만 동작하는 웹 화면. 외부에 배포되지 않는다. **AI를 호출하지 않는다** — 분류는 계층 C로 넘긴다.
 
-**화면**(`public/app.html` + `public/assets/*`, 엄격한 CSP: 외부·인라인 스크립트 없음)은 정리 흐름 하나를 중심으로 한다: 조사 범위 선택 → 확인 → 제안 → 검토 → 적용 → 결과. 검토는 요약(무엇이 바뀌는가, 프로젝트별 증감)과 예외 목록만 보이고, 삭제후보 확인(삭제·복원 확정)은 별도 화면이다. 화면과 서버가 공유하는 순수 계산(`src/summary.js`, `src/title-rules.js`, `src/project-link.js`)은 `/assets/shared/`로 그대로 서빙한다.
+**화면**(`public/app.html` + `public/assets/*`, 엄격한 CSP: 외부·인라인 스크립트 없음)은 정리 흐름 하나를 중심으로 한다: 수집 범위 선택 → 확인 → 제안 → 검토 → 적용 → 결과. 검토는 요약(무엇이 바뀌는가, 프로젝트별 증감)과 예외 목록만 보이고, 삭제후보 확인(삭제·복원 확정)은 별도 화면이다. 화면과 서버가 공유하는 순수 계산(`src/summary.js`, `src/title-rules.js`, `src/project-link.js`)은 `/assets/shared/`로 그대로 서빙한다.
 
 **서버**는 라우트 표(`src/maintenance-web.js`)와 역할별 모듈로 나뉜다. 위 계층이 아래를 부르고 거꾸로는 부르지 않는다(`test/architecture.test.js`가 강제한다).
 
@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | 실행·상태 | `src/launcher.js`, `src/server.js`, `src/app-status.js` | 앱을 터미널 프로세스로 켜고(하나만) 끄기·상태 확인, `/health`·`/app/shutdown`, 프로세스·시작 시각·코드 변경 여부 |
 | 카탈로그 | `src/catalog.js`, `src/known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 프로젝트 없는 대화는 프로젝트 목록 없이 대화 목록만, 최근 N일·미정돈(`untidy`, 표준 제목 3건 연속 전까지)은 목록 + 프로젝트 이름), 알려진 프로젝트 이름 사본 |
-| 스캔·결과 확정 | `src/scan.js`, `src/finalize.js` | 조사 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
+| 스캔·결과 확정 | `src/scan.js`, `src/finalize.js` | 수집 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
 | 분류 | `src/classification-criteria.js`, `src/classification-review.js`, `src/proposal-validation.js`, `src/decision-compile.js`, `src/workflow.js`(로컬 명령) | 판단 기준 압축본, `review.json`·요청문, 제안 검증, 결정 → 실행 계획 |
 | 적용 엔진 | `src/management.js`, `src/plan-set.js`, `src/project-management.js`, `src/project-routing.js` | 제목·삭제 계획, 배치 묶음, 프로젝트 생성·배치·이동 |
 | 순수 계산·상태 | `src/summary.js`, `src/session.js`, `src/errors.js`, `src/jobs.js`, `src/trash.js`, `src/phases.js`, `src/run-files.js`, `src/fs-json.js`, `src/config.js`, `src/data-dir.js` | 검토 요약·결과 보고, 단계·연결 판정, 오류 설명, 작업 로그·ETA, 삭제후보 목록, 단계 상수, 실행 폴더 파일 이름, JSON 원자적 입출력, 환경 변수, 데이터 폴더·삭제후보 설정 |
@@ -60,7 +60,7 @@
 | 파일 | 쓰는 곳 | 읽는 곳 |
 | --- | --- | --- |
 | `runs/<id>/inventory.json`·`src/catalog.json`·`review.json` | `src/scan.js`, `src/classification-review.js`, `src/web-decisions.js`(후속 실행) | `src/proposal-validation.js`, `src/decision-compile.js`, `src/finalize.js`, `src/web-views.js` |
-| `runs/<id>/scan-draft.json`(끊긴 확인이 남기는 범위·카탈로그·받을 목록) | `src/scan.js` | `src/scan.js`(`finishPartialScan`, 받아 둔 본문만으로 인벤토리를 만든다), `src/web-views.js`(끊긴 확인 알림) |
+| `runs/<id>/scan-draft.json`(끊긴 수집이 남기는 범위·카탈로그·받을 목록) | `src/scan.js` | `src/scan.js`(`finishPartialScan`, 받아 둔 본문만으로 인벤토리를 만든다), `src/web-views.js`(끊긴 수집 알림) |
 | `runs/<id>/proposal.json` | AI 에이전트(`src/overhaul.js assemble` 포함) 또는 화면 붙여넣기 | `src/web-views.js`, `src/web-workflows.js` |
 | `runs/<id>/reviewed-decisions.json` | `src/web-decisions.js` | `src/decision-compile.js`, `src/finalize.js`, `src/web-views.js`, `src/web-workflows.js` |
 | `runs/<id>/plans/`·`routing.json`·`receipts/` | `src/decision-compile.js`, 적용 엔진 | `src/plan-set.js`, `src/project-routing.js`, `src/web-workflows.js` |
@@ -101,7 +101,7 @@
 - **배치 크기 제한** — 계획 하나는 최대 25건이며 큰 프로젝트는 같은 프로젝트를 가리키는 타깃 여러 개로 나뉜다(총 600건).
 - **대화별 재조회 검증** — 제목 변경·삭제·이동은 적용하면서 대화마다 다시 읽어 확인하고 영수증에 남긴다. 전체를 다시 읽는 검증은 없다. 결과 화면의 프로젝트별 변화는 스캔 카탈로그에 승인된 결정을 반영한 예상과 대조하며, 읽지 않은 프로젝트의 대화 수는 지어내지 않는다(`null`).
 - **작업 폴더는 앱 폴더로 고정** — 요청이 폴더를 고르지 못한다(`appFolders()`). 모의 서버는 `MAINTENANCE_ROOT`로 임시 폴더를 쓰므로 실제 데이터에 닿지 않는다.
-- **삭제는 기본이 아니다** — 삭제 후보는 삭제후보 프로젝트로 옮기고 영구 삭제는 명시적으로 켜야 한다. 앱은 원격 변경 op를 승인 흐름 밖에서 실행하는 경로를 두지 않는다.
+- **삭제는 기본이 아니다** — 삭제후보는 삭제후보 프로젝트로 옮기고 영구 삭제는 명시적으로 켜야 한다. 앱은 원격 변경 op를 승인 흐름 밖에서 실행하는 경로를 두지 않는다.
 - **원본 대화 JSON은 읽기 전용** — 다운로드본은 해시로 변조를 감지한다.
 - **모호한 쓰기 결과** — 프로젝트 생성처럼 응답이 실패해도 실제로는 반영됐을 수 있는 요청은 자동 재시도하지 않고 원격 목록을 다시 읽어 대조한다.
 
@@ -115,7 +115,7 @@
 
 - **내보내기 기능을 두지 않는다.** 이 도구는 정리 도구이고 백업 도구가 아니다. 전체 백업이 필요하면 외부 도구를 쓴다.
 - **데이터는 저장소 안의 gitignore 폴더 + 설정으로 위치 지정.** 대화 목록 같은 개인 기록을 Git으로 공유하면 공개를 막고 복잡도를 키운다. 사용자의 백업 방식에 개입하지 않는다.
-- **지난 확인 결과를 저장해 비교하지 않는다.** 지난 목록과 지금을 비교해 새 대화를 찾으려면 전체 목록을 매번 읽어야 하고, 저장한 기록이 낡거나 ChatGPT와 어긋나면 그것을 바로잡는 별도 작업이 생긴다. 그래서 조사 범위를 고르고 그 범위를 읽어 후보로 삼으며, 안전은 대화별 재조회 검증과 실행 기록(`runs/`)이 맡는다.
+- **지난 확인 결과를 저장해 비교하지 않는다.** 지난 목록과 지금을 비교해 새 대화를 찾으려면 전체 목록을 매번 읽어야 하고, 저장한 기록이 낡거나 ChatGPT와 어긋나면 그것을 바로잡는 별도 작업이 생긴다. 그래서 수집 범위를 고르고 그 범위를 읽어 후보로 삼으며, 안전은 대화별 재조회 검증과 실행 기록(`runs/`)이 맡는다.
 - **Git 오케스트레이션을 쓰지 않는다.** 잠금·승인·진행 관리에 Git 태그나 PR을 쓰지 않는다. 로컬 잠금 파일 하나로 충분하다.
 - **인증은 북마클릿 하나로 단일화.** 전용 Chrome 디버깅 포트 경로와 세션 JSON 파이프 경로는 폐기했다. 세션이 브라우저 밖으로 나가지 않는 구조가 보안상 더 낫다.
 - **원격 호출 주체는 브라우저.** Node의 `/backend-api` 호출은 비브라우저 TLS 핑거프린트 때문에 차단된다(2026-09-09 관측). 우회하지 않고 호출 주체를 옮겼다. TLS 핑거프린트 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작은 배제한다.

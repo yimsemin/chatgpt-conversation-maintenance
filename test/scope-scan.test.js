@@ -300,7 +300,7 @@ test("an interrupted scan can be finished with only the bodies already downloade
     assert.deepEqual(result.inventory.partial, { downloaded: 2, total: 3 });
     assert.deepEqual(result.inventory.warnings, []);
     assert.equal(readScanDraft(runDir), null, "a finished folder is no longer resumable");
-    assert.throws(() => finishPartialScan({ runDir }), /끊긴 확인이 없습니다/);
+    assert.throws(() => finishPartialScan({ runDir }), /끊긴 수집이 없습니다/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

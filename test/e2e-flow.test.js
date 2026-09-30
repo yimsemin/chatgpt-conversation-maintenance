@@ -251,7 +251,7 @@ test("when a title changes after review, apply stops with a rescan recovery and 
     let session = await dev.get("/maintenance/session");
     assert.equal(session.recentJobs[0].error.explain.recovery, "rescan");
 
-    // 이미 적용된 부분은 남고, 같은 범위를 다시 확인하면 남은 대화가 다시 후보가 된다.
+    // 이미 적용된 부분은 남고, 같은 범위를 다시 수집하면 남은 대화가 다시 후보가 된다.
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(again.ok, true, JSON.stringify(again.error));
     session = await dev.get("/maintenance/session");

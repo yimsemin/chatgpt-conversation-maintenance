@@ -66,7 +66,7 @@ export function sessionData(workspace, dataDir) {
     knownProjects: readKnownProjects(dataDir),
     trash: trashSummary(dataDir),
     run,
-    // 끊긴 확인에서 받아 둔 본문이 있으면 그것만으로 분류를 진행할 수 있다(진행 중인 작업이 없을 때만 알린다).
+    // 끊긴 수집에서 받아 둔 본문이 있으면 그것만으로 분류를 진행할 수 있다(진행 중인 작업이 없을 때만 알린다).
     partialScan: activeJob ? null : (() => {
       const found = findPartialScan(dataDir);
       return found ? { scope: found.scope, downloaded: found.downloaded, total: found.total } : null;

@@ -30,7 +30,7 @@ test("without a run the next step is choosing a scope on the screen", () => {
     const brief = buildBrief({ appRoot: root, now: NOW });
     assert.equal(brief.run, null);
     assert.equal(brief.next.actor, "user");
-    assert.match(brief.next.text, /조사 범위/);
+    assert.match(brief.next.text, /수집 범위/);
     assert.match(formatBrief(brief), /최근 실행: 없음/);
     assert.doesNotMatch(formatBrief(brief), /기준선/);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -76,6 +76,6 @@ test("a run made before scopes existed is ignored", () => {
   try {
     const brief = buildBrief({ appRoot: root, now: NOW });
     assert.equal(brief.run, null);
-    assert.match(brief.next.text, /조사 범위/);
+    assert.match(brief.next.text, /수집 범위/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

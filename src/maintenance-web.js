@@ -73,7 +73,7 @@ post("/maintenance/scan", (ctx) => {
   const scope = validateScope(ctx.body.scope);
   return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope, skipFailed: ctx.body.skipFailed === true, skipStandardTitles: ctx.body.skipStandardTitles === true }) });
 });
-// 끊긴 확인을 받아 둔 본문만으로 마무리한다. ChatGPT를 읽지 않으므로 릴레이 연결이 필요 없다.
+// 끊긴 수집을 받아 둔 본문만으로 마무리한다. ChatGPT를 읽지 않으므로 릴레이 연결이 필요 없다.
 post("/maintenance/scan/partial", (ctx) => {
   const job = createJob("scan", ctx.workspace, ctx.dataDir);
   startAsyncJob(job, "scan", () => partialScanWorkflow(ctx.workspace, ctx.dataDir, job));

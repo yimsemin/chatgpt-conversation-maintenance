@@ -98,7 +98,7 @@ export function validateClassificationProposals(inventoryPath, proposalPath) {
     decisionCounts[item.suggestedDecision]++;
 
     if (item.suggestedDecision === "delete") {
-      // 삭제 후보도 표준 제목을 갖는 것이 원칙이다(삭제후보 프로젝트로 옮긴 뒤 살릴 수도 있다).
+      // 삭제후보도 표준 제목을 갖는 것이 원칙이다(삭제후보 프로젝트로 옮긴 뒤 살릴 수도 있다).
       // 현재 제목이 표준이 아니면 표준 제목을 반드시 제안해야 하고, 표준이면 null 이거나 더 나은 표준 제목이어야 한다.
       const deletionTitle = item.suggestedNewTitle;
       assert(deletionTitle === undefined || deletionTitle === null || (nonEmptyString(deletionTitle) && isNormalizedTitle(deletionTitle)),

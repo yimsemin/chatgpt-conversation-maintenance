@@ -33,8 +33,8 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 3. npm test 와 npm run repo:check 가 통과하는지 확인한다.
 4. 데이터 폴더 위치를 알려준다. 기본값(<저장소>/data/)을 그대로 쓸지,
    내 백업 프로그램이 감시하는 폴더로 바꿀지 물어봐.
-5. 삭제 후보를 옮겨 둘 프로젝트를 어떻게 할지 물어봐(자동 · 이름을 정해 둔 프로젝트 · 옮기지 않고 표시만). 정하면 .local/config.json 의 "trash" 설정(docs/GETTING_STARTED.md 5단계)으로 적어줘. 프로젝트 주소나 ID는 적지 말고 이름만 써.
-6. npm run app 으로 로컬 화면을 띄우고, 북마클릿 설치·클릭으로 연결한 뒤 조사 범위를 골라 "이 범위 확인"을 누르는 순서를 내가 따라 할 수 있게 안내해줘.
+5. 삭제후보를 옮겨 둘 프로젝트를 어떻게 할지 물어봐(자동 · 이름을 정해 둔 프로젝트 · 옮기지 않고 표시만). 정하면 .local/config.json 의 "trash" 설정(docs/GETTING_STARTED.md 5단계)으로 적어줘. 프로젝트 주소나 ID는 적지 말고 이름만 써.
+6. npm run app 으로 로컬 화면을 띄우고, 북마클릿 설치·클릭으로 연결한 뒤 수집 범위를 골라 "이 범위 수집"을 누르는 순서를 내가 따라 할 수 있게 안내해줘.
 
 하지 말아야 할 일:
 - 내 ChatGPT 세션 JSON 이나 토큰을 요구하거나 대화에 남기지 마. 그건 내가 브라우저에서
@@ -63,8 +63,8 @@ CLASSIFICATION_WORKFLOW.md 를 먼저 끝까지 읽어. 그리고 데이터 폴�
 
 `npm run brief`가 가리키는 현재 실행의 inventory.json 과 review.json 만 사용하고, 제안을
 proposal.json 으로 작성한 다음 node src/workflow.js validate-proposal 로 검증해줘.
-(맞는 프로젝트가 없으면 suggestedProjectName 을 null 로 두고, 확신이 없는 삭제 후보는
-내가 삭제후보 프로젝트에서 직접 확인할 수 있게 그대로 delete 로 제안하고, 표준 제목이 아니면 삭제 후보에도 표준 제목을 suggestedNewTitle 로 제안해줘.)
+(맞는 프로젝트가 없으면 suggestedProjectName 을 null 로 두고, 확신이 없는 삭제후보는
+내가 삭제후보 프로젝트에서 직접 확인할 수 있게 그대로 delete 로 제안하고, 표준 제목이 아니면 삭제후보에도 표준 제목을 suggestedNewTitle 로 제안해줘.)
 
 제안은 승인이 아니다. 내가 확인할 때까지 reviewed: true 를 만들거나 적용을 실행하지 마.
 ```

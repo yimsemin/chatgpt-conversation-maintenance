@@ -119,7 +119,7 @@ const server = createServer(async (req, res) => {
       setTimeout(() => process.exit(0), 200);
     }
 
-  // 화면이 쓰는 최소 설정: 삭제 후보 처리 방식의 기본값
+  // 화면이 쓰는 최소 설정: 삭제후보 처리 방식의 기본값
   } else if (req.method === "GET" && req.url === "/config") {
     jsonResponse(res, 200, { trash: { ...configuredTrash(appFolders().workspace), defaultName: DEFAULT_TRASH_PROJECT } });
 

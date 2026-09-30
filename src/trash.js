@@ -1,4 +1,4 @@
-// 삭제후보 목록: 삭제 후보를 곧바로 지우지 않고 삭제후보 프로젝트에 모아 두고 사용자가 ChatGPT에서
+// 삭제후보 목록: 삭제후보를 곧바로 지우지 않고 삭제후보 프로젝트에 모아 두고 사용자가 ChatGPT에서
 // 직접 확인한 뒤 남길 것과 지울 것을 정한다. 어떤 대화가 왜 보관됐는지는 data/trash.json 에 남는다.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

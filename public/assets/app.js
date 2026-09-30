@@ -1,7 +1,7 @@
 // 화면 시작점: 세션 상태에 따라 위쪽 카드·단계 표시·패널을 그린다.
 import { startRelay } from "/assets/relay-client.js";
 import { S, STEPS, hooks } from "/assets/state.js";
-import { $, ago, duration, fill, h, meta } from "/assets/dom.js";
+import { $, ago, ask, duration, fill, h, meta } from "/assets/dom.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
@@ -36,8 +36,8 @@ function render() {
   const owner = isRelayOwnerWindow();
   note.hidden = !s?.relay?.connected;
   note.textContent = owner
-    ? "이 창이 ChatGPT와 연결된 정리 창입니다. 작업이 끝날 때까지 이 창과 chatgpt.com 탭을 닫거나 최소화하지 마세요."
-    : "ChatGPT 연결은 북마클릿으로 연 정리 창이 맡고 있습니다. 이 탭에서 작업해도 되지만 그 창을 닫으면 연결이 끊깁니다. 창을 하나로 쓰려면 그 정리 창에서 작업하세요.";
+    ? "이 창이 ChatGPT와 연결되어 있습니다. 작업이 끝날 때까지 이 창과 chatgpt.com 탭을 닫지 마세요."
+    : "ChatGPT 연결은 북마클릿으로 연 정리 창이 맡고 있습니다. 그 창을 닫으면 연결이 끊깁니다.";
   renderAppInfo();
   renderTitle();
   renderFailure();
@@ -56,8 +56,8 @@ function renderAppInfo() {
   if (!app) { box.hidden = true; return; }
   box.hidden = false;
   const since = duration(app.uptimeSeconds);
-  box.textContent = `● 앱 실행 중 · 프로세스 ${app.pid} · ${since} 전에 켜짐. 이 앱을 켠 터미널 창이 앱입니다 — 창을 닫거나 Ctrl+C 를 누르면 종료됩니다. 이 탭을 닫아도 앱은 계속 켜져 있습니다.`;
-  if (app.codeChanged) box.textContent += " ⚠ 앱이 켜진 뒤 코드가 바뀌었습니다. 새 코드를 쓰려면 터미널에서 Ctrl+C 로 끄고 다시 켜세요.";
+  box.textContent = `● 앱 실행 중 (프로세스 ${app.pid}, ${since} 전 시작) · 끄려면 앱을 켠 터미널 창을 닫거나 Ctrl+C. 이 탭을 닫아도 앱은 계속 실행됩니다.`;
+  if (app.codeChanged) box.textContent += " ⚠ 시작한 뒤 코드가 바뀌었으니 다시 켜세요.";
 }
 
 // 가장 최근 작업이 실패했고 그 뒤에 성공이 없으면 원인과 조치를 화면 맨 위에 보인다.
@@ -71,7 +71,7 @@ function renderFailure() {
   const copyText = [explain.title, message && message !== explain.title ? message : "", `작업: ${last.kind} ${last.startedAt || ""}`].filter(Boolean).join("\n");
   fill(box, h("strong", { text: explain.title }), h("p", { class: "small", text: explain.action }),
     h("div", { class: "row" },
-      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; if (S.session.run?.scope) { S.scope = { ...S.scope, ...S.session.run.scope }; } await startScan(); } }, "같은 범위를 다시 확인") : null,
+      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; if (S.session.run?.scope) { S.scope = { ...S.scope, ...S.session.run.scope }; } await startScan(); } }, "같은 범위를 다시 수집") : null,
       h("button", { class: "btn ghost", type: "button", onclick: (e) => { navigator.clipboard.writeText(copyText); e.target.textContent = "복사됨"; } }, "오류 복사"),
       h("button", { class: "btn ghost", type: "button", onclick: () => { S.dismissed.add(last.id); render(); } }, "닫기")));
   box.hidden = false;
@@ -88,7 +88,7 @@ function renderTitle() {
 // 북마클릿이 연 창(ChatGPT 탭이 열어 준 창)인가. 이 창이 ChatGPT와의 연결을 맡는다.
 function isRelayOwnerWindow() { return window.name === "chatgptMaintenance" && Boolean(window.opener); }
 
-// 이 정리를 두고 다른 범위를 고르러 간다(새 확인을 시작하기 전에는 아무것도 버려지지 않는다).
+// 이 정리를 두고 다른 범위를 고르러 간다(새 수집을 시작하기 전에는 아무것도 버려지지 않는다).
 function restartButton() {
   return h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.view = null; S.panelKey = ""; render(); } }, "범위 다시 고르기");
 }
@@ -101,22 +101,22 @@ function renderNow() {
       h("p", { class: "sub", text: reachable ? (S.sessionError.detail.explain?.title || S.sessionError.message) : "터미널에서 `npm run app`으로 앱을 켠 뒤 새로고침하세요." })));
     return;
   }
-  let headline = "확인 중…"; let sub = ""; let action = null;
+  let headline = "수집 중…"; let sub = ""; let action = null;
   if (job && !job.done) {
-    headline = job.kind === "apply" ? "적용 중입니다" : "확인 중입니다";
+    headline = job.kind === "apply" ? "적용 중입니다" : "수집 중입니다";
     sub = job.progress ? `${job.progress.label}${job.progress.etaSeconds ? ` · 남은 시간 약 ${duration(job.progress.etaSeconds)}` : ""}` : "잠시만 기다려 주세요";
   } else if (step === "trash") {
-    headline = "삭제후보 확인"; sub = `ChatGPT의 「${s.trash?.project || "?"}」 프로젝트에서 직접 확인한 뒤 남길 것과 지울 것을 정하세요.`;
+    headline = "삭제후보 확인"; sub = `「${s.trash?.project || "?"}」의 대화를 삭제하거나 복원하세요.`;
     action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = null; S.panelKey = ""; render(); } }, "돌아가기");
   } else if (step === "scan") {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
-    headline = allClear ? "이 범위에는 정리할 대화가 없습니다" : "정리할 범위를 골라 확인하세요";
-    sub = s.run ? `마지막 확인 ${ago(s.run.updatedAt)}` : "아직 확인한 기록이 없습니다";
+    headline = allClear ? "이 범위에는 정리할 대화가 없습니다" : "수집할 범위를 고르세요";
+    sub = s.run ? `마지막 수집 ${ago(s.run.updatedAt)}` : "아직 수집한 기록이 없습니다";
   } else if (step === "proposal") {
     headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = `${scopeLabel(s.run?.scope)} · AI 에이전트에게 분류를 맡기세요.`;
     action = restartButton();
   } else if (step === "review") {
-    headline = "분류 제안을 검토하세요"; sub = `${scopeLabel(s.run?.scope)} · 후보 ${s.run?.candidates ?? "?"}건 · 바뀌는 내용을 확인하고 적용을 누르면 됩니다.`;
+    headline = "분류 제안을 검토하세요"; sub = `${scopeLabel(s.run?.scope)} · 후보 ${s.run?.candidates ?? "?"}건`;
     action = restartButton();
   } else if (step === "result") {
     headline = s.report?.headline || "정리가 끝났습니다"; sub = `${ago(s.report?.finishedAt)} 완료`;
@@ -138,8 +138,7 @@ function buildPanel(step) {
   const s = S.session;
   if (!s) { panel.append(h("p", { class: "muted", text: "앱 서버에 연결하는 중입니다…" })); return; }
   if (s.job && !s.job.done) {
-    fill(panel, h("h2", { text: s.job.kind === "apply" ? "적용 중" : "확인 중" }),
-      s.job.kind === "apply" ? applyStages() : null, progressBlock(s.job.kind));
+    fill(panel, s.job.kind === "apply" ? applyStages() : null, progressBlock(s.job.kind));
     return;
   }
   if (step === "scan") panel.append(scanPanel());
@@ -155,7 +154,7 @@ function buildPanel(step) {
 function renderRecent() {
   const jobs = S.session?.recentJobs || [];
   fill($("recent"), ...(jobs.length ? jobs.map((j) => h("div", { class: "job" },
-    h("strong", { text: `${j.kind === "apply" ? "적용" : "확인"} · ${ago(j.startedAt)} · ${!j.done ? "진행 중" : j.ok ? "성공" : j.interrupted ? "중단됨" : "실패"}` }),
+    h("strong", { text: `${j.kind === "apply" ? "적용" : "수집"} · ${ago(j.startedAt)} · ${!j.done ? "진행 중" : j.ok ? "성공" : j.interrupted ? "중단됨" : "실패"}` }),
     j.error ? h("div", { class: "muted", text: j.error.message }) : h("div", { class: "muted", text: j.events.at(-1)?.message || "" }))) : [h("p", { class: "muted", text: "기록이 없습니다." })]));
 }
 
@@ -177,11 +176,11 @@ async function boot() {
     });
   }
   $("recent-clear").addEventListener("click", async () => {
-    if (!confirm("이 컴퓨터에 저장된 최근 작업 기록을 지웁니다. 정리 결과와 ChatGPT의 대화는 그대로입니다. 지울까요?")) return;
+    if (!await ask({ title: "최근 작업 기록을 지울까요?", lines: ["이 컴퓨터에 저장된 기록만 지웁니다. 정리 결과와 ChatGPT의 대화는 그대로입니다."], ok: "지우기" })) return;
     try { const r = await post("/maintenance/jobs/clear"); toast("최근 작업을 지웠습니다", `${r.removed}건`); await refreshSession(); } catch (e) { fail(e); }
   });
   $("app-stop").addEventListener("click", async () => {
-    if (!confirm("앱을 종료합니다. 이 화면은 더 이상 동작하지 않고, 다시 쓰려면 터미널에서 다시 켜야 합니다. 종료할까요?")) return;
+    if (!await ask({ title: "앱을 종료할까요?", lines: ["이 화면은 더 이상 동작하지 않습니다. 다시 쓰려면 터미널에서 npm run app 을 실행하세요."], ok: "종료" })) return;
     try {
       const response = await fetch("/app/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const body = await response.json().catch(() => ({}));
@@ -191,7 +190,7 @@ async function boot() {
   });
   const config = await api("/config").catch(() => ({}));
   loadScope();
-  // 삭제 후보 처리 방식의 기본값은 설정 파일(.local/config.json)에서 오고, 화면에서 고른 값이 있으면 그것이 우선한다.
+  // 삭제후보 처리 방식의 기본값은 설정 파일(.local/config.json)에서 오고, 화면에서 고른 값이 있으면 그것이 우선한다.
   S.trashDefault = config.trash?.defaultName || "삭제후보";
   S.trash = { mode: config.trash?.mode || "auto", name: config.trash?.name || S.trashDefault, permanent: false };
   try {

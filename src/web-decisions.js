@@ -67,7 +67,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
 
 export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null) {
   const pointer = readPointer(workspace, dataDir);
-  assert(pointer, "먼저 대화 확인(조사 범위 선택)을 실행하세요");
+  assert(pointer, "먼저 대화 수집(수집 범위 선택)을 실행하세요");
   assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 결정을 받을 단계가 아닙니다");
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
@@ -76,7 +76,7 @@ export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null)
   return { saved: decisions.decisions.length };
 }
 
-// 삭제 후보를 삭제후보 프로젝트로 보내는 결정이면, 적용이 끝난 뒤 삭제후보 목록에 남길 정보를 실행 폴더에 적어 둔다.
+// 삭제후보를 삭제후보 프로젝트로 보내는 결정이면, 적용이 끝난 뒤 삭제후보 목록에 남길 정보를 실행 폴더에 적어 둔다.
 function writeTrashMeta(pointer, inventory, decisions, trash) {
   const path = runFiles(pointer.runDir).trashMeta;
   if (!trash) { rmSync(path, { force: true }); return; }
@@ -170,7 +170,7 @@ export function prepareTrashFollowUp(workspace, dataDir, inputs) {
 
 export function savePastedProposal(workspace, dataDir, proposalJson) {
   const pointer = readPointer(workspace, dataDir);
-  assert(pointer, "먼저 대화 확인(조사 범위 선택)을 실행하세요");
+  assert(pointer, "먼저 대화 수집(수집 범위 선택)을 실행하세요");
   assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 분류안을 받을 단계가 아닙니다");
   assert(pointer.reviewPath, "이 실행에는 분류할 후보가 없습니다");
   let parsed;

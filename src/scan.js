@@ -21,15 +21,15 @@ function prepareRunDirectory(path) {
   return root;
 }
 
-// 조사 범위. kind: "unassigned"(프로젝트 없는 대화) | "project"(projectName 프로젝트) | "recent"(최근 days일 안에 수정) |
+// 수집 범위. kind: "unassigned"(프로젝트 없는 대화) | "project"(projectName 프로젝트) | "recent"(최근 days일 안에 수정) |
 // "untidy"(수정 최신순으로 읽다 표준 제목 대화가 3건 연달아 나오면 멈춤), "all"(모든 대화, 보관된 것 포함 — 전체 재정비용).
 export const SCOPE_KINDS = ["unassigned", "project", "recent", "untidy", "all"];
 const MAX_RECENT_DAYS = 3650;
 const MAX_SCOPE_PROJECTS = 20;
 
 export function validateScope(scope) {
-  assert(scope && typeof scope === "object" && !Array.isArray(scope), "조사 범위가 올바르지 않습니다");
-  assert(SCOPE_KINDS.includes(scope.kind), "조사 범위 종류가 올바르지 않습니다");
+  assert(scope && typeof scope === "object" && !Array.isArray(scope), "수집 범위가 올바르지 않습니다");
+  assert(SCOPE_KINDS.includes(scope.kind), "수집 범위 종류가 올바르지 않습니다");
   if (scope.kind === "project") {
     // 프로젝트 여러 개를 고를 수 있다(projectNames). 하나만 적은 옛 형식(projectName)도 받는다.
     const names = Array.isArray(scope.projectNames) ? scope.projectNames : [scope.projectName];
@@ -169,7 +169,7 @@ function publishInventory({ root, catalog, candidates, scope, partial = null, sk
   return { root, inventoryPath, catalog, inventory };
 }
 
-// 끊긴 확인에서 지금까지 받은 본문만으로 인벤토리를 만든다(받지 못한 대화는 후보에서 뺀다). ChatGPT는 읽지 않는다.
+// 끊긴 수집에서 지금까지 받은 본문만으로 인벤토리를 만든다(받지 못한 대화는 후보에서 뺀다). ChatGPT는 읽지 않는다.
 // scan-draft.json 은 대화 목록을 다 읽은 뒤 본문을 받기 시작할 때 남긴다. 인벤토리를 만들면 그 폴더는 더 이어받지 않는다.
 export function readScanDraft(runDir) {
   const path = runFiles(runDir).scanDraft;
@@ -205,7 +205,7 @@ export function findPartialScan(dataDir) {
 export function finishPartialScan({ runDir }) {
   const root = resolve(runDir);
   const draft = readScanDraft(root);
-  assert(draft, "이어서 쓸 수 있는 끊긴 확인이 없습니다");
+  assert(draft, "이어서 쓸 수 있는 끊긴 수집이 없습니다");
   const candidates = [];
   for (const item of draft.selected) {
     const backupFile = resolve(root, "json", `${item.conversationId}.json`);

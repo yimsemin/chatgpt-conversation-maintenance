@@ -10,7 +10,6 @@ export async function loadResult() {
     const r = data.report; const todo = r.todo;
     const copy = (text) => h("button", { class: "btn ghost", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(text); e.target.textContent = "복사됨"; } }, "목록 복사");
     fill($("panel"), 
-      h("h2", { text: "5. 정리 결과" }), h("p", { class: "lead", text: r.headline }),
       h("p", { class: "muted small", text: r.note }),
       r.mismatches.length ? h("p", { class: "chip bad", text: `예상과 다른 프로젝트: ${r.mismatches.join(", ")}` }) : h("p", { class: "chip good", text: "모든 프로젝트가 예상과 일치합니다" }),
       r.renameOrder?.renamed ? h("p", { class: `chip ${r.renameOrder.preserved ? "good" : "bad"}`, text: r.renameOrder.preserved
@@ -23,7 +22,7 @@ export async function loadResult() {
         h("ul", { class: "todo" }, r.details.trashed.map((m) => h("li", { text: `${m.title}${m.why ? ` — ${m.why}` : ""}` })))) : null,
       h("h3", { text: "직접 하실 일" }),
       !todo.deleteEmptyProjects.length && !todo.removeFromProject.length && !todo.deleteYourself?.length ? h("p", { class: "muted", text: "없습니다." }) : null,
-      todo.deleteYourself?.length ? h("div", {}, h("p", { text: "삭제 후보로 표시만 한 대화 — ChatGPT에서 직접 지우세요:" }),
+      todo.deleteYourself?.length ? h("div", {}, h("p", { text: "삭제후보로 표시만 한 대화 — ChatGPT에서 직접 지우세요:" }),
         h("ul", { class: "todo" }, todo.deleteYourself.map((m) => h("li", { text: `${m.title}${m.project ? ` — 프로젝트 ${m.project}` : ""}` })))) : null,
       todo.deleteEmptyProjects.length ? h("div", {}, h("p", { text: "비어 있는 프로젝트 — 필요 없으면 ChatGPT에서 삭제하세요:" }),
         h("ul", { class: "todo" }, todo.deleteEmptyProjects.map((n) => h("li", { text: n }))), copy(todo.deleteEmptyProjects.join("\n"))) : null,

@@ -78,7 +78,7 @@ function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
   job.result = { phase: PHASE.COMPLETE, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
 }
 
-// 끊긴 확인을 지금까지 받은 본문만으로 마무리한다(로컬 작업, ChatGPT는 읽지 않는다).
+// 끊긴 수집을 지금까지 받은 본문만으로 마무리한다(로컬 작업, ChatGPT는 읽지 않는다).
 export async function partialScanWorkflow(workspace, dataDir, job) {
   let lockHeld = false;
   try {
@@ -86,8 +86,8 @@ export async function partialScanWorkflow(workspace, dataDir, job) {
     acquireLock({ dataDir });
     lockHeld = true;
     const partial = findPartialScan(dataDir);
-    assert(partial, "지금까지 받은 대화로 마무리할 수 있는 끊긴 확인이 없습니다");
-    jobEvent(job, "scan", `끊긴 확인(${describeScope(partial.scope)})을 받아 둔 ${partial.downloaded}/${partial.total}건으로 마무리합니다.`);
+    assert(partial, "지금까지 받은 대화로 마무리할 수 있는 끊긴 수집이 없습니다");
+    jobEvent(job, "scan", `끊긴 수집(${describeScope(partial.scope)})을 받아 둔 ${partial.downloaded}/${partial.total}건으로 마무리합니다.`);
     const scanResult = finishPartialScan({ runDir: partial.runDir });
     publishScan({ workspace, dataDir, job, runDir: partial.runDir, scanResult, scope: partial.scope });
   } finally {
@@ -105,9 +105,9 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFa
     const runDir = resumableRunDir(dataDir, validScope);
     jobEvent(job, "scan", validScope.kind === "all"
       ? "전체 조사: 모든 대화 본문을 받습니다. 이미 받은 것은 건너뜁니다(읽기 전용)."
-      : `대화 확인: ${describeScope(validScope)}를 후보로 받습니다. 끊긴 같은 범위 확인이 있으면 받아 둔 본문은 건너뜁니다(읽기 전용).`);
+      : `대화 수집: ${describeScope(validScope)}를 후보로 받습니다. 끊긴 같은 범위 수집이 있으면 받아 둔 본문은 건너뜁니다(읽기 전용).`);
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
-    const scanResult = await untilDone(job, "확인", () => scanMaintenanceRun({
+    const scanResult = await untilDone(job, "수집", () => scanMaintenanceRun({
       runDir, api, scope: validScope, skipFailed, skipStandardTitles, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
     publishScan({ workspace, dataDir, job, runDir, scanResult, scope: validScope });
@@ -150,9 +150,9 @@ function writeResultReport(pointer, afterCatalog, renameOrder) {
 const PLAN_HALT_MESSAGES = {
   "changed-after-apply": "이미 적용한 결과(영수증)가 있는데 결정이 바뀌었습니다. "
     + "이 실행의 계획은 안전하게 다시 만들 수 없으므로 여기서 멈춥니다. "
-    + "같은 범위의 ‘대화 확인’으로 현재 ChatGPT 상태를 다시 확인한 뒤 새 실행에서 결정하세요.",
+    + "같은 범위의 ‘대화 수집’으로 현재 ChatGPT 상태를 다시 읽은 뒤 새 실행에서 결정하세요.",
   "unknown-source-after-apply": "이 실행의 계획이 어떤 결정에서 나왔는지 확인할 수 없고 적용 결과(영수증)도 있습니다. "
-    + "안전을 위해 멈춥니다. 같은 범위의 ‘대화 확인’으로 다시 확인한 뒤 새 실행에서 결정하세요.",
+    + "안전을 위해 멈춥니다. 같은 범위의 ‘대화 수집’을 다시 한 뒤 새 실행에서 결정하세요.",
 };
 
 // 이미 컴파일된 plans/·routing.json 을 지금의 승인(reviewed-decisions.json)에 그대로 써도 되는지 판정한다.
@@ -170,7 +170,7 @@ export function planReuseDecision({ hasCompiledArtifacts, stampDigest, decisions
 // 로 남으므로 정상적인 재시도는 그대로 통과한다.
 export function assertApplyablePhase(phase) {
   assert(phase !== PHASE.COMPLETE,
-    "이 실행은 이미 적용을 마쳤습니다. 새 변경은 같은 범위의 ‘대화 확인’으로 다시 확인한 뒤 결정하세요.");
+    "이 실행은 이미 적용을 마쳤습니다. 새 변경은 같은 범위의 ‘대화 수집’을 다시 한 뒤 결정하세요.");
   return true;
 }
 
@@ -203,7 +203,7 @@ function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDe
     deletes = proposal.items.filter((item) => item.suggestedDecision === "delete").length;
     decisionCount = proposal.items.length;
   }
-  assert(deletes === 0 || confirmDeletes === true, `삭제 후보 ${deletes}건에 대한 별도 확인이 필요합니다`);
+  assert(deletes === 0 || confirmDeletes === true, `삭제후보 ${deletes}건에 대한 별도 확인이 필요합니다`);
   return { deletes, decisionCount };
 }
 
@@ -265,8 +265,8 @@ async function applyManagementPlans({ files, api, accountId, job }) {
         }
         if (event.type === "batch-start" || event.type === "batch-finish") {
           jobEvent(job, "apply", event.type === "batch-start"
-            ? `배치 ${event.batch}: ${event.actions}건 시작`
-            : `배치 완료: ${event.actions}건${event.ok ? "" : " (실패)"}`);
+            ? `묶음 ${event.batch}: ${event.actions}건 시작`
+            : `묶음 완료: ${event.actions}건${event.ok ? "" : " (실패)"}`);
         }
       } });
     assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
@@ -279,9 +279,9 @@ async function routingStage({ files, api, accountId, job }) {
   const routingPrepare = prepareProjectRouting(routing);
   const routingStatus = projectRoutingStatus(routing);
   if (routingStatus.pendingTargets > 0) {
-    jobEvent(job, "routing", `대화 ${routingPrepare.conversationCount}건을 승인된 프로젝트에 배치합니다.`);
+    jobEvent(job, "routing", `대화 ${routingPrepare.conversationCount}건을 승인된 프로젝트로 이동합니다.`);
     reportProgress(job, { phase: "routing", index: routingStatus.completedConversations, total: routingStatus.totalConversations });
-    await untilDone(job, "프로젝트 배치", async () => {
+    await untilDone(job, "프로젝트 이동", async () => {
       if (projectRoutingStatus(routing).pendingTargets === 0) return;
       const routed = await runProjectRouting({ routing, confirmation: routingPrepare.expectedConfirmation,
         accountId, api, pendingOnly: true,
@@ -291,14 +291,14 @@ async function routingStage({ files, api, accountId, job }) {
             reportProgress(job, { phase: "routing", index: status.completedConversations, total: status.totalConversations });
           }
           jobEvent(job, "routing", event.type === "target-start"
-            ? `배치 ${event.index}/${event.targets}: ${event.projectName} (${event.conversations}건)`
-            : `배치 완료: ${event.projectName}`);
+            ? `프로젝트 ${event.index}/${event.targets}: ${event.projectName} (${event.conversations}건)`
+            : `이동 완료: ${event.projectName}`);
         } });
       const failed = routed.results?.find((item) => !item.ok);
-      assert(routed.ok, `프로젝트 배치에 실패했습니다: ${failed?.error || ""}`);
+      assert(routed.ok, `프로젝트 이동에 실패했습니다: ${failed?.error || ""}`);
     });
   } else {
-    jobEvent(job, "routing", "기존 영수증으로 프로젝트 배치 완료를 확인했습니다.");
+    jobEvent(job, "routing", "기존 영수증으로 프로젝트 이동 완료를 확인했습니다.");
   }
 }
 

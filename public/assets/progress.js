@@ -1,13 +1,13 @@
 // 진행 중 작업의 진행률·로그 블록과 적용 단계 표시.
 import { S } from "/assets/state.js";
-import { clock, duration, fill, h } from "/assets/dom.js";
+import { ask, clock, duration, fill, h } from "/assets/dom.js";
 import { fail, post } from "/assets/net.js";
 
 export function progressBlock(kind) {
   const bar = h("i"); const barWrap = h("div", { class: "bar" }, bar);
   const label = h("p", { class: "small" }); const log = h("pre", { class: "log" });
   const cancel = h("button", { class: "btn ghost", type: "button", onclick: async () => {
-    if (!confirm("진행 중인 작업을 중단합니다. 이미 끝난 부분은 유지되고, 같은 버튼으로 이어서 진행할 수 있습니다.")) return;
+    if (!await ask({ title: "작업을 중단할까요?", lines: ["이미 끝난 부분은 유지되고, 같은 버튼으로 이어서 진행할 수 있습니다."], ok: "중단" })) return;
     try { await post("/maintenance/cancel", { jobId: S.session.job.id }); } catch (e) { fail(e); }
   } }, "중단");
   const box = h("div", {}, barWrap, label, h("div", { class: "row" }, cancel), log);
@@ -24,7 +24,7 @@ export function progressBlock(kind) {
   return box;
 }
 
-const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["routing", "프로젝트 배치"], ["verify", "결과 확인"], ["report", "결과 정리"]];
+const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["routing", "프로젝트 이동"], ["verify", "변경 검증"], ["report", "보고서 작성"]];
 
 export function applyStages() {
   const list = h("ol", { class: "steps" });

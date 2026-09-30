@@ -87,7 +87,7 @@ export function buildReviewSummary({ catalog, rows }) {
       why: row.why, confidence: row.confidence };
     if (row.undecided) { totals.undecided += 1; exceptions.undecided.push(brief); continue; }
     if (row.marked) {
-      // 삭제 후보를 어느 프로젝트로도 옮기지 않고 표시만 하는 행. 사용자가 ChatGPT에서 직접 지운다.
+      // 삭제후보를 어느 프로젝트로도 옮기지 않고 표시만 하는 행. 사용자가 ChatGPT에서 직접 지운다.
       totals.marked += 1;
       exceptions.marked.push(brief);
       if (renaming) {
@@ -97,7 +97,7 @@ export function buildReviewSummary({ catalog, rows }) {
       continue;
     }
     if (row.trashed) {
-      // 삭제 후보를 삭제후보 프로젝트로 옮기는 행. 삭제가 아니라 이동이며 사용자가 나중에 직접 확인한다.
+      // 삭제후보를 삭제후보 프로젝트로 옮기는 행. 삭제가 아니라 이동이며 사용자가 나중에 직접 확인한다.
       totals.trashed += 1;
       changes.trashed += 1;
       bump(row.currentProject, -1);
@@ -156,9 +156,9 @@ export function buildReviewSummary({ catalog, rows }) {
 
 function headline(totals, changes) {
   const parts = [];
-  if (totals.delete) parts.push(`삭제 ${totals.delete}건`);
-  if (totals.trashed) parts.push(`삭제후보 프로젝트로 이동 ${totals.trashed}건`);
-  if (totals.marked) parts.push(`삭제 표시 ${totals.marked}건`);
+  if (totals.delete) parts.push(`영구 삭제 ${totals.delete}건`);
+  if (totals.trashed) parts.push(`삭제후보로 이동 ${totals.trashed}건`);
+  if (totals.marked) parts.push(`삭제후보 표시 ${totals.marked}건`);
   if (changes.move) parts.push(`프로젝트 이동 ${changes.move}건`);
   if (changes.rename) parts.push(`제목 변경 ${changes.rename}건`);
   if (changes.newProjects.length) parts.push(`새 프로젝트 ${changes.newProjects.length}개`);
@@ -215,7 +215,7 @@ export function reportMarkdown(report) {
   lines.push("", "## 직접 하실 일");
   if (!report.todo.deleteEmptyProjects.length && !report.todo.removeFromProject.length && !report.todo.deleteYourself.length) lines.push("", "없습니다.");
   if (report.todo.deleteYourself.length) {
-    lines.push("", "삭제 후보로 표시만 한 대화(ChatGPT에서 직접 지우세요):",
+    lines.push("", "삭제후보로 표시만 한 대화(ChatGPT에서 직접 지우세요):",
       ...report.todo.deleteYourself.map((item) => `- ${item.title}${item.project ? ` (프로젝트: ${item.project})` : ""}`));
   }
   if (report.todo.deleteEmptyProjects.length) {

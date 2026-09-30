@@ -19,7 +19,7 @@ export const CLASSIFICATION_CRITERIA = [
   "기존 프로젝트 배치가 잘못됐을 수 있다. 현재 프로젝트를 옳다고 가정하지 않는다. 너무 큰 프로젝트도, 작은 차이로 잘게 쪼갠 프로젝트도 피한다.",
   "프로젝트 조치: 프로젝트가 없는 대화는 새·기존 프로젝트에 배치(use-or-create) 또는 프로젝트 없음(none). 현재 프로젝트가 적합하면 keep-current. 다른 프로젝트로 옮길 것이면 manual-move. 이미 프로젝트 안에 있는데 프로젝트 없음이 맞으면 manual-remove(API로 뺄 수 없어 사용자가 수동 처리).",
   "confidence: 명시적 근거는 high, 내용상 추론은 medium, 근거가 부족하면 low(그리고 undecided).",
-  "delete 항목은 suggestedProjectName·projectRationale를 넣지 않고 suggestedProjectAction은 none. 현재 제목이 표준 형식이 아니면 표준 제목을 suggestedNewTitle에 반드시 넣는다(삭제 후보도 표준 제목이 원칙이다). 표준이면 null.",
+  "delete 항목은 suggestedProjectName·projectRationale를 넣지 않고 suggestedProjectAction은 none. 현재 제목이 표준 형식이 아니면 표준 제목을 suggestedNewTitle에 반드시 넣는다(삭제후보도 표준 제목이 원칙이다). 표준이면 null.",
 ];
 
 export const CLASSIFICATION_PROPOSAL_SCHEMA = {
