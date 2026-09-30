@@ -27,11 +27,10 @@
 | --- | --- |
 | `docs/GOALS.md` | 무엇을 위해 정리하는지 판단이 갈릴 때 (원본·프로젝트·대화 기록의 역할, 운영 방식 결정) |
 | `docs/OVERHAUL.md` | 전체 재정비 절차와 카드 도구 사용법. 카드·조각·조립으로 대량 재분류할 때 |
-| `docs/REDESIGN.md` | 화면·세션·작업 구조를 바꾸기 전에 (수용 기준·설계 원칙) |
 | `CLASSIFICATION_WORKFLOW.md` | 분류 제안을 만들 때 (기준이 모호할 때의 정본) |
 | `docs/GIT.md` | 커밋·푸시·병합 직전 (PR 없이 로컬 `--ff-only` 병합, **푸시는 명시적 승인 시에만**) |
 | `docs/PITFALLS.md` | 릴레이·북마클릿·재시도·`src/server.js`를 고칠 때 |
-| `docs/ARCHITECTURE.md` | 구조를 바꾸기 전 (왜 이렇게 됐는지) |
+| `docs/ARCHITECTURE.md` | 구조·화면·세션·작업 흐름을 바꾸기 전 (왜 이렇게 됐는지, 화면 용어·수용 기준·설계 원칙) |
 | `API_COMPATIBILITY.md` | 비공식 API가 안 될 때, op를 추가할 때 |
 | `docs/PRIVACY.md` | 공개 전환·데이터 노출 관련 결정 |
 | `docs/GETTING_STARTED.md` | **처음 설치·설정할 때 한 번**, 에이전트에게 설치를 맡길 때(13절) (평소에는 읽지 않는다) |

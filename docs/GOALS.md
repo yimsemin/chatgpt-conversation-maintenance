@@ -1,6 +1,6 @@
 # 목적과 정보 구조
 
-이 도구가 왜 있는지, 그리고 정리의 판단 기준이 되는 전제를 적는다. 화면 흐름은 [REDESIGN.md](REDESIGN.md), 분류 기준은 [../CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md), 전체를 처음부터 다시 정리하는 절차는 [OVERHAUL.md](OVERHAUL.md)에 있다.
+이 도구가 왜 있는지, 그리고 정리의 판단 기준이 되는 전제를 적는다. 화면 흐름·용어는 [ARCHITECTURE.md](ARCHITECTURE.md), 분류 기준은 [../CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md), 전체를 처음부터 다시 정리하는 절차는 [OVERHAUL.md](OVERHAUL.md)에 있다.
 
 ## 목적
 

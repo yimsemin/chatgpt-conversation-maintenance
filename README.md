@@ -108,9 +108,9 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 | [AGENTS.md](AGENTS.md) | 에이전트의 시작 순서와 안전 경계 |
 | [docs/GOALS.md](docs/GOALS.md) | 왜 이렇게 정리하는가 |
 | [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md) | 삭제·제목·프로젝트 판단 기준, 제안·승인 파일 형식 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·파일 계약, 반복된 함정 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·화면 설계와 용어·파일 계약, 반복된 함정 |
 | [API_COMPATIBILITY.md](API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
-| [docs/REDESIGN.md](docs/REDESIGN.md), [docs/OVERHAUL.md](docs/OVERHAUL.md) | 화면 설계 원칙, 전체 재정비 절차 |
+| [docs/OVERHAUL.md](docs/OVERHAUL.md) | 전체 재정비 절차 |
 | [docs/GIT.md](docs/GIT.md), [docs/PRIVACY.md](docs/PRIVACY.md) | 커밋·병합 규칙, 공개 전 점검 |
 
 분류 규칙이나 API 계약을 다른 문서에 복사하지 않는다. 문서와 구현이 다르면 코드·테스트·원격 상태를 대조해 해당 문서를 함께 고친다.
