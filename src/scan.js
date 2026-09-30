@@ -94,6 +94,20 @@ function storedBodyRecord(file, catalogItem, backupFile) {
 // 받지 못하는 대화 건너뛰기: 이 횟수만큼 시도해도 응답이 실패로 오면 그 대화만 건너뛴다(첫 시도 포함).
 const SKIP_AFTER_FAILURES = 4;
 
+// 사용자가 검토 화면에서 제목 변경을 해제해 둔 대화(id -> 그때의 제목). 제목이 그대로인 동안만 "정돈된" 것으로 본다.
+export function keptTitleMap(dataDir) {
+  const root = runsDir(dataDir);
+  const kept = new Map();
+  if (!existsSync(root)) return kept;
+  for (const name of readdirSync(root)) {
+    try {
+      const decisions = JSON.parse(readFileSync(join(root, name, "reviewed-decisions.json"), "utf8")).decisions;
+      for (const item of Array.isArray(decisions) ? decisions : []) if (item?.keepTitle === true && typeof item.newTitle === "string") kept.set(item.conversationId, item.newTitle);
+    } catch {}
+  }
+  return kept;
+}
+
 // 이전 수집 실행의 본문 폴더(json/)를 새 것부터 돌려준다. 그 안의 본문은 아직 수정되지 않았으면 다시 받지 않고 재활용한다.
 export function reusableBodyDirs(dataDir, excludeRunDir) {
   const root = runsDir(dataDir);
@@ -154,7 +168,7 @@ function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, sc
 
 // 범위 안의 대화를 모두 후보로 받는다(지난 확인과 비교하지 않는다). 도중에 끊긴 실행 폴더는 같은 runDir 로 이어받는다.
 // 프로젝트·기록 파일은 만들지 않고 실행 폴더(runDir)에만 결과를 남긴다.
-export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, skipStandardTitles = false, reuseDirs = [], knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {}, onReuse = () => {} }) {
+export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, skipStandardTitles = false, keptTitles = new Map(), reuseDirs = [], knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {}, onReuse = () => {} }) {
   const validScope = validateScope(scope);
   const root = prepareRunDirectory(runDir);
   const catalog = validScope.kind === "all"
@@ -162,9 +176,11 @@ export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = fals
     : await collectScopedCatalog(api, validScope, now, onProgress, { knownProjects });
   // 본문은 수정 시각 최신순으로 받는다(끊겨도 최근 대화가 먼저 남는다).
   const inScope = catalog.conversations.filter((item) => validScope.kind === "all" || !item.isArchived);
-  // skipStandardTitles: 제목이 이미 표준 형식인 대화는 본문을 받지 않고 후보에서 뺀다(제목이 표준이어도 프로젝트가 틀릴 수는 있다).
-  const standardTitlesExcluded = skipStandardTitles ? inScope.filter((item) => isNormalizedTitle(item.title)).length : 0;
-  const selected = (skipStandardTitles ? inScope.filter((item) => !isNormalizedTitle(item.title)) : inScope)
+  // skipStandardTitles: 제목이 이미 표준 형식이거나 사용자가 제목 변경을 해제해 둔(keptTitles, 제목이 그대로일 때만) 대화는 본문을 받지 않고
+  // 후보에서 뺀다(제목이 표준이어도 프로젝트가 틀릴 수는 있다).
+  const settled = (item) => isNormalizedTitle(item.title) || keptTitles.get(item.conversationId) === item.title;
+  const standardTitlesExcluded = skipStandardTitles ? inScope.filter(settled).length : 0;
+  const selected = (skipStandardTitles ? inScope.filter((item) => !settled(item)) : inScope)
     .sort((left, right) => (timeMilliseconds(right.updateTime) ?? 0) - (timeMilliseconds(left.updateTime) ?? 0)
       || left.conversationId.localeCompare(right.conversationId))
     .map((item) => ({ ...item, reasons: ["scope"] }));

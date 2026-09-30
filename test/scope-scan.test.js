@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { collectScopedCatalog } from "../src/catalog.js";
-import { countDownloaded, finishPartialScan, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
+import { countDownloaded, finishPartialScan, keptTitleMap, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
@@ -236,11 +236,32 @@ test("skipStandardTitles downloads only conversations whose title is not standar
     assert.equal(result.inventory.counts.candidates, 2);
     assert.equal(result.inventory.standardTitlesExcluded, 1);
 
+    // 제목 변경을 해제해 둔 대화는 제목이 그대로인 동안만 제외한다.
+    const kept = await scanMaintenanceRun({ runDir: join(root, "run-kept"), api: fake, scope: { kind: "unassigned" }, skipStandardTitles: true, now: () => NOW,
+      keptTitles: new Map([[ID1, "정리 안 된 제목"], [ID4, "예전 제목"]]) });
+    assert.deepEqual(kept.inventory.conversations.map((c) => c.conversationId), [ID4], "ID1 is kept as is; ID4 was renamed since, so it is a candidate again");
+    assert.equal(kept.inventory.standardTitlesExcluded, 2);
+
     const all = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
     assert.equal(all.inventory.counts.candidates, 3);
     assert.equal("standardTitlesExcluded" in all.inventory, false, "the option is off by default");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("kept titles are read from the reviewed decisions of every run", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-kept-"));
+  try {
+    mkdirSync(join(dataDir, "runs", "one"), { recursive: true });
+    mkdirSync(join(dataDir, "runs", "broken"), { recursive: true });
+    writeFileSync(join(dataDir, "runs", "one", "reviewed-decisions.json"), JSON.stringify({ decisions: [
+      { conversationId: ID1, decision: "keep", newTitle: "그대로 둔 제목", keepTitle: true }, { conversationId: ID2, decision: "keep", newTitle: "바꾼 제목 — 결과" }] }));
+    writeFileSync(join(dataDir, "runs", "broken", "reviewed-decisions.json"), "{ 깨짐");
+    assert.deepEqual([...keptTitleMap(dataDir)], [[ID1, "그대로 둔 제목"]]);
+    assert.equal(keptTitleMap(join(dataDir, "missing")).size, 0);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });
 

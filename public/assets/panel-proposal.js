@@ -12,7 +12,7 @@ export function proposalPanel() {
   const paste = h("textarea", { rows: "6", placeholder: "분류 결과 JSON 붙여넣기" });
   return h("div", {},
     h("p", { class: "muted", text: "이 저장소를 연 AI 에이전트(Claude Code·Codex 등)에게 아래 문장을 그대로 전달하세요. 제안이 만들어지면 화면이 저절로 다음 단계로 넘어갑니다." }),
-    run?.standardTitlesExcluded ? h("p", { class: "muted small", text: `제목이 이미 표준 형식인 ${run.standardTitlesExcluded}건은 받지 않고 후보에서 뺐습니다.` }) : null,
+    run?.standardTitlesExcluded ? h("p", { class: "muted small", text: `표준 제목이거나 제목을 그대로 두기로 한 ${run.standardTitlesExcluded}건은 받지 않고 후보에서 뺐습니다.` }) : null,
     run?.skipped?.length ? skippedCallout(run.skipped) : null,
     h("div", { class: "callout", text: prompt }),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(prompt); e.target.textContent = "복사됨"; } }, "문장 복사")),
