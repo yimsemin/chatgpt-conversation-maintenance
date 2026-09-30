@@ -35,7 +35,7 @@
 | `docs/GETTING_STARTED.md` | **처음 설치·설정할 때 한 번**, 에이전트에게 설치를 맡길 때(13절) (평소에는 읽지 않는다) |
 | `README.md`, `templates/` | 개요·형식 예시가 필요할 때 |
 
-같은 규칙을 여러 문서에 복사하지 않는다. 문서와 코드가 어긋나면 현재 구현·테스트와 원격 상태를 확인해 해당 책임 문서를 함께 고친다.
+같은 규칙을 여러 문서에 복사하지 않고 정본을 링크로 가리킨다. 정본: 정리 정책·이유는 `docs/GOALS.md`, 분류 기준·제안/승인 파일 형식은 `CLASSIFICATION_WORKFLOW.md`, 비공식 API 계약·실측은 `API_COMPATIBILITY.md`, 구조·화면 용어·수집 동작 계약은 `docs/ARCHITECTURE.md`, 함정은 `docs/PITFALLS.md`, 사용자 안내는 `docs/GETTING_STARTED.md`, Git 규칙은 `docs/GIT.md`. 문서와 코드가 어긋나면 현재 구현·테스트와 원격 상태를 확인해 해당 책임 문서를 함께 고친다.
 
 ## 역할 분담
 
