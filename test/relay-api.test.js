@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRelayApi, createRelayBroker } from "../src/relay-api.js";
+import { createPacer, createRelayApi, createRelayBroker } from "../src/relay-api.js";
 import { createRelayTrace } from "../src/relay-trace.js";
 import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "../src/app-version.js";
 import { validateRelayVersion } from "../src/remote-relay.js";
@@ -36,6 +36,22 @@ test("getConversation tries can cap the read retries (599 is retried up to that 
   calls = 0;
   await api.getConversation("11111111-1111-4111-8111-111111111111");
   assert.equal(calls, 9, "the default keeps 8 retries after the first attempt");
+});
+
+test("writes keep the fixed delay but follow the pacer once a 429 raised it; reads follow the pacer alone", async () => {
+  const slept = [];
+  let status = 200;
+  const broker = { request: async () => ({ ok: status === 200, status, data: { success: true }, contentType: "application/json" }) };
+  const pacer = createPacer({ min: 300, start: 600, max: 4000 });
+  const api = createRelayApi({ broker, requestDelayMs: 1000, pacer, maxRetries: 0, sleep: async (ms) => { slept.push(ms); } });
+  await api.moveConversation("11111111-1111-4111-8111-111111111111", `g-p-${"a".repeat(32)}`);
+  await api.getConversation("11111111-1111-4111-8111-111111111111");
+  assert.deepEqual(slept.map((ms) => Math.round(ms / 10) * 10), [1000, 510], "a write waits at least the fixed delay; a read waits the pacer's delay");
+  slept.length = 0;
+  status = 429;
+  pacer.throttled(); pacer.throttled(); pacer.throttled(); // 600 → … → 4000 상한
+  await api.moveConversation("11111111-1111-4111-8111-111111111111", `g-p-${"a".repeat(32)}`);
+  assert.equal(slept.at(-1), 4000, "after throttling the write delay grows with the pacer");
 });
 
 test("invalid page results reject immediately and clear the pending operation", async () => {

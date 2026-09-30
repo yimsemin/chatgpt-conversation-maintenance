@@ -191,7 +191,8 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
       if (result.status === 429) pacer?.throttled();
       else if (result.ok) pacer?.success();
       if (!(RETRYABLE.has(result.status) || (result.status === 599 && READ_OPS.has(op))) || attempt === retryLimit) {
-        const delay = pacer && READ_OPS.has(op) ? pacer.current() : requestDelayMs;
+        // 읽기는 조절된 간격을 쓰고, 쓰기는 고정 간격(requestDelayMs)을 바닥으로 두되 429 뒤 늘어난 간격을 따른다(같은 계정 한도를 공유한다).
+        const delay = !pacer ? requestDelayMs : READ_OPS.has(op) ? pacer.current() : Math.max(requestDelayMs, pacer.current());
         if (delay) { metrics.pacingWaitMs += delay; await sleep(delay); }
         return result;
       }

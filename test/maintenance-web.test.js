@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { appFolders, createSafeDiagnostic } from "../src/web-common.js";
 import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
-import { formatScanProgress, jobEvent } from "../src/web-jobs.js";
+import { formatScanProgress, jobEvent, retryMessage } from "../src/web-jobs.js";
 import { assertApplyablePhase, planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
 import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
 
@@ -411,4 +411,10 @@ test("끊긴 같은 범위의 확인은 실행 폴더를 이어받고, 다른 �
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test("retry messages call a 429 a normal automatic slowdown and keep other failures as retries", () => {
+  assert.match(retryMessage({ type: "http", status: 429, attempt: 1, waitMs: 5000 }), /속도를 제한.*정상.*5초/);
+  assert.match(retryMessage({ type: "http", status: 599, attempt: 2, waitMs: 10000 }), /HTTP 599.*10초.*2번째/);
+  assert.match(retryMessage({ type: "network", attempt: 1, waitMs: 5000 }), /연결이 잠시 끊겼/);
 });

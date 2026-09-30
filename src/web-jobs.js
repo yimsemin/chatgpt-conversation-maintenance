@@ -163,10 +163,17 @@ export function relayApi(job, requestDelayMs = 1000) {
     pacer: CONFIG.requestDelayMs === undefined ? readPacer : null,
     backoffBaseMs: CONFIG.relayBackoffMs, backoffCapMs: Math.max(CONFIG.relayBackoffMs, 300000), sleep: (ms) => cancellableSleep(job, ms),
     onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}`); }, onRetry: (retry) => {
-    const status = retry.status ? ` HTTP ${retry.status}` : "";
     const stage = retry.type === "http" && retry.status === 429 ? "rate-limit" : "retry";
-    jobEvent(job, stage, `Retry${status} in ${Math.round(retry.waitMs / 1000)}s (${retry.attempt})`);
+    jobEvent(job, stage, retryMessage(retry));
   } });
+}
+
+// 재시도 안내 문구. 429 는 ChatGPT의 속도 제한에 맞춰 자동으로 조절하는 정상 동작임을 알린다.
+export function retryMessage(retry) {
+  const seconds = Math.round(retry.waitMs / 1000);
+  if (retry.type === "http" && retry.status === 429) return `ChatGPT가 요청 속도를 제한했습니다(429). 자동으로 속도를 조절하는 중이라 정상입니다 — ${seconds}초 뒤 다시 시도합니다.`;
+  if (retry.type === "http") return `ChatGPT 응답이 일시적으로 실패했습니다(HTTP ${retry.status}). ${seconds}초 뒤 다시 시도합니다(${retry.attempt}번째 재시도).`;
+  return `연결이 잠시 끊겼습니다. ${seconds}초 뒤 다시 시도합니다(${retry.attempt}번째 재시도).`;
 }
 
 export async function relayAccountId(api) {
