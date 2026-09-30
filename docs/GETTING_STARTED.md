@@ -4,7 +4,7 @@
 
 개발 경험이 없어도 따라 할 수 있도록 처음부터 끝까지 안내한다. 명령을 한 줄씩 그대로 입력하면 되고, 막히면 각 단계 아래의 "잘 안 될 때"를 본다.
 
-개요와 로컬 명령은 [README.md](../README.md), 분류 판단 기준은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다.
+개요와 로컬 명령은 [README.md](../README.md), 분류 판단 기준은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다. 이 도구를 에이전트에게 맡기려면 13절을 본다.
 
 ---
 
@@ -285,3 +285,49 @@ ChatGPT 내부 API가 바뀐 것일 수 있다. [API_COMPATIBILITY.md](../API_CO
 ## 12. 안전 요약
 
 ChatGPT를 바꾸는 것은 화면에서 승인한 것뿐이고, 세션·토큰·쿠키는 ChatGPT 페이지 밖으로 나가지 않으며, `data/`·`.local/`은 커밋하지 않는다. 자세한 안전 장치와 데이터가 컴퓨터 밖으로 나가는 유일한 경우(외부 AI 분류)는 [README.md](../README.md)의 "안전 장치"·"데이터와 백업"에 있다. 이 도구는 비공식 API를 쓰므로 계정 약관 확인은 사용자 책임이다.
+
+---
+
+## 13. 에이전트에게 설치·운영을 맡길 때
+
+코딩 에이전트(Claude Code, Codex 등)에게 맡기는 경우의 안내다. 에이전트가 대신할 수 없는 일이 있다: ChatGPT 로그인 세션은 사용자의 브라우저 안에만 있어야 하므로 북마클릿 클릭(7단계)은 **사람이 직접** 한다. 세션 JSON이나 토큰을 에이전트 대화에 붙여넣으라는 요구는 잘못된 요구다. 실제 ChatGPT 변경은 화면에서 승인한 것만 적용되며, 실행 기록·삭제후보 목록·분류체계는 데이터 폴더에만 남는다.
+
+### 설치 요청문
+
+그대로 복사해 에이전트에게 주면 된다.
+
+```text
+이 저장소를 내 컴퓨터에 설치하고 첫 실행까지 준비해줘.
+
+https://github.com/yimsemin/chatgpt-conversation-maintenance
+
+먼저 README.md 와 docs/GETTING_STARTED.md 를 읽어. 그리고 AGENTS.md 를 읽어 —
+이 저장소에서 에이전트가 지켜야 할 규칙이 거기 있다.
+
+해줄 일:
+1. 저장소를 클론하고 Node.js 24 이상이 있는지 확인한다. 없으면 설치 방법을 알려줘.
+2. npm install 로 첫 설정을 한다.
+3. npm test 와 npm run repo:check 가 통과하는지 확인한다.
+4. 데이터 폴더 위치를 알려준다. 기본값(<저장소>/data/)을 그대로 쓸지,
+   내 백업 프로그램이 감시하는 폴더로 바꿀지 물어봐.
+5. 삭제후보를 옮겨 둘 프로젝트를 어떻게 할지 물어봐(자동 · 이름을 정해 둔 프로젝트 · 옮기지 않고 표시만). 정하면 .local/config.json 의 "trash" 설정(docs/GETTING_STARTED.md 5단계)으로 적어줘. 프로젝트 주소나 ID는 적지 말고 이름만 써.
+6. npm run app 으로 로컬 화면을 띄우고, 북마클릿 설치·클릭으로 연결한 뒤 수집 범위를 골라 "이 범위 수집"을 누르는 순서를 내가 따라 할 수 있게 안내해줘.
+
+하지 말아야 할 일:
+- 내 ChatGPT 세션 JSON 이나 토큰을 요구하거나 대화에 남기지 마. 그건 내가 브라우저에서
+  북마클릿으로 직접 전달한다.
+- 내 ChatGPT 대화를 읽거나 바꾸려고 시도하지 마. 수집과 적용은 내가 화면에서 시작한다.
+- data/ 나 .local/ 을 커밋하지 마.
+- 내 브라우저 프로필이나 쿠키 파일을 직접 읽지 마.
+```
+
+### 운영을 맡길 때
+
+분류 제안처럼 판단이 필요한 작업은 에이전트에게 맡길 수 있다. 수집이 끝나면 화면이 에이전트에게 전달할 한 문장을 보여 주고(`npm run brief`의 "다음"이 가리키는 파일을 에이전트가 읽는다), 파일 접근이 없는 곳에 붙여넣을 요청문과 최소 요청문은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다. 데이터 폴더에 분류체계(`classification-taxonomy.md`)가 있으면 함께 읽게 한다. 제안은 승인이 아니므로 사용자가 확인하기 전에는 `reviewed: true`를 만들거나 적용을 실행하지 않게 한다.
+
+**분류체계를 먼저 만들어 두는 편이 낫다.** 없으면 실행마다 프로젝트 경계가 흔들려 비슷한
+프로젝트가 늘어난다. 형식은 [../templates/classification-taxonomy.example.md](../templates/classification-taxonomy.example.md)를 참고한다.
+
+### 에이전트가 넘지 말아야 할 선
+
+세션 토큰·쿠키·브라우저 프로필을 읽지 않고, 승인 없이 ChatGPT 상태를 바꾸지 않고, `data/`·`.local/`을 커밋하지 않는 것이 핵심이다. 전부 [AGENTS.md](../AGENTS.md)에 있다.

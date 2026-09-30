@@ -24,7 +24,7 @@
 
 - `src/repo-check.js`가 `os.homedir()` 기준 개인 절대경로와 비밀 형태를 동적으로 검사한다(테스트 픽스처는 합성 데이터만 쓴다).
 - 실행 산출물·삭제후보 목록·분류체계는 데이터 폴더에만 있고 `.gitignore`와 `npm run repo:check`가 이중으로 막는다.
-- 데이터 폴더 규약·계정 요건·비공식 API 한계는 [GETTING_STARTED.md](GETTING_STARTED.md), [AGENT_SETUP.md](AGENT_SETUP.md), README에 있다.
+- 데이터 폴더 규약·계정 요건·비공식 API 한계는 [GETTING_STARTED.md](GETTING_STARTED.md), README에 있다.
 
 ## 참고
 

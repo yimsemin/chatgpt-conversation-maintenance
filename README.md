@@ -2,7 +2,7 @@
 
 > **처음이신가요?** 설치부터 첫 정리까지 단계별로 → [시작하기 가이드](docs/GETTING_STARTED.md)
 >
-> **에이전트에게 설치를 맡기려면** → [에이전트 설치·운영 안내](docs/AGENT_SETUP.md)
+> **에이전트에게 설치를 맡기려면** → 같은 가이드의 [13절](docs/GETTING_STARTED.md#13-에이전트에게-설치운영을-맡길-때)
 
 ## 이 도구는 무엇인가
 
@@ -105,7 +105,7 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 | 문서 | 내용 |
 | --- | --- |
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | 비개발자용 설치·사용 가이드, 문제 해결 |
-| [docs/AGENT_SETUP.md](docs/AGENT_SETUP.md), [AGENTS.md](AGENTS.md) | 에이전트에게 맡길 때, 에이전트의 시작 순서와 안전 경계 |
+| [AGENTS.md](AGENTS.md) | 에이전트의 시작 순서와 안전 경계 |
 | [docs/GOALS.md](docs/GOALS.md) | 왜 이렇게 정리하는가 |
 | [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md) | 삭제·제목·프로젝트 판단 기준, 제안·승인 파일 형식 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·파일 계약, 반복된 함정 |

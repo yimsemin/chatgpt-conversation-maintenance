@@ -34,8 +34,7 @@
 | `docs/ARCHITECTURE.md` | 구조를 바꾸기 전 (왜 이렇게 됐는지) |
 | `API_COMPATIBILITY.md` | 비공식 API가 안 될 때, op를 추가할 때 |
 | `docs/PRIVACY.md` | 공개 전환·데이터 노출 관련 결정 |
-| `docs/GETTING_STARTED.md` | **처음 설치·설정할 때 한 번** (평소에는 읽지 않는다) |
-| `docs/AGENT_SETUP.md` | 에이전트에게 설치를 맡길 때 |
+| `docs/GETTING_STARTED.md` | **처음 설치·설정할 때 한 번**, 에이전트에게 설치를 맡길 때(13절) (평소에는 읽지 않는다) |
 | `README.md`, `templates/` | 개요·형식 예시가 필요할 때 |
 
 같은 규칙을 여러 문서에 복사하지 않는다. 문서와 코드가 어긋나면 현재 구현·테스트와 원격 상태를 확인해 해당 책임 문서를 함께 고친다.
