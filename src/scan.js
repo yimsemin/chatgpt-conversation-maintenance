@@ -92,7 +92,7 @@ function storedBodyRecord(file, catalogItem, backupFile) {
 }
 
 // 받지 못하는 대화 건너뛰기: 이 횟수만큼 시도해도 응답이 실패로 오면 그 대화만 건너뛴다(첫 시도 포함).
-export const SKIP_AFTER_FAILURES = 4;
+const SKIP_AFTER_FAILURES = 4;
 
 // 이전 수집 실행의 본문 폴더(json/)를 새 것부터 돌려준다. 그 안의 본문은 아직 수정되지 않았으면 다시 받지 않고 재활용한다.
 export function reusableBodyDirs(dataDir, excludeRunDir) {

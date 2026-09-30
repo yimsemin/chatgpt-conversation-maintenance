@@ -12,7 +12,7 @@ import { timeMilliseconds } from "./catalog.js";
 const MAINTENANCE_DECISIONS = new Set(["keep", "delete"]);
 
 // 보존 대화의 프로젝트는 선택이다(프로젝트 없음이 정상). 값이 있으면 다듬어진 이름이어야 한다.
-export function assertOptionalProjectName(value, label) {
+function assertOptionalProjectName(value, label) {
   if (value === undefined || value === null) return;
   assert(typeof value === "string" && value.trim() === value && value.length > 0,
     `${label} must be empty or a trimmed project name`);

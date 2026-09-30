@@ -11,7 +11,7 @@ const PAGE_SIZE = 100;
 const PROJECT_PAGE_SIZE = 20;
 const PROJECT_CONVERSATION_PAGE_SIZE = 50;
 // "untidy" 범위: 표준 제목 대화가 수정순으로 이만큼 연달아 나오면 이미 정돈된 구간으로 보고 읽기를 멈춘다.
-export const UNTIDY_STOP_STREAK = 3;
+const UNTIDY_STOP_STREAK = 3;
 
 // 같은 시각이 엔드포인트에 따라 ISO 문자열이나 epoch 초 실수로 오므로 정수 밀리초로 맞춘다.
 // Date.parse 는 밀리초 아래를 버리므로 실수 쪽도 내림해야 같은 값이 된다.

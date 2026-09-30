@@ -20,7 +20,7 @@ function titleLength(title) {
 }
 
 // 제목의 주제(` — ` 앞)가 소속 프로젝트의 이름·핵심어를 그대로 되풀이하는지(동어반복). 프로젝트 이름의 앞 연월(YYMM)·gh_ 접두어는 뺀다.
-export function repeatsProjectName(title, projectName) {
+function repeatsProjectName(title, projectName) {
   if (!projectName) return false;
   const squash = (text) => text.replace(/[\s_·]+/g, " ").trim();
   const core = squash(projectName.replace(/^\d{4}\s*/, "").replace(/^gh_/, ""));
