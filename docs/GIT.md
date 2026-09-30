@@ -1,6 +1,6 @@
 # Git 워크플로
 
-커밋·푸시·병합을 하기 직전에만 읽는다. 개인용 저장소이며 공개 가능한 상태다(공개 전환 자체는 사용자 결정).
+커밋·푸시·병합을 하기 직전에만 읽는다. 개인용 저장소이며 공개 가능한 상태다(공개 전환 자체는 사용자 결정, 점검은 맨 아래 "공개 전 점검").
 
 ## 원칙
 
@@ -51,3 +51,32 @@ git branch -d <브랜치>
 - **저장소를 공개로 전환한다.** 사용자가 명시적으로 요청할 때만 `gh repo edit --visibility public`을 실행한다. 제안은 할 수 있다.
 - 다른 프로젝트의 코드를 복사해 넣는다. `API_COMPATIBILITY.md`가 참고로 연결한 저장소들도 계약 확인에만 쓴다.
 - 되돌리기 어려운 Git 작업(브랜치 강제 삭제, 태그 삭제, reset --hard on shared refs)을 사용자 확인 없이 한다.
+
+## 공개 전 점검
+
+공개 전환 전에 아래를 확인한다. 전환 자체는 점검이 끝나도 에이전트가 알아서 하지 않고 사용자가 명시적으로 요청할 때만 한다(위 "하지 않는 것").
+
+### 공개 시점의 저장소 내용
+
+**있어야 하는 것**: 코드, 테스트, `docs/`, 기준 문서(`AGENTS.md`, `README.md`, `API_COMPATIBILITY.md`, `CLASSIFICATION_WORKFLOW.md`), `templates/`, `.gitignore`의 `/data/`
+
+**없어야 하는 것**: `data/`, `.local/`, 세션·쿠키·브라우저 프로필 파일, 대화 제목·프로젝트명이 담긴 파일, ChatGPT 프로젝트 주소·ID(데이터 폴더의 `known-projects.json`은 Git 밖이라 예외)
+
+### 공개 직전 확인
+
+- [ ] `npm run repo:check` 통과
+- [ ] `npm test` 통과
+- [ ] `git status --short --ignored`에 추적된 무시 대상 없음
+- [ ] `git log --all --name-only --pretty=format:` 에 `data/`·`.local/`·세션 파일 없음
+- [ ] 새 클론에서 `npm install` → `npm test` → `npm run app`이 개인 데이터 없이 동작
+
+### 상시 보장되는 것
+
+- `src/repo-check.js`가 `os.homedir()` 기준 개인 절대경로와 비밀 형태를 동적으로 검사한다(테스트 픽스처는 합성 데이터만 쓴다).
+- 실행 산출물·삭제후보 목록·분류체계는 데이터 폴더에만 있고 `.gitignore`와 `npm run repo:check`가 이중으로 막는다.
+- 데이터 폴더 규약·계정 요건·비공식 API 한계는 [GETTING_STARTED.md](GETTING_STARTED.md), README에 있다.
+
+### 참고
+
+- 모든 커밋 author가 개인 이메일(`<personal-email>`)이다. 공개해도 무방하다고 판단했다. 원치 않으면 이후 커밋부터 별도 identity를 쓴다.
+- 커밋 메시지에 AI 생성 표식·co-author 트레일러를 넣지 않는다. `.githooks/commit-msg`가 제거한다.

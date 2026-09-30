@@ -82,7 +82,7 @@ Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 4
 
 Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`), 작업 로그(`jobs/`), 삭제후보 목록(`trash.json`), 알려진 프로젝트 이름(`known-projects.json`), 잠금, 분류체계(`classification-taxonomy.md`, 형식은 [templates/](templates/classification-taxonomy.example.md))는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 두며 `.gitignore`와 `npm run repo:check`가 막는다. 세션·쿠키·환경 파일은 어디에도 저장하지 않는다.
 
-정리는 **한 컴퓨터에서만** 한다. 백업·동기화는 사용자의 백업 프로그램이 하고 GitHub는 그 경로에 쓰지 않는다. 공개 전 점검은 [docs/PRIVACY.md](docs/PRIVACY.md).
+정리는 **한 컴퓨터에서만** 한다. 백업·동기화는 사용자의 백업 프로그램이 하고 GitHub는 그 경로에 쓰지 않는다. 공개 전 점검은 [docs/GIT.md](docs/GIT.md).
 
 **한 가지 예외:** 선택 경로인 외부 AI 분류를 쓰면 후보 대화의 **발췌본**(요청문에 넣는 `review.json` — 제목, 프로젝트명, 사용자 요청과 최종 응답의 앞뒤 일부)이 사용자가 직접 복사해 그 AI 서비스로 나간다([CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md)). 쓰지 않으면 대화 내용은 이 컴퓨터를 벗어나지 않는다.
 
@@ -111,7 +111,7 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·화면 설계와 용어·파일 계약, 반복된 함정 |
 | [API_COMPATIBILITY.md](API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
 | [docs/OVERHAUL.md](docs/OVERHAUL.md) | 전체 재정비 절차 |
-| [docs/GIT.md](docs/GIT.md), [docs/PRIVACY.md](docs/PRIVACY.md) | 커밋·병합 규칙, 공개 전 점검 |
+| [docs/GIT.md](docs/GIT.md) | 커밋·병합 규칙, 공개 전 점검 |
 
 분류 규칙이나 API 계약을 다른 문서에 복사하지 않는다. 문서와 구현이 다르면 코드·테스트·원격 상태를 대조해 해당 문서를 함께 고친다.
 
