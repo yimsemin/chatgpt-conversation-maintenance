@@ -9,7 +9,7 @@ import { runsDir } from "./data-dir.js";
 import { acquireLock, releaseLock } from "./maintenance-lock.js";
 import { applyPlanSet, preparePlanSet } from "./plan-set.js";
 import { finalizeMaintenanceRun } from "./finalize.js";
-import { describeScope, findPartialScan, finishPartialScan, scanMaintenanceRun, validateScope } from "./scan.js";
+import { describeScope, findPartialScan, finishPartialScan, reusableBodyDirs, scanMaintenanceRun, validateScope } from "./scan.js";
 import { prepareProjectRouting, projectRoutingStatus, runProjectRouting, validateProjectRouting } from "./project-routing.js";
 import { compileProjectRouting, compileReviewedDecisions } from "./decision-compile.js";
 import { writeClassificationReview } from "./classification-review.js";
@@ -103,13 +103,13 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFa
     acquireLock({ dataDir });
     lockHeld = true;
     const runDir = resumableRunDir(dataDir, validScope);
-    jobEvent(job, "scan", validScope.kind === "all"
-      ? "전체 조사: 모든 대화 본문을 받습니다. 이미 받은 것은 건너뜁니다(읽기 전용)."
-      : `대화 수집: ${describeScope(validScope)}를 후보로 받습니다. 끊긴 같은 범위 수집이 있으면 받아 둔 본문은 건너뜁니다(읽기 전용).`);
+    jobEvent(job, "scan", `${validScope.kind === "all" ? "전체 수집: 모든 대화" : `수집: ${describeScope(validScope)}`}의 본문을 받습니다. 이전에 받아 둔 본문은 그 뒤 수정되지 않았으면 다시 받지 않습니다(읽기 전용).`);
+    let reused = 0;
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
     const scanResult = await untilDone(job, "수집", () => scanMaintenanceRun({
-      runDir, api, scope: validScope, skipFailed, skipStandardTitles, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
+      runDir, api, scope: validScope, skipFailed, skipStandardTitles, reuseDirs: reusableBodyDirs(dataDir, runDir), onReuse: () => { reused += 1; }, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
+    if (reused) jobEvent(job, "scan", `이전 수집의 본문 ${reused}건을 다시 받지 않고 재활용했습니다.`);
     publishScan({ workspace, dataDir, job, runDir, scanResult, scope: validScope });
   } finally {
     if (lockHeld) releaseLock({ dataDir });

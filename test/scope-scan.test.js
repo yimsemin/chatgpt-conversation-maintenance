@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,7 @@ import test from "node:test";
 import { collectScopedCatalog } from "../src/catalog.js";
 import { orderOldestFirst } from "../src/decision-compile.js";
 import { checkRenameOrder } from "../src/finalize.js";
-import { countDownloaded, finishPartialScan, readScanDraft, scanMaintenanceRun, validateScope } from "../src/scan.js";
+import { countDownloaded, finishPartialScan, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
@@ -161,6 +161,33 @@ test("a resumed scan downloads again the conversations modified since their body
     try { await scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }); }
     finally { listItems[0].update_time = original; }
     assert.deepEqual(calls, [ID1, ID3, ID1, ID3, ID4], "ID1 is fetched again; the unmodified ones would be reused");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("bodies saved by an earlier run are reused only while the conversation is unmodified", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-reuse-"));
+  try {
+    const old = join(root, "runs", "old-run", "json");
+    mkdirSync(old, { recursive: true });
+    const saved = (id, title, updateTime) => writeFileSync(join(old, `${id}.json`), JSON.stringify({ conversation_id: id, id, title, update_time: updateTime,
+      mapping: { root: { id: "root", message: null }, one: { id: "one", message: { content: { parts: ["예전"] }, metadata: {} } } } }));
+    saved(ID1, "미배치 — 하나", Date.parse(day(1)) / 1000 + 0.2); // 목록과 같은 상태(0.2초 어긋남)
+    saved(ID3, "사용자 정의 GPT — 대화", Date.parse(day(3)) / 1000 - 3600); // 그 뒤 수정됨
+    const fake = api();
+    const fetched = [];
+    const body = fake.getConversation;
+    fake.getConversation = async (id) => { fetched.push(id); return body(id); };
+    const reused = [];
+    const dirs = reusableBodyDirs(root, join(root, "runs", "new-run"));
+    assert.deepEqual(dirs, [old], "the current run is never its own source");
+    const result = await scanMaintenanceRun({ runDir: join(root, "runs", "new-run"), api: fake, scope: { kind: "unassigned" }, reuseDirs: dirs, now: () => NOW,
+      onReuse: (item) => reused.push(item.conversationId) });
+    assert.deepEqual(reused, [ID1]);
+    assert.deepEqual(fetched.sort(), [ID3, ID4].sort(), "the modified and the missing conversation are downloaded");
+    assert.equal(result.inventory.counts.candidates, 3);
+    assert.equal(JSON.parse(readFileSync(join(root, "runs", "new-run", "json", `${ID1}.json`), "utf8")).mapping.one.message.content.parts[0], "예전", "the reused body is copied into the new run");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
