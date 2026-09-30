@@ -137,7 +137,7 @@ function trashCallout() {
   if (!trash?.count) return null;
   return h("div", { class: "callout" },
     h("strong", { text: `삭제후보 ${trash.count}건` }), ` — ChatGPT의 `, h("b", { text: `「${trash.project}」` }),
-    ` 프로젝트에 옮겨 두었습니다${trash.oldestDays ? `(가장 오래된 것은 ${trash.oldestDays}일 전)` : ""}. 직접 확인해 지우거나 살리세요. `,
+    ` 프로젝트에 옮겨 두었습니다${trash.oldestDays ? `(가장 오래된 것은 ${trash.oldestDays}일 전)` : ""}. 삭제하거나 복원하세요. `,
     h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = "trash"; S.panelKey = ""; hooks.render(); } }, "삭제후보 확인"));
 }
 

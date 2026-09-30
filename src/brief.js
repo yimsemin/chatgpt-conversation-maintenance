@@ -51,7 +51,7 @@ export function nextAction({ lock, run }) {
     return { actor: "user", text: "다른 실행이 잠금을 잡고 있다. 그 실행이 끝났는지 확인 후 node maintenance-lock.js release" };
   }
   if (!run || run.phase === PHASE.COMPLETE) {
-    return { actor: "user", text: "화면에서 수집 범위를 고르고 '이 범위 수집'을 누른다(에이전트는 스캔하지 않는다)" };
+    return { actor: "user", text: "화면에서 수집 범위를 고르고 '이 범위 수집'을 누른다(에이전트는 수집하지 않는다)" };
   }
   if (run.phase === PHASE.READY_TO_APPLY) {
     return { actor: "user", text: "화면에서 검토가 끝난 결정의 '적용 시작'을 누른다" };
