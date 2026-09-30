@@ -1,7 +1,7 @@
 // 삭제후보 확인 패널: 삭제후보 프로젝트에 옮겨 둔 대화를 삭제하거나 원래 자리로 되돌린다.
 import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
-import { fill, h } from "/assets/dom.js";
+import { $, fill, h } from "/assets/dom.js";
 import { startTrashSync } from "/assets/panel-scan.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";

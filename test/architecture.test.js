@@ -63,6 +63,28 @@ test("screen scripts import only screen modules or the shared pure modules", () 
   }
 });
 
+// 화면 스크립트는 브라우저에서만 실행돼 다른 시험이 닿지 않는다. 다른 모듈이 내보내는 함수를 부르면서 import 하지 않은 실수를 잡는다
+// (삭제후보 화면이 `$ is not defined` 로 열리지 않았던 문제).
+test("screen scripts import every helper they call from another screen module", () => {
+  const dir = join(ROOT, "public", "assets");
+  const names = readdirSync(dir).filter((item) => item.endsWith(".js"));
+  const sources = new Map(names.map((name) => [name, readFileSync(join(dir, name), "utf8")]));
+  const exported = new Map();
+  for (const [name, source] of sources) {
+    for (const match of source.matchAll(/^export (?:async )?function (\$|\w+)|^export const (\$|\w+)/gm)) exported.set(match[1] || match[2], name);
+  }
+  for (const [name, source] of sources) {
+    for (const [symbol, owner] of exported) {
+      if (owner === name) continue;
+      const escaped = symbol.replace(/\$/g, "\\$");
+      if (!new RegExp(`(?<![\\w$.])${escaped}\\(`).test(source)) continue;
+      const imported = new RegExp(`import\\s*\\{[^}]*(?<![\\w$])${escaped}(?![\\w$])[^}]*\\}`).test(source);
+      const local = new RegExp(`(?:function\\s+${escaped}\\b|(?:const|let)\\s+${escaped}\\b|\\(${escaped}\\)\\s*=>|\\b${escaped}\\s*=>|[{,(]\\s*${escaped}\\s*[,})=])`).test(source);
+      assert.ok(imported || local, `${name} calls ${symbol}() from ${owner} without importing it`);
+    }
+  }
+});
+
 test("environment variables are read only in config.js", () => {
   for (const name of files) {
     if (["config.js", "repo-check.js", "launcher.js", "data-dir.js", "app-version.js"].includes(name)) continue;

@@ -277,14 +277,14 @@ function destinationSection(all) {
       if (ids.length) patchMany(ids, releaseChanges({ groupTrash: group }, offValue));
     }
   };
-  const scope = { all: "전체", move: "프로젝트 이동", trash: "삭제후보" }[destFilter];
+  const scope = { all: "모두", move: "프로젝트 이동", trash: "삭제후보" }[destFilter];
   const listOff = list.filter((e) => e.off).length;
-  const note = list.length > PAGE_SIZE ? "전체 적용·해제는 이 탭의 다른 쪽 항목까지 모두 바꿉니다." : "";
+  const note = list.length > PAGE_SIZE ? "모두 적용·해제는 이 탭의 다른 쪽 항목까지 바꿉니다." : "";
   return section("옮길 곳", all.length, [
     h("div", { class: "seg" }, tab("all", "전체", all.length), tab("move", "프로젝트 이동", count((e) => !e.groupTrash)), tab("trash", "삭제후보", count((e) => e.groupTrash))),
     h("div", { class: "bulk" },
-      h("button", { class: "btn ghost", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope} 전체 적용`),
-      h("button", { class: "btn ghost", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope} 전체 해제`),
+      h("button", { class: "btn ghost", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope} 모두 적용`),
+      h("button", { class: "btn ghost", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope} 모두 해제`),
       note ? h("span", { class: "muted small", text: note }) : null),
     list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: "이 탭에 항목이 없습니다." })],
   true, "삭제후보로 제안된 대화도 여기서 되살리거나 다른 프로젝트로 보낼 수 있습니다. ‘프로젝트 없음’을 고르면 현재 프로젝트 안의 대화는 앱이 뺄 수 없어 결과 화면에서 직접 하실 일로 안내합니다.",
@@ -314,11 +314,11 @@ function destinationItem(e) {
 
 // 목록의 모든 항목을 한 번에 적용하거나(체크) 적용 안 함(해제)으로 바꾼다.
 function bulkBar(list, flag, label, off) {
-  const note = list.length > PAGE_SIZE ? "전체 적용·해제는 다른 쪽의 항목까지 모두 바꿉니다." : "";
+  const note = list.length > PAGE_SIZE ? "모두 적용·해제는 다른 쪽 항목까지 바꿉니다." : "";
   const ids = list.map((x) => x.conversationId);
   return h("div", { class: "bulk" },
-    h("button", { class: "btn ghost", type: "button", disabled: off === 0 ? true : null, onclick: () => patchMany(ids, { [flag]: false }) }, `${label} 전체 적용`),
-    h("button", { class: "btn ghost", type: "button", disabled: off === ids.length ? true : null, onclick: () => patchMany(ids, { [flag]: true }) }, `${label} 전체 해제`),
+    h("button", { class: "btn ghost", type: "button", disabled: off === 0 ? true : null, onclick: () => patchMany(ids, { [flag]: false }) }, `${label} 모두 적용`),
+    h("button", { class: "btn ghost", type: "button", disabled: off === ids.length ? true : null, onclick: () => patchMany(ids, { [flag]: true }) }, `${label} 모두 해제`),
     note ? h("span", { class: "muted small", text: note }) : null);
 }
 
