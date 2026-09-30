@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | 실행·상태 | `src/launcher.js`, `src/server.js`, `src/app-status.js` | 앱을 터미널 프로세스로 켜고(하나만) 끄기·상태 확인, `/health`·`/app/shutdown`, 프로세스·시작 시각·코드 변경 여부 |
 | 카탈로그 | `src/catalog.js`, `src/known-projects.js` | 수집: 완전한 전체 수집(프로젝트 순회)과 범위 수집(프로젝트 범위는 그 프로젝트만, 프로젝트 없는 대화는 프로젝트 목록 없이 대화 목록만, 최근 N일·미정돈(`untidy`, 표준 제목 3건 연속 전까지)은 목록 + 프로젝트 이름), 알려진 프로젝트 이름 사본 |
-| 스캔·결과 확정 | `src/scan.js`, `src/finalize.js` | 수집 범위 검증·후보 본문 받기·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
+| 스캔·결과 확정 | `src/scan.js`, `src/finalize.js` | 수집 범위 검증·후보 본문 받기(이전 실행의 수정되지 않은 본문 재활용)·인벤토리, 적용 뒤 결과 확정(결정·계획·영수증 대조, 결과 카탈로그, 제목 변경 뒤 목록 순서 확인) |
 | 분류 | `src/classification-criteria.js`, `src/classification-review.js`, `src/proposal-validation.js`, `src/decision-compile.js`, `src/workflow.js`(로컬 명령) | 판단 기준 압축본, `review.json`·요청문, 제안 검증, 결정 → 실행 계획 |
 | 적용 엔진 | `src/management.js`, `src/plan-set.js`, `src/project-management.js`, `src/project-routing.js` | 제목·삭제 계획, 배치 묶음, 프로젝트 생성·배치·이동 |
 | 순수 계산·상태 | `src/summary.js`, `src/session.js`, `src/errors.js`, `src/jobs.js`, `src/trash.js`, `src/phases.js`, `src/run-files.js`, `src/fs-json.js`, `src/config.js`, `src/data-dir.js` | 검토 요약·결과 보고, 단계·연결 판정, 오류 설명, 작업 로그·ETA, 삭제후보 목록, 단계 상수, 실행 폴더 파일 이름, JSON 원자적 입출력, 환경 변수, 데이터 폴더·삭제후보 설정 |
