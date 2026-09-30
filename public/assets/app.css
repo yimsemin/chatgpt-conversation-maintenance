@@ -49,6 +49,11 @@ main > * + * { margin-top:var(--s3); }
 .steps li.done { color:var(--good); }
 @media (max-width:600px) { .steps { gap:var(--s2); } .steps li:not(.current) .lbl { display:none; } .steps li b { margin-right:4px; } }
 
+/* 적용 중 세부 단계: 위쪽 5단계 표시와 구분되는 한 줄 */
+.substeps { display:flex; gap:var(--s1); flex-wrap:wrap; font-size:var(--fs-meta); color:var(--muted); margin:0; }
+.substeps span + span::before { content:"›"; margin-right:var(--s1); }
+.substeps .done { color:var(--good); } .substeps .current { color:var(--text); font-weight:600; }
+
 /* ---- 작업 영역: 소제목 → 도입문 → 내용. 블록 사이는 항상 --s2, 소제목(h3)만 --s3 ---- */
 .panel > * + *, .panel > div > * + * { margin-top:var(--s2); }
 /* 가로로 늘어놓는 묶음(칩·버튼 줄)의 항목에는 위쪽 간격을 주지 않는다 */
@@ -73,7 +78,6 @@ main > * + * { margin-top:var(--s3); }
   font:inherit; font-weight:650; cursor:pointer; text-decoration:none; }
 .btn:disabled { opacity:.45; cursor:not-allowed; }
 .btn.ghost { background:transparent; color:var(--text); border-color:var(--line); font-weight:500; }
-.btn.danger { background:var(--danger); border-color:var(--danger); color:#fff; }
 select, input[type=text], textarea { background:var(--surface); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font:inherit; font-size:var(--fs-meta); max-width:100%; }
 textarea { width:100%; }
 input.title-input { width:min(420px,100%); grid-column:1 / -1; }
@@ -120,7 +124,6 @@ details .body { padding:0 0 var(--s2); }
 .aside details:last-child { border-bottom:1px solid var(--line); }
 .aside .body > * + * { margin-top:var(--s2); }
 .guide-steps { padding-left:var(--s3); margin:0; } .guide-steps li { margin:var(--s1) 0; } #guide .who { color:var(--muted); font-style:normal; font-size:var(--fs-meta); }
-details.nested { border-top:0; } details.nested > summary { padding:var(--s1) 0; color:var(--accent); font-weight:500; }
 .acts { display:grid; gap:var(--s2); } .act p { margin:var(--s1) 0 0; }
 .recent .job { padding:var(--s1) 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
 

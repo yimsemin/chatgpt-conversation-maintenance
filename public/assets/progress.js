@@ -27,12 +27,12 @@ export function progressBlock(kind) {
 const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["routing", "프로젝트 이동"], ["verify", "변경 검증"], ["report", "보고서 작성"]];
 
 export function applyStages() {
-  const list = h("ol", { class: "steps" });
+  const list = h("p", { class: "substeps" });
   S.live.push(() => {
     const events = S.session?.job?.events || [];
     const stages = events.map((e) => e.stage);
     const idx = Math.max(-1, ...APPLY_STAGES.map(([id], i) => stages.lastIndexOf(id) >= 0 ? i : -1));
-    fill(list, ...APPLY_STAGES.map(([, label], i) => h("li", { class: i < idx ? "done" : i === idx ? "current" : "" }, label)));
+    fill(list, ...APPLY_STAGES.map(([, label], i) => h("span", { class: i < idx ? "done" : i === idx ? "current" : "" }, label)));
   });
   return list;
 }
