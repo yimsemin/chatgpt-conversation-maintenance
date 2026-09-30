@@ -136,6 +136,8 @@
 - **옵션** (요청 본문): `skipFailed`(기본 켬)는 `getConversation(id, { tries: 4 })`로 첫 시도 포함 4번만 시도하고 실패한 대화를 `inventory.skipped`에 기록해 넘어간다. 끄면 릴레이 기본 재시도 8회 뒤 예외로 멈추고 자동 재개가 반복한다. 릴레이 연결 끊김 같은 예외는 건너뛰지 않고 멈춘다. `skipStandardTitles`(기본 끔)는 표준 제목이거나 사용자가 제목 변경을 해제해 두고(`keptTitleMap`, 제목이 그대로인 동안) 있는 대화를 후보에서 빼고 `inventory.standardTitlesExcluded`에 센다. 제목만 보므로 프로젝트가 틀린 대화는 못 찾는다.
 - **본문 받기 순서**: 수정 시각 최신순. 대화마다 이 실행에 받은 본문 → 이전 실행의 본문(`reusableBodyDirs`, 새 실행 폴더로 복사) → ChatGPT. 저장된 본문은 `update_time`이 목록과 2초 안이고 제목이 같을 때만 쓴다(엔드포인트마다 0.1~0.3초 어긋난다). 그 뒤 수정된 대화는 새로 받는다.
 - **이어받기**: 범위별 `scan-<범위 해시>-<run-id>`(전체 범위는 `overhaul-`) 폴더를 인벤토리가 없고 24시간 안에 수정됐으면 `resumableRunDir`가 재사용한다. 지금까지 받은 본문만으로 분류를 진행할 수도 있다(`finishPartialScan`). 범위 해시는 `validateScope`가 돌려준 값의 JSON이라 필드 순서를 바꾸면 이어받기가 끊긴다.
+- **연결 끊김 대기**: 정리 창(ChatGPT 연결)이 끊기면 `createRelayApi`가 재시도 횟수를 쓰지 않고 다시 연결될 때까지(최대 30분, 사용자 중단 가능) 기다리며 작업 로그에 한 번 알린다. 응답 시간 초과 뒤 연결이 끊긴 것으로 판정돼도 같다.
+- **수집 중 제목 변경**: 본문을 받는 사이 ChatGPT가 제목을 붙이거나 바꾸면 방금 받은 본문의 제목을 후보의 제목으로 쓴다(저장된 본문 재사용은 제목이 같아야 한다).
 - **쓰기 간격**: 읽기와 쓰기가 같은 계정 한도를 쓰므로 `createPacer` 상태를 공유한다. 쓰기는 고정 간격(`requestDelayMs`)을 바닥으로 두되 429 뒤 늘어난 간격을 따른다. 적용에는 건너뛰기 설정이 없다(쓰기는 순서·모호한 결과 때문에 건너뛰면 검증이 깨진다).
 - **`npm run runs:prune`**: 같은 대화의 본문이 여러 실행에 있으면 수정 시각이 가장 새로운 하나만 남긴다(수집 재활용 저장소이기도 하다). 진행 중인 실행 폴더·인벤토리 없는 이어받기 폴더·`trash.json`이 가리키는 파일은 남기고, 결정·계획·영수증·보고서는 건드리지 않는다. 기본은 미리보기이고 `--apply`에서만 잠금을 잡고 지운다.
 - **개발·시험용 환경 변수**(`src/config.js`만 읽는다): `MAINTENANCE_PORT`, `MAINTENANCE_REQUEST_DELAY_MS`, `MAINTENANCE_RELAY_BACKOFF_MS`, `MAINTENANCE_RESUME_WAIT_SECONDS`, `MAINTENANCE_ROOT`. 실제 사용에서는 설정하지 않는다.
