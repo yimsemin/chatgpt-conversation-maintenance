@@ -1,7 +1,7 @@
 // 화면 시작점: 세션 상태에 따라 위쪽 카드·단계 표시·패널을 그린다.
 import { startRelay } from "/assets/relay-client.js";
 import { S, STEPS, hooks } from "/assets/state.js";
-import { $, ago, ask, duration, fill, h, meta } from "/assets/dom.js";
+import { $, ask, duration, fill, h, meta, when } from "/assets/dom.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, progressBlock } from "/assets/progress.js";
@@ -111,15 +111,15 @@ function renderNow() {
   } else if (step === "scan") {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
     headline = allClear ? "이 범위에는 정리할 대화가 없습니다" : "수집할 범위를 고르세요";
-    sub = s.run ? `마지막 수집 ${ago(s.run.updatedAt)}` : "아직 수집한 기록이 없습니다";
+    sub = s.run ? `마지막 수집 ${when(s.run.updatedAt)}` : "아직 수집한 기록이 없습니다";
   } else if (step === "proposal") {
-    headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = `${scopeLabel(s.run?.scope)} · AI 에이전트에게 분류를 맡기세요.`;
+    headline = `후보 ${s.run?.candidates ?? "?"}건의 분류가 필요합니다`; sub = `${scopeLabel(s.run?.scope)} · ${when(s.run?.updatedAt)} 수집 · AI 에이전트에게 분류를 맡기세요.`;
     action = restartButton();
   } else if (step === "review") {
-    headline = "분류 제안을 검토하세요"; sub = `${scopeLabel(s.run?.scope)} · 후보 ${s.run?.candidates ?? "?"}건`;
+    headline = "분류 제안을 검토하세요"; sub = `${scopeLabel(s.run?.scope)} · 후보 ${s.run?.candidates ?? "?"}건 · ${when(s.run?.updatedAt)} 수집`;
     action = restartButton();
   } else if (step === "result") {
-    headline = s.report?.headline || "정리가 끝났습니다"; sub = `${ago(s.report?.finishedAt)} 완료`;
+    headline = s.report?.headline || "정리가 끝났습니다"; sub = `${when(s.report?.finishedAt)} 완료`;
     action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.panelKey = ""; render(); } }, "새 정리 시작");
   }
   fill($("now"), h("div", {}, h("p", { class: "headline", text: headline }), h("p", { class: "sub", text: sub })), action);
@@ -154,7 +154,7 @@ function buildPanel(step) {
 function renderRecent() {
   const jobs = S.session?.recentJobs || [];
   fill($("recent"), ...(jobs.length ? jobs.map((j) => h("div", { class: "job" },
-    h("strong", { text: `${j.kind === "apply" ? "적용" : "수집"} · ${ago(j.startedAt)} · ${!j.done ? "진행 중" : j.ok ? "성공" : j.interrupted ? "중단됨" : "실패"}` }),
+    h("strong", { text: `${j.kind === "apply" ? "적용" : "수집"} · ${when(j.startedAt)} · ${!j.done ? "진행 중" : j.ok ? "성공" : j.interrupted ? "중단됨" : "실패"}` }),
     j.error ? h("div", { class: "muted", text: j.error.message }) : h("div", { class: "muted", text: j.events.at(-1)?.message || "" }))) : [h("p", { class: "muted", text: "기록이 없습니다." })]));
 }
 

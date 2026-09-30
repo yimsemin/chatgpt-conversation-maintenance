@@ -1,6 +1,6 @@
 // 확인 패널(수집 범위 선택)과 적용 대기 패널.
 import { S, hooks } from "/assets/state.js";
-import { ago, ask, h } from "/assets/dom.js";
+import { ask, h, when } from "/assets/dom.js";
 import { fail, post, toast } from "/assets/net.js";
 import { projectIdFromLink } from "/assets/shared/project-link.js";
 import { refreshSession } from "/assets/session-client.js";
@@ -156,7 +156,7 @@ export function scanPanel() {
     option("app_skip_failed", skipFailedOn(), "받아지지 않는 대화는 4회 실패하면 건너뛰기", "끄면 전부 받을 때까지 재시도하며, 안 열리는 대화에서 멈춥니다."),
     option("app_skip_standard", skipStandardOn(), "표준 제목인 대화는 받지 않기", "제목 변경을 해제해 둔 대화도 뺍니다. 제목만 정리할 때 빠르지만 프로젝트가 틀린 대화는 찾지 못합니다."),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, "이 범위 수집")),
-    last ? h("p", { class: "chip good", text: `이 범위에는 정리할 대화가 없습니다 · ${ago(last.updatedAt)} 수집` }) : null,
+    last ? h("p", { class: "chip good", text: `이 범위에는 정리할 대화가 없습니다 · ${when(last.updatedAt)} 수집` }) : null,
     last?.standardTitlesExcluded ? h("p", { class: "muted small", text: `표준 제목이거나 제목을 그대로 두기로 한 대화 ${last.standardTitlesExcluded}건은 받지 않았습니다.` }) : null,
     last?.skipped?.length ? skippedCallout(last.skipped) : null,
     !s.relay?.connected ? h("p", { class: "muted small", text: "ChatGPT에 연결되면 ‘이 범위 수집’ 버튼이 켜집니다." }) : null,

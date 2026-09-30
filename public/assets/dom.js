@@ -64,3 +64,17 @@ export function ask({ title, lines = [], ok = "계속", ack = null }) {
     dialog.showModal();
   });
 }
+
+// 시각을 "10/1(수) 01:23"으로(올해가 아니면 연도도). 어느 시점의 일인지 헷갈리지 않게 상대 표현 옆에 붙인다.
+export function stamp(iso) {
+  const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
+  const day = "일월화수목금토"[d.getDay()];
+  const year = d.getFullYear() === new Date().getFullYear() ? "" : `${d.getFullYear()}/`;
+  return `${year}${d.getMonth() + 1}/${d.getDate()}(${day}) ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// "5분 전 · 10/1(수) 01:23"
+export function when(iso) {
+  const at = stamp(iso);
+  return at ? `${ago(iso)} · ${at}` : ago(iso);
+}

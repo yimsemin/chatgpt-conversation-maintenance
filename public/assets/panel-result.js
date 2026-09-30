@@ -1,5 +1,7 @@
 // 정리 결과 패널.
-import { $, fill, h } from "/assets/dom.js";
+import { $, fill, h, stamp } from "/assets/dom.js";
+import { S } from "/assets/state.js";
+import { scopeLabel } from "/assets/panel-scan.js";
 import { api, fail } from "/assets/net.js";
 
 // ---------- step 5: result ----------
@@ -10,6 +12,7 @@ export async function loadResult() {
     const r = data.report; const todo = r.todo;
     const copy = (text) => h("button", { class: "btn ghost", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(text); e.target.textContent = "복사됨"; } }, "목록 복사");
     fill($("panel"), 
+      h("p", { class: "muted small", text: `${scopeLabel(S.session?.run?.scope)} · ${stamp(r.finishedAt)} 완료` }),
       h("p", { class: "muted small", text: r.note }),
       r.mismatches.length ? h("p", { class: "chip bad", text: `예상과 다른 프로젝트: ${r.mismatches.join(", ")}` }) : h("p", { class: "chip good", text: "모든 프로젝트가 예상과 일치합니다" }),
       r.renameOrder?.renamed ? h("p", { class: `chip ${r.renameOrder.preserved ? "good" : "bad"}`, text: r.renameOrder.preserved
