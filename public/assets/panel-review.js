@@ -89,12 +89,6 @@ export function projectNames() {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-function projectSelect(value, onchange, fk) {
-  const select = h("select", { "data-fk": fk, onchange: (e) => onchange(e.target.value) }, h("option", { value: "", text: "프로젝트 없음" }),
-    ...projectNames().map((n) => h("option", { value: n, text: n })));
-  select.value = value || ""; return select;
-}
-
 function drawReview() {
   const rows = effectiveRows();
   const summary = buildReviewSummary({ catalog: S.catalog, rows });

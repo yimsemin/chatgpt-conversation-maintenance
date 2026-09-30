@@ -28,7 +28,7 @@ function saveScope() { try { localStorage.setItem("app_scan_scope", JSON.stringi
 export function loadScope() {
   try {
     const saved = JSON.parse(localStorage.getItem("app_scan_scope") || "null");
-    if (saved?.kind) S.scope = { ...S.scope, ...saved, projectNames: Array.isArray(saved.projectNames) ? saved.projectNames : (saved.projectName ? [saved.projectName] : []) };
+    if (saved?.kind) S.scope = { ...S.scope, ...saved, projectNames: Array.isArray(saved.projectNames) ? saved.projectNames : [] };
   } catch {}
   if (!SCOPE_KINDS.some(([value]) => value === S.scope.kind)) S.scope.kind = "unassigned";
   if (!UNASSIGNED_WINDOWS.some(([value]) => value === S.scope.window)) S.scope.window = 14;
@@ -100,7 +100,7 @@ function projectChooser() {
 // 실행(run)에 기록된 수집 범위를 사람이 읽는 말로.
 export function scopeLabel(scope) {
   if (!scope) return "";
-  if (scope.kind === "project") return `프로젝트 ${(scope.projectNames || (scope.projectName ? [scope.projectName] : [])).map((name) => `「${name}」`).join(", ")}`;
+  if (scope.kind === "project") return `프로젝트 ${scope.projectNames.map((name) => `「${name}」`).join(", ")}`;
   if (scope.kind === "recent") return `최근 ${scope.days}일`;
   if (scope.kind === "untidy") return "아직 정돈되지 않은 대화";
   if (scope.kind === "all") return "모든 대화";
@@ -152,8 +152,6 @@ export function scanPanel() {
     s.partialScan ? h("div", { class: "callout" }, h("strong", { text: "끊긴 수집이 있습니다" }),
       ` — ${scopeLabel(s.partialScan.scope)} ${s.partialScan.total}건 중 ${s.partialScan.downloaded}건을 받아 두었습니다. 같은 범위로 다시 수집하면 나머지만 이어받습니다. `,
       h("button", { class: "btn ghost", type: "button", onclick: startPartialScan }, `받은 ${s.partialScan.downloaded}건으로 분류 진행`)) : null,
-    s.discardedRun ? h("div", { class: "callout" }, h("strong", { text: "이전 방식으로 만든 정리는 쓸 수 없어 버렸습니다" }),
-      ` — 예전 버전에서 시작한 정리(후보 ${s.discardedRun.candidates ?? "?"}건)는 지금의 수집 범위 방식과 맞지 않습니다. ChatGPT는 바뀌지 않았습니다. 아래에서 범위를 골라 새로 확인하세요.`) : null,
     scopePicker(),
     option("app_skip_failed", skipFailedOn(), "받아지지 않는 대화는 4회 실패하면 건너뛰기", "끄면 전부 받을 때까지 재시도하며, 안 열리는 대화에서 멈춥니다."),
     option("app_skip_standard", skipStandardOn(), "표준 제목인 대화는 받지 않기", "제목만 정리할 때 빠릅니다. 제목이 표준이어도 프로젝트가 틀린 대화는 찾지 못합니다."),

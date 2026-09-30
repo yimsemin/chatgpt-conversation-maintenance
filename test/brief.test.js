@@ -70,12 +70,3 @@ test("a live lock takes priority over other steps", () => {
   });
   assert.match(action.text, /잠금/);
 });
-
-test("a run made before scopes existed is ignored", () => {
-  const { root } = fixture({ pointer: { phase: "awaiting-proposal", result: { counts: { candidates: 130 } } }, files: ["review.json"] });
-  try {
-    const brief = buildBrief({ appRoot: root, now: NOW });
-    assert.equal(brief.run, null);
-    assert.match(brief.next.text, /수집 범위/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});

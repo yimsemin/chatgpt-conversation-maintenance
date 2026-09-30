@@ -73,7 +73,7 @@ export function buildBrief({ appRoot, dataDir = "", now = () => Date.now() } = {
   const dir = resolveDataDir({ dataDir, appRoot: resolvedRoot });
   const lock = lockStatus({ dataDir: dir, now });
   const pointer = readJsonOrNull(join(resolvedRoot, ".local", "maintenance-web.json"));
-  const run = pointer?.version === 1 && pointer.result?.scope ? describeRun(pointer) : null;
+  const run = pointer?.version === 1 ? describeRun(pointer) : null;
   const trash = readTrash(dir);
   return {
     lock: lock.locked ? { device: lock.holder?.device || null, stale: lock.stale } : null,
@@ -88,7 +88,7 @@ export function formatBrief(brief) {
   lines.push(`잠금: ${brief.lock ? `${brief.lock.device || "unknown"}${brief.lock.stale ? " (오래됨)" : ""}` : "없음"}`);
   if (brief.run) {
     const r = brief.run;
-    const scope = r.scope ? ` · 범위 ${r.scope.kind === "project" ? `프로젝트 ${(r.scope.projectNames || [r.scope.projectName]).join(", ")}` : r.scope.kind === "recent" ? `최근 ${r.scope.days}일` : r.scope.kind === "untidy" ? "미정돈" : r.scope.kind === "all" ? "전체" : "프로젝트 없는 대화"}` : "";
+    const scope = r.scope ? ` · 범위 ${r.scope.kind === "project" ? `프로젝트 ${r.scope.projectNames.join(", ")}` : r.scope.kind === "recent" ? `최근 ${r.scope.days}일` : r.scope.kind === "untidy" ? "미정돈" : r.scope.kind === "all" ? "전체" : "프로젝트 없는 대화"}` : "";
     lines.push(
       `최근 실행: ${r.runId} · ${r.phase}${scope} · 후보 ${r.candidates ?? "?"}건`
       + ` · 분류안 ${r.hasProposal ? "있음" : "없음"} · 결정 ${r.hasDecisions ? "있음" : "없음"} · 영수증 ${r.receipts}건`,

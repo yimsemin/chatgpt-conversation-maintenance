@@ -9,7 +9,7 @@
 
 import { createServer } from "node:http";
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -204,7 +204,3 @@ export function startServer() {
     process.on(signal, () => process.exit(0));
   }
 }
-
-// bin/cli.js가 import해서 명시적으로 시작한다. 직접 실행 시에만 자동 시작.
-const isDirect = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isDirect) startServer();

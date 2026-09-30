@@ -59,8 +59,7 @@ test("scope validation accepts only the five scope kinds", () => {
   assert.throws(() => validateScope({ kind: "everything" }), /종류/);
   assert.throws(() => validateScope({ kind: "recent", days: 0 }), /일수/);
   assert.throws(() => validateScope({ kind: "recent", days: 1.5 }), /일수/);
-  assert.throws(() => validateScope({ kind: "project", projectName: " A " }), /프로젝트 이름/);
-  assert.deepEqual(validateScope({ kind: "project", projectName: "A" }), { kind: "project", projectNames: ["A"] }, "the old single-name form is accepted");
+  assert.throws(() => validateScope({ kind: "project", projectNames: [" A "] }), /프로젝트 이름/);
   assert.deepEqual(validateScope({ kind: "project", projectNames: ["A", "B", "A"] }), { kind: "project", projectNames: ["A", "B"] });
   assert.throws(() => validateScope({ kind: "project", projectNames: [] }), /1~20/);
   assert.throws(() => validateScope(null), /범위/);

@@ -51,18 +51,7 @@ export function pointerPath(workspace) {
   return join(workspace, ".local", "maintenance-web.json");
 }
 
-// 수집 범위가 기록되지 않은 실행(범위 조사 이전 방식으로 만든 실행)은 현재 흐름과 맞지 않아 쓰지 않는다.
-function isCurrentPointer(pointer) {
-  return Boolean(pointer?.result?.scope);
-}
-
 export function readPointer(workspace, dataDir) {
-  const pointer = readRawPointer(workspace, dataDir);
-  return isCurrentPointer(pointer) ? pointer : null;
-}
-
-// 옛 방식 실행까지 포함해 읽는다(버려진 실행을 사용자에게 알리는 데만 쓴다).
-export function readRawPointer(workspace, dataDir) {
   const path = pointerPath(workspace);
   if (!existsSync(path)) return null;
   const pointer = readJson(path, "로컬 실행 상태");

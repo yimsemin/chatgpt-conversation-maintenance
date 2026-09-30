@@ -58,10 +58,10 @@ test("the known project list keeps the project id across later writes that do no
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("known projects accept the old names-only file and remember newly used projects without dropping others", () => {
+test("newly used projects are remembered without dropping the known ones", () => {
   const dir = mkdtempSync(join(tmpdir(), "known-projects-"));
   try {
-    writeFileSync(join(dir, "known-projects.json"), JSON.stringify({ version: 1, names: ["A", "B"] }));
+    writeKnownProjects(dir, [{ name: "A" }, { name: "B" }]);
     assert.deepEqual(readKnownProjects(dir).projects.map((p) => p.name), ["A", "B"]);
     rememberProjects(dir, ["C", "A"]);
     assert.deepEqual(readKnownProjects(dir).projects.map((p) => p.name).sort(), ["A", "B", "C"]);

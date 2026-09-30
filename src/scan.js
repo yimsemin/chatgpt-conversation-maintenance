@@ -31,8 +31,8 @@ export function validateScope(scope) {
   assert(scope && typeof scope === "object" && !Array.isArray(scope), "수집 범위가 올바르지 않습니다");
   assert(SCOPE_KINDS.includes(scope.kind), "수집 범위 종류가 올바르지 않습니다");
   if (scope.kind === "project") {
-    // 프로젝트 여러 개를 고를 수 있다(projectNames). 하나만 적은 옛 형식(projectName)도 받는다.
-    const names = Array.isArray(scope.projectNames) ? scope.projectNames : [scope.projectName];
+    const names = scope.projectNames;
+    assert(Array.isArray(names), "프로젝트 이름 목록이 필요합니다");
     assert(names.length >= 1 && names.length <= MAX_SCOPE_PROJECTS, `프로젝트는 1~${MAX_SCOPE_PROJECTS}개를 고르세요`);
     for (const name of names) {
       assert(typeof name === "string" && name.trim() === name && name.length > 0 && name.length <= 100, "프로젝트 이름이 올바르지 않습니다");

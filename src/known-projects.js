@@ -25,10 +25,6 @@ export function sortByRecency(projects) {
 export function readKnownProjects(dataDir) {
   try {
     const data = JSON.parse(readFileSync(join(dataDir, FILE), "utf8"));
-    // 이름만 적던 옛 형식(version 1)도 읽는다.
-    if (data?.version === 1 && Array.isArray(data.names)) {
-      return { updatedAt: data.updatedAt || null, projects: data.names.filter((name) => typeof name === "string").map((name) => ({ name })) };
-    }
     if (data?.version === 2 && Array.isArray(data.projects)) {
       return { updatedAt: data.updatedAt || null, projects: data.projects.filter((p) => typeof p?.name === "string") };
     }

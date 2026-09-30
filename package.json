@@ -4,9 +4,6 @@
   "private": true,
   "description": "Private, review-gated maintenance for ChatGPT conversations and projects",
   "type": "module",
-  "bin": {
-    "chatgpt-conversation-maintenance": "bin/cli.js"
-  },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
     "start": "node src/launcher.js",
