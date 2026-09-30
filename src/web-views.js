@@ -41,6 +41,7 @@ export function sessionData(workspace, dataDir) {
       candidates: pointer.result?.counts?.candidates ?? null,
       scope: pointer.result?.scope || null,
       skipped: pointer.result?.skipped || [],
+      standardTitlesExcluded: pointer.result?.standardTitlesExcluded || 0,
       hasProposal: existsSync(proposalPath),
       hasDecisions: existsSync(runFiles(pointer.runDir).decisions),
       hasReport: existsSync(runFiles(pointer.runDir).report),

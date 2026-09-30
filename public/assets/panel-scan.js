@@ -15,6 +15,8 @@ const UNASSIGNED_WINDOWS = [[14, "최근 14일"], [30, "최근 30일"], [0, "전
 // 받지 못하는 대화를 4회 실패 시 건너뛸지(기본 켬). 끄면 전부 받을 때까지 멈추고 재시도한다.
 function skipFailedOn() { try { return localStorage.getItem("app_skip_failed") !== "0"; } catch { return true; } }
 
+function skipStandardOn() { try { return localStorage.getItem("app_skip_standard") === "1"; } catch { return false; } }
+
 function saveScope() { try { localStorage.setItem("app_scan_scope", JSON.stringify(S.scope)); } catch {} }
 
 export function loadScope() {
@@ -108,10 +110,11 @@ function pendingRun() {
 function scanBody() {
   const { kind, projectNames, days, window } = S.scope;
   const skipFailed = skipFailedOn();
-  if (kind === "project") return { scope: { kind, projectNames }, skipFailed };
-  if (kind === "recent") return { scope: { kind, days }, skipFailed };
-  if (kind === "unassigned") return { scope: window ? { kind, days: window } : { kind }, skipFailed };
-  return { scope: { kind }, skipFailed };
+  const skipStandardTitles = skipStandardOn();
+  if (kind === "project") return { scope: { kind, projectNames }, skipFailed, skipStandardTitles };
+  if (kind === "recent") return { scope: { kind, days }, skipFailed, skipStandardTitles };
+  if (kind === "unassigned") return { scope: window ? { kind, days: window } : { kind }, skipFailed, skipStandardTitles };
+  return { scope: { kind }, skipFailed, skipStandardTitles };
 }
 
 // 받지 못해 건너뛴 대화 안내. 후보에서 빠졌으므로 나중에 같은 범위로 다시 확인하면 다시 시도한다.
@@ -150,8 +153,11 @@ export function scanPanel() {
     scopePicker(),
     h("label", { class: "check" }, h("input", { type: "checkbox", checked: skipFailedOn() ? true : null, onchange: (e) => { try { localStorage.setItem("app_skip_failed", e.target.checked ? "1" : "0"); } catch {} } }),
       " 받아지지 않는 대화는 4회 실패하면 건너뛰기(끄면 전부 받을 때까지 재시도하며, 안 열리는 대화가 있으면 거기서 멈춥니다)"),
+    h("label", { class: "check" }, h("input", { type: "checkbox", checked: skipStandardOn() ? true : null, onchange: (e) => { try { localStorage.setItem("app_skip_standard", e.target.checked ? "1" : "0"); } catch {} } }),
+      " 제목이 이미 표준 형식인 대화는 받지 않기(제목만 정리할 때 빠릅니다. 제목이 표준이어도 프로젝트가 틀린 대화는 찾지 못하니, 프로젝트 배치까지 볼 때는 끄세요)"),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, "이 범위 확인")),
     last ? h("p", { class: "chip good", text: `이 범위에는 정리할 대화가 없습니다 · ${ago(last.updatedAt)} 확인` }) : null,
+    last?.standardTitlesExcluded ? h("p", { class: "muted small", text: `표준 제목인 대화 ${last.standardTitlesExcluded}건은 받지 않았습니다.` }) : null,
     last?.skipped?.length ? skippedCallout(last.skipped) : null,
     !s.relay?.connected ? h("p", { class: "muted small", text: `${s.relay?.hint || ""} 연결되면 ‘이 범위 확인’ 버튼이 켜집니다.` }) : null,
     trashCallout());

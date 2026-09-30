@@ -56,13 +56,14 @@ function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
   const candidateCount = Number(counts?.candidates || 0);
   const partial = scanResult.inventory.partial || null;
   const skipped = scanResult.inventory.skipped || [];
+  const standardTitlesExcluded = scanResult.inventory.standardTitlesExcluded || 0;
   const pointer = {
     phase: candidateCount > 0 ? PHASE.AWAITING_PROPOSAL : PHASE.COMPLETE,
     runDir,
     inventoryPath,
     reviewPath: candidateCount > 0 ? reviewPath : null,
     proposalPath: runFiles(runDir).proposal,
-    result: { counts, warnings: scanResult.inventory.warnings || [], scope, ...(partial ? { partial } : {}), ...(skipped.length ? { skipped } : {}) },
+    result: { counts, warnings: scanResult.inventory.warnings || [], scope, ...(partial ? { partial } : {}), ...(skipped.length ? { skipped } : {}), ...(standardTitlesExcluded ? { standardTitlesExcluded } : {}) },
   };
   if (candidateCount > 0) {
     jobEvent(job, "review", "AI가 읽을 최소 분류 입력을 만듭니다.");
@@ -94,7 +95,7 @@ export async function partialScanWorkflow(workspace, dataDir, job) {
   }
 }
 
-export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFailed = false }) {
+export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFailed = false, skipStandardTitles = false }) {
   const validScope = validateScope(scope);
   let lockHeld = false;
   try {
@@ -107,7 +108,7 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFa
       : `대화 확인: ${describeScope(validScope)}를 후보로 받습니다. 끊긴 같은 범위 확인이 있으면 받아 둔 본문은 건너뜁니다(읽기 전용).`);
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
     const scanResult = await untilDone(job, "확인", () => scanMaintenanceRun({
-      runDir, api, scope: validScope, skipFailed, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
+      runDir, api, scope: validScope, skipFailed, skipStandardTitles, onSkip: (item) => jobEvent(job, "skip", `받지 못해 건너뜁니다(${item.status ?? "응답 없음"}): ${item.title}`), knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
     publishScan({ workspace, dataDir, job, runDir, scanResult, scope: validScope });
   } finally {

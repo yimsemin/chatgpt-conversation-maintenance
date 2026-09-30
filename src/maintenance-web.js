@@ -71,7 +71,7 @@ post("/maintenance/cancel", (ctx) => {
 
 post("/maintenance/scan", (ctx) => {
   const scope = validateScope(ctx.body.scope);
-  return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope, skipFailed: ctx.body.skipFailed === true }) });
+  return startJob(ctx, { run: (api, job) => scanWorkflow(ctx.workspace, ctx.dataDir, api, job, { scope, skipFailed: ctx.body.skipFailed === true, skipStandardTitles: ctx.body.skipStandardTitles === true }) });
 });
 // 끊긴 확인을 받아 둔 본문만으로 마무리한다. ChatGPT를 읽지 않으므로 릴레이 연결이 필요 없다.
 post("/maintenance/scan/partial", (ctx) => {

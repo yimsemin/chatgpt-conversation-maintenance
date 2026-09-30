@@ -13,6 +13,7 @@ export function proposalPanel() {
   return h("div", {},
     h("h2", { text: "2. 분류 제안 받기" }),
     h("p", { class: "muted", text: `확인된 후보 ${run?.candidates ?? "?"}건을 AI에게 분류시킬 차례입니다. 이 저장소를 열어 둔 AI 에이전트(Claude Code·Codex 등)에게 아래 문장을 그대로 전달하세요. 분류 제안이 만들어지면 이 화면이 저절로 다음 단계로 넘어갑니다.` }),
+    run?.standardTitlesExcluded ? h("p", { class: "muted small", text: `제목이 이미 표준 형식인 ${run.standardTitlesExcluded}건은 받지 않고 후보에서 뺐습니다.` }) : null,
     run?.skipped?.length ? skippedCallout(run.skipped) : null,
     h("p", { class: "small", text: "에이전트에게 전달할 문장:" }),
     h("div", { class: "callout", text: prompt }),

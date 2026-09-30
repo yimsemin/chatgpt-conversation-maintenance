@@ -194,6 +194,32 @@ test("skipFailed skips a conversation that keeps failing after four tries and re
   }
 });
 
+test("skipStandardTitles downloads only conversations whose title is not standard and counts the others", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-standard-"));
+  try {
+    const fake = api();
+    const items = [
+      { id: ID1, title: "정리 안 된 제목", update_time: day(1), gizmo_id: null },
+      { id: ID3, title: "표준 — 제목", update_time: day(3), gizmo_id: null },
+      { id: ID4, title: "또 안 된 제목", update_time: day(5), gizmo_id: null },
+    ];
+    fake.listConversations = async ({ archived, offset, limit }) => ok({ items: items.slice(offset, offset + limit), total: items.length, has_next: false });
+    const fetched = [];
+    const body = fake.getConversation;
+    fake.getConversation = async (id) => { fetched.push(id); const res = await body(id); res.data.title = items.find((item) => item.id === id).title; return res; };
+    const result = await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, skipStandardTitles: true, now: () => NOW });
+    assert.deepEqual(fetched, [ID1, ID4], "the standard-titled conversation is never downloaded");
+    assert.equal(result.inventory.counts.candidates, 2);
+    assert.equal(result.inventory.standardTitlesExcluded, 1);
+
+    const all = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
+    assert.equal(all.inventory.counts.candidates, 3);
+    assert.equal("standardTitlesExcluded" in all.inventory, false, "the option is off by default");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a scoped scan collects only the scope and records it in the inventory", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-scope-test-"));
   try {

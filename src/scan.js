@@ -7,6 +7,7 @@ import { writeJsonAtomic } from "./fs-json.js";
 import { attachmentReferenceCount, contentSha256, sha256 } from "./content-hash.js";
 import { runsDir } from "./data-dir.js";
 import { collectConversationCatalog, collectScopedCatalog, timeMilliseconds } from "./catalog.js";
+import { isNormalizedTitle } from "./title-rules.js";
 
 try { process.umask(0o077); } catch {}
 
@@ -109,7 +110,7 @@ async function downloadConversation(api, catalogItem, jsonDirectory, { resume = 
   return record;
 }
 
-function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, scope, partial = null, skipped = [] }) {
+function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, scope, partial = null, skipped = [], standardTitlesExcluded = 0 }) {
   return {
     version: 1,
     kind: "conversation-maintenance-inventory",
@@ -125,6 +126,7 @@ function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, sc
     warnings: [],
     ...(partial ? { partial } : {}),
     ...(skipped.length ? { skipped } : {}),
+    ...(standardTitlesExcluded ? { standardTitlesExcluded } : {}),
     projects: catalog.projects,
     conversations: conversations.sort((left, right) => left.conversationId.localeCompare(right.conversationId)),
   };
@@ -132,19 +134,21 @@ function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, sc
 
 // 범위 안의 대화를 모두 후보로 받는다(지난 확인과 비교하지 않는다). 도중에 끊긴 실행 폴더는 같은 runDir 로 이어받는다.
 // 프로젝트·기록 파일은 만들지 않고 실행 폴더(runDir)에만 결과를 남긴다.
-export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {} }) {
+export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, skipStandardTitles = false, knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {} }) {
   const validScope = validateScope(scope);
   const root = prepareRunDirectory(runDir);
   const catalog = validScope.kind === "all"
     ? await collectConversationCatalog(api, now, onProgress)
     : await collectScopedCatalog(api, validScope, now, onProgress, { knownProjects });
   // 본문은 수정 시각 최신순으로 받는다(끊겨도 최근 대화가 먼저 남는다).
-  const selected = catalog.conversations
-    .filter((item) => validScope.kind === "all" || !item.isArchived)
+  const inScope = catalog.conversations.filter((item) => validScope.kind === "all" || !item.isArchived);
+  // skipStandardTitles: 제목이 이미 표준 형식인 대화는 본문을 받지 않고 후보에서 뺀다(제목이 표준이어도 프로젝트가 틀릴 수는 있다).
+  const standardTitlesExcluded = skipStandardTitles ? inScope.filter((item) => isNormalizedTitle(item.title)).length : 0;
+  const selected = (skipStandardTitles ? inScope.filter((item) => !isNormalizedTitle(item.title)) : inScope)
     .sort((left, right) => (timeMilliseconds(right.updateTime) ?? 0) - (timeMilliseconds(left.updateTime) ?? 0)
       || left.conversationId.localeCompare(right.conversationId))
     .map((item) => ({ ...item, reasons: ["scope"] }));
-  writeJsonAtomic(runFiles(root).scanDraft, { version: 1, kind: "scan-draft", scope: validScope, catalog, selected });
+  writeJsonAtomic(runFiles(root).scanDraft, { version: 1, kind: "scan-draft", scope: validScope, catalog, selected, standardTitlesExcluded });
   const candidates = [];
   const skipped = [];
   for (const [index, candidate] of selected.entries()) {
@@ -153,13 +157,13 @@ export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = fals
     if (record) candidates.push({ ...record, reasons: candidate.reasons });
   }
   onProgress({ phase: "downloads", index: selected.length, total: selected.length });
-  return publishInventory({ root, catalog, candidates, scope: validScope, skipped });
+  return publishInventory({ root, catalog, candidates, scope: validScope, skipped, standardTitlesExcluded });
 }
 
-function publishInventory({ root, catalog, candidates, scope, partial = null, skipped = [] }) {
+function publishInventory({ root, catalog, candidates, scope, partial = null, skipped = [], standardTitlesExcluded = 0 }) {
   const catalogPath = runFiles(root).catalog;
   writeJsonAtomic(catalogPath, catalog, { exclusive: true });
-  const inventory = maintenanceInventory({ runRoot: root, catalogPath, catalog, conversations: candidates, scope, partial, skipped });
+  const inventory = maintenanceInventory({ runRoot: root, catalogPath, catalog, conversations: candidates, scope, partial, skipped, standardTitlesExcluded });
   const inventoryPath = runFiles(root).inventory;
   writeJsonAtomic(inventoryPath, inventory, { exclusive: true });
   return { root, inventoryPath, catalog, inventory };
@@ -213,5 +217,5 @@ export function finishPartialScan({ runDir }) {
   }
   assert(candidates.length > 0, "받아 둔 대화 본문이 없습니다");
   return publishInventory({ root, catalog: draft.catalog, candidates, scope: draft.scope,
-    partial: { downloaded: candidates.length, total: draft.selected.length } });
+    partial: { downloaded: candidates.length, total: draft.selected.length }, standardTitlesExcluded: draft.standardTitlesExcluded || 0 });
 }
