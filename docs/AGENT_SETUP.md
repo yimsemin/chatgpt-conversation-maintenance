@@ -39,7 +39,7 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 하지 말아야 할 일:
 - 내 ChatGPT 세션 JSON 이나 토큰을 요구하거나 대화에 남기지 마. 그건 내가 브라우저에서
   북마클릿으로 직접 전달한다.
-- 내 ChatGPT 대화를 읽거나 바꾸려고 시도하지 마. 스캔과 적용은 내가 화면에서 시작한다.
+- 내 ChatGPT 대화를 읽거나 바꾸려고 시도하지 마. 수집과 적용은 내가 화면에서 시작한다.
 - data/ 나 .local/ 을 커밋하지 마.
 - 내 브라우저 프로필이나 쿠키 파일을 직접 읽지 마.
 ```
@@ -53,31 +53,11 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 
 ## 운영을 맡길 때
 
-분류 제안처럼 판단이 필요한 작업을 에이전트에게 맡길 수 있다. 그때는 이렇게 경계를 준다.
-
-```text
-유지관리 분류 제안을 해줘.
-
-CLASSIFICATION_WORKFLOW.md 를 먼저 끝까지 읽어. 그리고 데이터 폴더의 분류체계
-(classification-taxonomy.md)가 있으면 그것도 읽어 — 내가 정한 프로젝트 정의다.
-
-`npm run brief`가 가리키는 현재 실행의 inventory.json 과 review.json 만 사용하고, 제안을
-proposal.json 으로 작성한 다음 node src/workflow.js validate-proposal 로 검증해줘.
-(맞는 프로젝트가 없으면 suggestedProjectName 을 null 로 두고, 확신이 없는 삭제후보는
-내가 삭제후보 프로젝트에서 직접 확인할 수 있게 그대로 delete 로 제안하고, 표준 제목이 아니면 삭제후보에도 표준 제목을 suggestedNewTitle 로 제안해줘.)
-
-제안은 승인이 아니다. 내가 확인할 때까지 reviewed: true 를 만들거나 적용을 실행하지 마.
-```
+분류 제안처럼 판단이 필요한 작업은 에이전트에게 맡길 수 있다. 수집이 끝나면 화면이 에이전트에게 전달할 한 문장을 보여 주고(`npm run brief`의 "다음"이 가리키는 파일을 에이전트가 읽는다), 파일 접근이 없는 곳에 붙여넣을 요청문과 최소 요청문은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다. 데이터 폴더에 분류체계(`classification-taxonomy.md`)가 있으면 함께 읽게 한다. 제안은 승인이 아니므로 사용자가 확인하기 전에는 `reviewed: true`를 만들거나 적용을 실행하지 않게 한다.
 
 **분류체계를 먼저 만들어 두는 편이 낫다.** 없으면 실행마다 프로젝트 경계가 흔들려 비슷한
 프로젝트가 늘어난다. 형식은 [../templates/classification-taxonomy.example.md](../templates/classification-taxonomy.example.md)를 참고한다.
 
 ## 에이전트가 넘지 말아야 할 선
 
-이 저장소의 [AGENTS.md](../AGENTS.md)에 전부 적혀 있고, 핵심은 다음과 같다.
-
-- 세션 토큰·쿠키·브라우저 프로필을 읽거나 저장하지 않는다.
-- 승인 없이 실제 ChatGPT 상태를 바꾸지 않는다.
-- 변경 응답의 성공 코드만 믿지 않고 재조회로 검증한다.
-- 비공식 API가 막혔을 때 TLS 핑거프린트 위조나 UI 대량 자동 조작으로 우회하지 않는다.
-- `data/`·`.local/`을 커밋하지 않는다.
+세션 토큰·쿠키·브라우저 프로필을 읽지 않고, 승인 없이 ChatGPT 상태를 바꾸지 않고, `data/`·`.local/`을 커밋하지 않는 것이 핵심이다. 전부 [AGENTS.md](../AGENTS.md)에 있다.
