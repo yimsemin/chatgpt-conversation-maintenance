@@ -11,7 +11,7 @@ import { item } from "/assets/panel-review.js";
 export async function loadTrash() {
   try {
     const data = await api("/maintenance/trash");
-    const choices = new Map(data.items.map((i) => [i.conversationId, { decision: "delete", project: i.intendedTarget || i.fromProject || "", title: "" }]));
+    const choices = new Map(data.items.map((i) => [i.conversationId, { decision: "keep", project: i.intendedTarget || i.fromProject || "", title: "" }]));
     const projectNames2 = (S.session?.knownProjects?.projects || []).map((p) => p.name).filter((n) => n !== data.project);
     const draw = () => {
       const deletes = [...choices.values()].filter((c) => c.decision === "delete").length;
