@@ -51,7 +51,11 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
       error.retryable = false;
       throw error;
     }
-    assert(clientId && now() - lastSeenAt <= livenessMs, "ChatGPT relay page is not connected");
+    if (!(clientId && now() - lastSeenAt <= livenessMs)) {
+      const error = new Error("ChatGPT relay page is not connected");
+      error.relayDown = true;
+      throw error;
+    }
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const enqueuedAt = now();
@@ -62,6 +66,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
         trace.record("broker-timeout", { op: validated.op, requestId: id, elapsedMs: now() - enqueuedAt });
         const error = new Error(`ChatGPT page relay timed out: ${validated.op}`);
         error.retryable = false;
+        error.timedOut = true;
         reject(error);
       }, timeoutMs);
       const entry = { id, operation: validated, resolve, reject, timer, enqueuedAt };
@@ -117,7 +122,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     return { accepted: true };
   }
   // retryable: 연결(정리 창)이 바뀌거나 끊겨서 취소된 요청은 새 연결로 다시 보낼 수 있다. 사용자 취소는 다시 보내지 않는다.
-  function cancel(requestId, message = "Remote operation was cancelled", { retryable = false } = {}) {
+  function cancel(requestId, message = "Remote operation was cancelled", { retryable = false, relayDown = false } = {}) {
     const entry = pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
@@ -125,6 +130,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     trace.record("cancel", { op: entry.operation.op, requestId, note: message });
     const error = new Error(message);
     error.retryable = retryable;
+    if (relayDown) error.relayDown = true;
     entry.reject(error);
     return true;
   }
@@ -132,7 +138,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     if (id !== clientId) return { disconnected: false };
     trace.record("disconnect", { clientId: id });
     clientId = null;
-    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected", { retryable: true });
+    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected", { retryable: true, relayDown: true });
     queue.length = 0;
     return { disconnected: true };
   }
@@ -168,11 +174,24 @@ export function createPacer({ min = 300, start = 600, max = 4000, now = () => Da
 
 export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(), maxRetries = 8, backoffBaseMs = 5000, backoffCapMs = 300000,
-  requestDelayMs = 1000, pacer = null, onRetry = () => {}, onRequest = () => {} } = {}) {
+  requestDelayMs = 1000, pacer = null, onRetry = () => {}, onRequest = () => {},
+  onRelayDown = () => {}, onRelayUp = () => {}, relayPollMs = 2000, relayWaitMaxMs = 30 * 60 * 1000 } = {}) {
   assert(broker?.request, "Relay broker is required");
   let cooldownUntil = 0;
   const metrics = { requests: 0, retries: 0, rateLimits: 0, retryWaitMs: 0, pacingWaitMs: 0 };
   // tries 를 주면 재시도 상한(maxRetries) 대신 그 횟수만큼만 시도한다(첫 시도 포함).
+  // 정리 창(ChatGPT 연결)이 끊겨 있으면 재시도 횟수를 쓰지 않고 다시 연결될 때까지 기다린다. 사용자가 중단하면 sleep 이 던진다.
+  async function waitForRelay() {
+    if (!broker.status || broker.status().connected) return false;
+    onRelayDown();
+    const started = now();
+    while (!broker.status().connected) {
+      if (now() - started > relayWaitMaxMs) throw new Error("ChatGPT relay page is not connected (waited too long)");
+      await sleep(relayPollMs);
+    }
+    onRelayUp({ waitedMs: now() - started });
+    return true;
+  }
   async function call(op, params, retry = true, tries = null) {
     const retryLimit = retry ? (tries ? tries - 1 : maxRetries) : 0;
     for (let attempt = 0; attempt <= retryLimit; attempt++) {
@@ -183,6 +202,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
       let result;
       try { result = await broker.request({ op, params }); }
       catch (error) {
+        if ((error?.relayDown || error?.timedOut) && await waitForRelay()) { attempt -= 1; continue; }
         if (error?.retryable === false || attempt === retryLimit) throw error;
         const waitMs = Math.min(backoffBaseMs * (2 ** attempt), backoffCapMs);
         metrics.retries++; metrics.retryWaitMs += waitMs; onRetry({ type: "network", attempt: attempt + 1, waitMs });

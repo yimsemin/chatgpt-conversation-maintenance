@@ -54,6 +54,34 @@ test("writes keep the fixed delay but follow the pacer once a 429 raised it; rea
   assert.equal(slept.at(-1), 4000, "after throttling the write delay grows with the pacer");
 });
 
+test("a disconnected relay is waited for without using up retries, and the wait is reported once", async () => {
+  const CID = "11111111-1111-4111-8111-111111111111";
+  let connected = false; let polls = 0; let calls = 0;
+  const events = [];
+  const broker = {
+    status: () => ({ connected }),
+    request: async () => {
+      calls += 1;
+      if (!connected) { const error = new Error("ChatGPT relay page is not connected"); error.relayDown = true; throw error; }
+      return { ok: true, status: 200, data: {}, contentType: "application/json" };
+    },
+  };
+  const api = createRelayApi({ broker, requestDelayMs: 0, maxRetries: 1, relayPollMs: 1,
+    sleep: async () => { polls += 1; if (polls === 3) connected = true; },
+    onRelayDown: () => events.push("down"), onRelayUp: () => events.push("up") });
+  const result = await api.getConversation(CID);
+  assert.equal(result.ok, true);
+  assert.deepEqual(events, ["down", "up"]);
+  assert.equal(calls, 2, "one failed attempt while down, then the real request; the single retry was not consumed");
+
+  // 연결이 끝내 돌아오지 않으면 무한정 기다리지 않는다.
+  let clock = 0;
+  const stuck = createRelayApi({ broker: { status: () => ({ connected: false }), request: broker.request }, requestDelayMs: 0, relayWaitMaxMs: 50, relayPollMs: 10,
+    now: () => clock, sleep: async (ms) => { clock += ms; } });
+  connected = false;
+  await assert.rejects(stuck.getConversation(CID), /waited too long/);
+});
+
 test("invalid page results reject immediately and clear the pending operation", async () => {
   const broker = createRelayBroker({ timeoutMs: 1000 });
   const clientId = "11111111-1111-4111-8111-111111111111";

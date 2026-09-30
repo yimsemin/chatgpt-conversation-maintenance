@@ -60,14 +60,17 @@ export function describeScope(scope) {
   return scope.days ? `프로젝트에 넣지 않은 대화(최근 ${scope.days}일)` : "프로젝트에 넣지 않은 대화(전체 기간)";
 }
 
-function conversationRecord(catalogItem, data, raw, backupFile) {
+// adoptTitle: 방금 받은 본문의 제목이 목록의 제목과 다르면(수집하는 사이 ChatGPT가 제목을 붙이거나 바꿈) 본문의 제목이 더 새것이므로 그것을 쓴다.
+// 저장해 둔 본문을 재사용할 때는 제목이 같아야 한다.
+function conversationRecord(catalogItem, data, raw, backupFile, { adoptTitle = false } = {}) {
   const id = data?.conversation_id || data?.id;
   assert(id === catalogItem.conversationId, `Conversation download returned a different ID: ${catalogItem.conversationId}`);
-  assert(data?.title === catalogItem.title, `Conversation title changed during scan: ${catalogItem.conversationId}`);
+  assert(adoptTitle ? typeof data?.title === "string" : data?.title === catalogItem.title, `Conversation title changed during scan: ${catalogItem.conversationId}`);
   assert(data?.mapping && typeof data.mapping === "object" && Object.keys(data.mapping).length > 0,
     `Conversation has no mapping: ${catalogItem.conversationId}`);
   return {
     ...catalogItem,
+    ...(adoptTitle ? { title: data.title } : {}),
     messageCount: Object.values(data.mapping).filter((node) => node?.message).length,
     attachmentReferenceCount: attachmentReferenceCount(data),
     contentSha256: contentSha256(data),
@@ -139,7 +142,7 @@ async function downloadConversation(api, catalogItem, jsonDirectory, { resume = 
     + (response.bodySnippet ? ` (${String(response.bodySnippet).slice(0, 120)})` : ""));
   const data = response.data;
   const raw = Buffer.from(JSON.stringify(data, null, 2));
-  const record = conversationRecord(catalogItem, data, raw, backupFile);
+  const record = conversationRecord(catalogItem, data, raw, backupFile, { adoptTitle: true });
   writeFileSync(backupFile, raw, { mode: 0o600, flag: resume ? "w" : "wx" });
   return record;
 }

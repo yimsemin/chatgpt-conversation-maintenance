@@ -160,7 +160,10 @@ export function relayApi(job, requestDelayMs = 1000) {
   return createRelayApi({ broker: relayBroker, requestDelayMs: CONFIG.requestDelayMs === undefined ? requestDelayMs : CONFIG.requestDelayMs,
     pacer: CONFIG.requestDelayMs === undefined ? readPacer : null,
     backoffBaseMs: CONFIG.relayBackoffMs, backoffCapMs: Math.max(CONFIG.relayBackoffMs, 300000), sleep: (ms) => cancellableSleep(job, ms),
-    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}`); }, onRetry: (retry) => {
+    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}`); },
+    onRelayDown: () => jobEvent(job, "relay-down", "ChatGPT 연결이 끊겼습니다. chatgpt.com 탭에서 북마클릿을 눌러 주세요. 연결되면 자동으로 이어서 진행합니다."),
+    onRelayUp: ({ waitedMs }) => jobEvent(job, "relay-up", `ChatGPT 연결이 돌아왔습니다(${formatDuration(Math.round(waitedMs / 1000))} 기다림). 이어서 진행합니다.`),
+    onRetry: (retry) => {
     const stage = retry.type === "http" && retry.status === 429 ? "rate-limit" : "retry";
     jobEvent(job, stage, retryMessage(retry));
   } });

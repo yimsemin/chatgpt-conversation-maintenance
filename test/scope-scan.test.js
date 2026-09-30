@@ -191,6 +191,20 @@ test("bodies saved by an earlier run are reused only while the conversation is u
   }
 });
 
+test("a title that changed between the list and the body is adopted instead of aborting the scan", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-retitle-"));
+  try {
+    const fake = api();
+    const body = fake.getConversation;
+    fake.getConversation = async (id) => { const res = await body(id); if (id === ID1) res.data.title = "ChatGPT가 새로 붙인 제목"; return res; };
+    const result = await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
+    assert.equal(result.inventory.counts.candidates, 3);
+    assert.equal(result.inventory.conversations.find((c) => c.conversationId === ID1).title, "ChatGPT가 새로 붙인 제목");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("skipFailed skips a conversation that keeps failing after four tries and records it; without it the scan stops", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-skip-"));
   try {
