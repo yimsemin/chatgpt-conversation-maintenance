@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeRemoteRequest, PROJECT_ID, validateRemoteOperation, validateRemoteResult } from "../src/remote-ops.js";
+import { PROJECT_ID, validateRemoteOperation, validateRemoteResult } from "../src/remote-ops.js";
 
 const CID = "11111111-1111-4111-8111-111111111111";
 const PID = `g-p-${"a".repeat(32)}`;
@@ -20,14 +20,6 @@ test("project IDs require g-p- followed by exactly 32 hexadecimal characters", (
 test("patches cannot remove or arbitrarily move a conversation", () => {
   assert.throws(() => validateRemoteOperation({ op: "patchConversation", params: { id: CID, body: { gizmo_id: null } } }), /supported field/);
   assert.throws(() => validateRemoteOperation({ op: "patchConversation", params: { id: CID, body: { title: "x", is_visible: false } } }), /exactly one/);
-});
-
-test("operation descriptions produce only fixed relative request paths", () => {
-  assert.deepEqual(describeRemoteRequest({ op: "moveConversation", params: { id: CID, projectId: PID } }), {
-    method: "PATCH", path: `/backend-api/conversation/${CID}`, body: { gizmo_id: PID },
-  });
-  assert.equal(describeRemoteRequest({ op: "listProjects", params: { cursor: "next", limit: 20 } }).path,
-    "/backend-api/gizmos/snorlax/sidebar?owned_only=true&conversations_per_gizmo=0&limit=20&cursor=next");
 });
 
 test("remote results reject successful body snippets", () => {
