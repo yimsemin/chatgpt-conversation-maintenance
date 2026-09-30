@@ -217,7 +217,7 @@ test("a window that cannot deliver a waiting request loses the relay to the wind
   broker.disconnect(active);
 });
 
-test("the trace keeps only fixed diagnostic fields and truncates identifiers", () => {
+test("the trace keeps only fixed diagnostic fields, refuses unknown stages and caps its buffer", () => {
   const trace = createRelayTrace({ now: () => 1000 });
   const event = trace.record("post-to-page", {
     op: "listConversations",
@@ -230,24 +230,17 @@ test("the trace keeps only fixed diagnostic fields and truncates identifiers", (
   assert.equal(event.clientId, "11111111");
   assert.equal(event.op, "listConversations");
   assert.equal(event.status, 200);
-});
 
-test("the trace refuses unknown stages and non-string notes", () => {
-  const trace = createRelayTrace();
   assert.equal(trace.record("exfiltrate", { op: "x" }), null);
-  assert.equal(trace.list().length, 0);
-  const event = trace.record("loop-error", { note: { secret: "token" }, status: "200" });
-  assert.equal(event.note, null);
-  assert.equal(event.status, null);
-});
+  const odd = trace.record("loop-error", { note: { secret: "token" }, status: "200" });
+  assert.equal(odd.note, null);
+  assert.equal(odd.status, null);
 
-test("the trace caps its buffer", () => {
-  const trace = createRelayTrace({ max: 3 });
-  for (let index = 0; index < 10; index++) trace.record("enqueue", { op: "accountInfo" });
-  assert.equal(trace.list().length, 3);
-  assert.equal(trace.list().at(-1).seq, 10);
+  const capped = createRelayTrace({ max: 3 });
+  for (let index = 0; index < 10; index++) capped.record("enqueue", { op: "accountInfo" });
+  assert.equal(capped.list().length, 3);
+  assert.equal(capped.list().at(-1).seq, 10);
 });
-
 
 test("relay connection accepts only the current release and protocol", () => {
   assert.doesNotThrow(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION));

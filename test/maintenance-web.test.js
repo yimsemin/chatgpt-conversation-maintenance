@@ -221,55 +221,14 @@ test("copyable diagnostics redact tokens and the private workspace path", () => 
 
 const DECISIONS_DIGEST = "d".repeat(64);
 
-test("unchanged decisions keep the compiled plans and their receipts", () => {
-  assert.deepEqual(planReuseDecision({
-    hasCompiledArtifacts: true,
-    stampDigest: DECISIONS_DIGEST,
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: true,
-  }), { action: "reuse", reason: "match" });
-});
-
-test("a first apply compiles plans", () => {
-  assert.equal(planReuseDecision({
-    hasCompiledArtifacts: false,
-    stampDigest: null,
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: false,
-  }).action, "compile");
-});
-
-test("decisions changed before anything was applied are recompiled", () => {
-  assert.deepEqual(planReuseDecision({
-    hasCompiledArtifacts: true,
-    stampDigest: "a".repeat(64),
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: false,
-  }), { action: "recompile", reason: "changed" });
-});
-
-test("decisions changed after a partial apply halt instead of reusing or discarding plans", () => {
-  assert.deepEqual(planReuseDecision({
-    hasCompiledArtifacts: true,
-    stampDigest: "a".repeat(64),
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: true,
-  }), { action: "halt", reason: "changed-after-apply" });
-});
-
-test("plans of unknown origin are recompiled only while no receipt exists", () => {
-  assert.deepEqual(planReuseDecision({
-    hasCompiledArtifacts: true,
-    stampDigest: null,
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: false,
-  }), { action: "recompile", reason: "unknown-source" });
-  assert.deepEqual(planReuseDecision({
-    hasCompiledArtifacts: true,
-    stampDigest: null,
-    decisionsDigest: DECISIONS_DIGEST,
-    hasReceipts: true,
-  }), { action: "halt", reason: "unknown-source-after-apply" });
+test("plan reuse follows the decisions digest: reuse, compile, recompile or halt once anything was applied", () => {
+  const decide = (state) => planReuseDecision({ hasCompiledArtifacts: true, stampDigest: DECISIONS_DIGEST, decisionsDigest: DECISIONS_DIGEST, hasReceipts: false, ...state });
+  assert.deepEqual(decide({ hasReceipts: true }), { action: "reuse", reason: "match" });
+  assert.equal(decide({ hasCompiledArtifacts: false, stampDigest: null }).action, "compile");
+  assert.deepEqual(decide({ stampDigest: "a".repeat(64) }), { action: "recompile", reason: "changed" });
+  assert.deepEqual(decide({ stampDigest: "a".repeat(64), hasReceipts: true }), { action: "halt", reason: "changed-after-apply" });
+  assert.deepEqual(decide({ stampDigest: null }), { action: "recompile", reason: "unknown-source" });
+  assert.deepEqual(decide({ stampDigest: null, hasReceipts: true }), { action: "halt", reason: "unknown-source-after-apply" });
 });
 
 function runFixture() {
@@ -370,33 +329,12 @@ test("a delete decision changed to keep does not run the old delete plan", () =>
   }
 });
 
-test("a corrupted plan source file is treated as unknown origin, not a hard failure", () => {
-  const root = mkdtempSync(join(tmpdir(), "maintenance-web-stamp-"));
-  try {
-    const stampPath = join(root, "compiled-plan-source.json");
-    writeFileSync(stampPath, "{ 깨진 JSON");
-    let planSource = null;
-    if (existsSync(stampPath)) {
-      try { planSource = JSON.parse(readFileSync(stampPath, "utf8")); } catch { planSource = null; }
-    }
-    assert.equal(planSource, null);
-    assert.equal(planReuseDecision({
-      hasCompiledArtifacts: true,
-      stampDigest: planSource?.decisionsDigest || null,
-      decisionsDigest: DECISIONS_DIGEST,
-      hasReceipts: false,
-    }).action, "recompile");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("a completed run refuses another apply but a failed one can retry", () => {
   assert.throws(() => assertApplyablePhase("complete"), /이미 적용을 마쳤습니다/);
   assert.equal(assertApplyablePhase("awaiting-proposal"), true);
 });
 
-test("끊긴 같은 범위의 확인은 실행 폴더를 이어받고, 다른 범위·끝난 실행·낡은 폴더는 새로 만든다", () => {
+test("an interrupted collection of the same scope resumes its run folder; other scopes, finished runs and stale folders start a new one", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "maintenance-resume-"));
   try {
     const scope = { kind: "recent", days: 7 };

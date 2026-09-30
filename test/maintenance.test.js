@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildAfterCatalog, finalizeMaintenanceRun } from "../src/finalize.js";
+import { orderOldestFirst } from "../src/decision-compile.js";
+import { buildAfterCatalog, checkRenameOrder, finalizeMaintenanceRun } from "../src/finalize.js";
 import { collectConversationCatalog, timeMilliseconds, unwrapSidebarGizmo } from "../src/catalog.js";
 import { isNormalizedTitle } from "../src/title-rules.js";
 import { scanMaintenanceRun } from "../src/scan.js";
@@ -13,6 +14,8 @@ import { scanMaintenanceRun } from "../src/scan.js";
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
 const ID3 = "33333333-3333-4333-8333-333333333333";
+const ID4 = "44444444-4444-4444-8444-444444444444";
+const day = (n) => new Date(Date.parse("2026-09-26T00:00:00Z") - n * 86400000).toISOString();
 
 function response(data) {
   return { ok: true, status: 200, data };
@@ -252,6 +255,36 @@ test("a full scan downloads every conversation and resumes without refetching", 
     assert.equal(result.inventory.source.mode, "scope");
     assert.deepEqual(result.inventory.source.scope, { kind: "all" });
     assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("title changes are planned oldest conversation first so their relative list order survives", () => {
+  const inventoryById = new Map([
+    [ID1, { updateTime: day(1) }], [ID2, { updateTime: day(30) }], [ID3, { updateTime: null }], [ID4, { updateTime: day(30) }],
+  ]);
+  const actions = [ID1, ID2, ID3, ID4].map((conversationId) => ({ conversationId }));
+  assert.deepEqual(orderOldestFirst(actions, inventoryById).map((a) => a.conversationId), [ID3, ID2, ID4, ID1]);
+  assert.deepEqual(actions.map((a) => a.conversationId), [ID1, ID2, ID3, ID4], "input is not mutated");
+});
+
+test("the rename order check compares the original order with the times recorded in the receipts", () => {
+  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-order-test-"));
+  try {
+    const inventory = { conversations: [{ conversationId: ID1, updateTime: day(30) }, { conversationId: ID2, updateTime: day(20) }, { conversationId: ID3, updateTime: day(10) }] };
+    const write = (afters) => {
+      rmSync(root, { recursive: true, force: true }); mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, "r.json"), JSON.stringify({ results: [ID1, ID2, ID3].map((conversationId, index) => ({
+        conversationId, ok: true, mutations: [{ type: "rename", title: "새 제목 — 결과", updateTime: afters[index] }] })) }));
+    };
+    write([day(0.003), day(0.002), day(0.001)]);
+    assert.deepEqual(checkRenameOrder(inventory, root), { renamed: 3, preserved: true, outOfOrder: [] });
+    write([day(0.001), day(0.002), day(0.003)]);
+    const flipped = checkRenameOrder(inventory, root);
+    assert.equal(flipped.preserved, false);
+    assert.deepEqual(flipped.outOfOrder, [ID2, ID3]);
+    assert.deepEqual(checkRenameOrder(inventory, join(root, "missing")), { renamed: 0, preserved: true, outOfOrder: [] });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

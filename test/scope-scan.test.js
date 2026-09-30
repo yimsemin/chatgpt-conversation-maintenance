@@ -5,8 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { collectScopedCatalog } from "../src/catalog.js";
-import { orderOldestFirst } from "../src/decision-compile.js";
-import { checkRenameOrder } from "../src/finalize.js";
 import { countDownloaded, finishPartialScan, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
@@ -260,36 +258,6 @@ test("a scoped scan collects only the scope and records it in the inventory", as
 
     const empty = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "project", projectNames: ["프로젝트 B"] }, now: () => NOW });
     assert.equal(empty.inventory.counts.candidates, 0);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("title changes are planned oldest conversation first so their relative list order survives", () => {
-  const inventoryById = new Map([
-    [ID1, { updateTime: day(1) }], [ID2, { updateTime: day(30) }], [ID3, { updateTime: null }], [ID4, { updateTime: day(30) }],
-  ]);
-  const actions = [ID1, ID2, ID3, ID4].map((conversationId) => ({ conversationId }));
-  assert.deepEqual(orderOldestFirst(actions, inventoryById).map((a) => a.conversationId), [ID3, ID2, ID4, ID1]);
-  assert.deepEqual(actions.map((a) => a.conversationId), [ID1, ID2, ID3, ID4], "input is not mutated");
-});
-
-test("the rename order check compares the original order with the times recorded in the receipts", () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-order-test-"));
-  try {
-    const inventory = { conversations: [{ conversationId: ID1, updateTime: day(30) }, { conversationId: ID2, updateTime: day(20) }, { conversationId: ID3, updateTime: day(10) }] };
-    const write = (afters) => {
-      rmSync(root, { recursive: true, force: true }); mkdirSync(root, { recursive: true });
-      writeFileSync(join(root, "r.json"), JSON.stringify({ results: [ID1, ID2, ID3].map((conversationId, index) => ({
-        conversationId, ok: true, mutations: [{ type: "rename", title: "새 제목 — 결과", updateTime: afters[index] }] })) }));
-    };
-    write([day(0.003), day(0.002), day(0.001)]);
-    assert.deepEqual(checkRenameOrder(inventory, root), { renamed: 3, preserved: true, outOfOrder: [] });
-    write([day(0.001), day(0.002), day(0.003)]);
-    const flipped = checkRenameOrder(inventory, root);
-    assert.equal(flipped.preserved, false);
-    assert.deepEqual(flipped.outOfOrder, [ID2, ID3]);
-    assert.deepEqual(checkRenameOrder(inventory, join(root, "missing")), { renamed: 0, preserved: true, outOfOrder: [] });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

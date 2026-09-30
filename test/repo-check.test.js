@@ -12,20 +12,16 @@ function checkOne(path, text, options = {}) {
   });
 }
 
-test("flags the running account's absolute home path", () => {
+test("flags an account's personal home path, even a different account's home shape", () => {
   // Built at runtime so this test file never stores a real personal path.
   const home = "/Users/" + "realdev";
-  const patterns = [...personalPathPatterns(home)];
   const leaked = ["export const CACHE = ", JSON.stringify(home + "/cache"), ";"].join("");
-  const errors = checkOne("src/config.js", leaked, { secretPatterns: patterns });
+  const errors = checkOne("src/config.js", leaked, { secretPatterns: [...personalPathPatterns(home)] });
   assert.ok(errors.some((e) => e.includes("personal")), errors.join("; "));
-});
 
-test("flags /Users/<account>/ even without the full home string", () => {
-  const patterns = personalPathPatterns("/home/" + "buildbot42");
+  const linux = personalPathPatterns("/home/" + "buildbot42");
   const line = ["log('", "/home/", "buildbot42", "/project/run')"].join("");
-  const errors = checkOne("scripts/run.js", line, { secretPatterns: patterns });
-  assert.ok(errors.some((e) => e.includes("personal Linux home path")), errors.join("; "));
+  assert.ok(checkOne("scripts/run.js", line, { secretPatterns: linux }).some((e) => e.includes("personal Linux home path")));
 });
 
 test("ignores documentation placeholder paths", () => {
