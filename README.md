@@ -92,6 +92,7 @@ Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`),
 
 ```text
 npm run brief                                        # 최근 실행·삭제후보 현황과 다음 행동(사용자/에이전트) 요약
+npm run runs:prune                                   # data/runs 의 중복 본문 사본 미리보기(--apply 를 붙이면 지움)
 node src/maintenance-lock.js status|release              # 잠금 확인·해제(비정상 종료 뒤에만)
 node src/workflow.js validate-proposal <inventory.json> <proposal.json>
 curl -s http://127.0.0.1:8523/relay/trace            # 릴레이 경계 진단

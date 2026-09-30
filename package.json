@@ -14,7 +14,8 @@
     "test": "node --test",
     "repo:check": "node src/repo-check.js",
     "stop": "node src/launcher.js stop",
-    "status": "node src/launcher.js status"
+    "status": "node src/launcher.js status",
+    "runs:prune": "node src/runs-prune.js"
   },
   "engines": {
     "node": ">=24"
