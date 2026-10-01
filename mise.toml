@@ -1,0 +1,4 @@
+# Optional convenience layer: mise reads the standard .node-version.
+# Nothing here is required; plain Node >=24 (see package.json engines) works too.
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
