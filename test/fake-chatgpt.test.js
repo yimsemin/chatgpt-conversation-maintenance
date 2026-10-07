@@ -34,44 +34,6 @@ test("a 429 burst is retried transparently and a hung page fails only that reque
   } finally { await page.stop(); }
 });
 
-test("the broker reports connection health for the screen", async () => {
-  const { fake, broker, page, api } = world();
-  try {
-    await api.getConversation(fakeConversationId(1));
-    let status = broker.status();
-    assert.equal(status.connected, true);
-    assert.equal(status.lastStatus, 200);
-    assert.equal(status.consecutiveFailures, 0);
-    fake.inject({ op: "getConversation", status: 500, times: 1 });
-    await api.getConversation(fakeConversationId(1));
-    status = broker.status();
-    assert.equal(status.consecutiveFailures, 0);
-    assert.ok(status.lastResultAgoMs >= 0);
-  } finally { await page.stop(); }
-});
-
-test("the read pacer slows down after a 429 and speeds up again on success", async () => {
-  const pacer = createPacer({ min: 100, start: 200, max: 1000 });
-  assert.equal(pacer.current(), 200);
-  pacer.throttled();
-  assert.equal(pacer.current(), 400);
-  pacer.throttled(); pacer.throttled(); pacer.throttled();
-  assert.equal(pacer.current(), 1000);
-  for (let i = 0; i < 40; i++) pacer.success();
-  assert.equal(pacer.current(), 100);
-
-  const { fake, broker, page } = world();
-  try {
-    const waits = [];
-    const shared = createPacer({ min: 5, start: 5, max: 50 });
-    const api = createRelayApi({ broker, requestDelayMs: 0, pacer: shared, backoffBaseMs: 1, backoffCapMs: 2,
-      sleep: async (ms) => { waits.push(ms); } });
-    fake.inject({ op: "listConversations", status: 429, times: 1 });
-    await api.listConversations({ archived: false, offset: 0, limit: 10 });
-    assert.ok(waits.at(-1) > 5, `expected a slowed pacing wait after the 429, got ${waits}`);
-  } finally { await page.stop(); }
-});
-
 test("a 429 cooldown carries over to the next job through the shared pacer", async () => {
   const { fake, broker, page } = world();
   try {

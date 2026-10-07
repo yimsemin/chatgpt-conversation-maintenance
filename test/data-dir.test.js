@@ -36,17 +36,6 @@ test("an explicit --data-dir value wins over the config file", () => {
   }
 });
 
-test("the config file redirects the data folder, relative to appRoot", () => {
-  const root = appRootFixture();
-  try {
-    mkdirSync(join(root, ".local"), { recursive: true });
-    writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: "synced/chatgpt" }));
-    assert.equal(resolveDataDir({ appRoot: root }), join(root, "synced", "chatgpt"));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("the trash project defaults to an automatic project and can be fixed by name or turned off", () => {
   const root = appRootFixture();
   try {

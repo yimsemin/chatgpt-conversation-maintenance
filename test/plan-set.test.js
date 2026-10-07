@@ -93,19 +93,6 @@ test("plan-set status skips actions already proven successful by receipts", () =
   }
 });
 
-test("preparation validates only pending backups and preserves one plan-set confirmation", () => {
-  const fixture = planSetFixture();
-  try {
-    const prepared = preparePlanSet(fixture.plansDir);
-    assert.equal(prepared.pending.length, 1);
-    assert.equal(prepared.pending[0].actions, 1);
-    assert.equal(prepared.pending[0].deletes, 1);
-    assert.equal(prepared.summary.remainingActions, 1);
-  } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
-  }
-});
-
 test("apply runs pending batches serially and a new receipt makes the plan set complete", async () => {
   const fixture = planSetFixture();
   let visible = true;

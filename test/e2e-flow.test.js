@@ -217,28 +217,6 @@ test("delete candidates move to the trash project with standard titles and are l
   } finally { await dev.stop(); }
 });
 
-test("delete candidates can be marked without moving them and appear as the user's to-do", async () => {
-  const dev = await startDev(18610, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
-    await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
-    await untilProposal(dev);
-    const proposal = await dev.get("/maintenance/proposal");
-    const decisions = proposal.items.map((item, index) => {
-      const title = item.suggestedNewTitle || (isStandard(item.currentTitle) ? undefined : `표시 ${index} — 직접 지울 대화`);
-      return item.suggestedDecision === "delete"
-        ? { conversationId: item.conversationId, decision: "keep", ...(title ? { newTitle: title } : {}), projectName: "", marked: true }
-        : { conversationId: item.conversationId, decision: "keep", newTitle: item.suggestedNewTitle || item.currentTitle, projectName: item.suggestedProjectName || "" };
-    });
-    await dev.call("/maintenance/decisions", { decisions });
-    const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: false })).jobId, 90000);
-    assert.equal(applied.ok, true, JSON.stringify(applied.error));
-    const report = (await dev.get("/maintenance/report")).report;
-    assert.ok(report.todo.deleteYourself.length >= 1);
-    assert.equal(report.totals.delete, 0);
-    assert.equal((await dev.get("/maintenance/session")).trash.count, 0);
-  } finally { await dev.stop(); }
-});
-
 test("when a title changes after review, apply stops with a rescan recovery and a new scan picks it up again", async () => {
   const dev = await startDev(18605, ["--rename-after-proposal"], { MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" });
   try {

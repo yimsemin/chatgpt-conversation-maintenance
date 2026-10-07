@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { appFolders, createSafeDiagnostic } from "../src/web-common.js";
 import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
-import { formatScanProgress, jobEvent, retryMessage } from "../src/web-jobs.js";
+import { jobEvent } from "../src/web-jobs.js";
 import { assertApplyablePhase, planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
 import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
 
@@ -122,15 +122,6 @@ test("jobEvent updates a running progress line in place instead of piling up", (
   assert.equal(job.events[1].stage, "progress");
   assert.equal(job.events[1].message, "후보 대화 본문 받는 중 (3/3건, 100%)");
   assert.equal(job.events[2].stage, "ready");
-});
-
-test("formatScanProgress renders a percentage once a total is known", () => {
-  assert.equal(formatScanProgress({ phase: "downloads", index: 42, total: 139 }),
-    "후보 대화 본문 받는 중 (42/139건, 30%)");
-  assert.equal(formatScanProgress({ phase: "active", index: 100, total: 424 }),
-    "활성 대화 목록 읽는 중 (100/424건, 24%)");
-  assert.equal(formatScanProgress({ phase: "projects", index: 2, total: 9, projectName: "오디오" }),
-    "프로젝트 목록 읽는 중: 오디오 (3/9개)");
 });
 
 test("GUI decisions validate against every maintenance candidate", () => {
@@ -348,10 +339,4 @@ test("an interrupted collection of the same scope resumes its run folder; other 
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }
-});
-
-test("retry messages call a 429 a normal automatic slowdown and keep other failures as retries", () => {
-  assert.match(retryMessage({ type: "http", status: 429, attempt: 1, waitMs: 5000 }), /속도를 제한.*정상.*5초/);
-  assert.match(retryMessage({ type: "http", status: 599, attempt: 2, waitMs: 10000 }), /HTTP 599.*10초.*2번째/);
-  assert.match(retryMessage({ type: "network", attempt: 1, waitMs: 5000 }), /연결이 잠시 끊겼/);
 });

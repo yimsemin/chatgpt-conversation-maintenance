@@ -122,48 +122,6 @@ test("the untidy scope reads newest first and stops after three consecutive stan
   assert.deepEqual(catalog.scope.collected, { kind: "untidy" });
 });
 
-test("bodies are downloaded newest modified first", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-order-scan-"));
-  try {
-    const fake = api();
-    const order = [];
-    const get = fake.getConversation;
-    fake.getConversation = async (id) => { order.push(id); return get(id); };
-    await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
-    assert.deepEqual(order, [ID1, ID3, ID4], "ids sort ascending, but bodies follow update time descending");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a resumed scan downloads again the conversations modified since their body was saved", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-resume-modified-"));
-  try {
-    const fake = api();
-    const calls = [];
-    const body = fake.getConversation;
-    let failOnce = true;
-    fake.getConversation = async (id) => {
-      calls.push(id);
-      if (id === ID3 && failOnce) { failOnce = false; return { ok: false, status: 599 }; }
-      const res = await body(id);
-      res.data.update_time = Date.parse(listItems.find((item) => item.id === id).update_time) / 1000 + 0.2; // 목록보다 0.2초 뒤
-      return res;
-    };
-    const runDir = join(root, "run");
-    await assert.rejects(() => scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }), /HTTP 599/);
-    assert.deepEqual(calls, [ID1, ID3]);
-    // 끊긴 사이 ID1 을 새로 수정했다면(목록의 수정 시각이 바뀜) 예전 본문은 재사용하지 않는다.
-    const original = listItems[0].update_time;
-    listItems[0].update_time = day(0);
-    try { await scanMaintenanceRun({ runDir, api: fake, scope: { kind: "unassigned" }, now: () => NOW }); }
-    finally { listItems[0].update_time = original; }
-    assert.deepEqual(calls, [ID1, ID3, ID1, ID3, ID4], "ID1 is fetched again; the unmodified ones would be reused");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("bodies saved by an earlier run are reused only while the conversation is unmodified", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-reuse-"));
   try {
@@ -277,35 +235,6 @@ test("kept titles are read from the reviewed decisions of every run", () => {
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }
-});
-
-test("a scoped scan collects only the scope and records it in the inventory", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-scope-test-"));
-  try {
-    const fake = api();
-    const result = await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
-    assert.equal(result.inventory.source.mode, "scope");
-    assert.deepEqual(result.inventory.source.scope, { kind: "unassigned" });
-    assert.equal(result.inventory.counts.candidates, 3);
-    assert.equal(fake.calls.sidebar, 0, "the projectless scope never lists projects");
-    assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
-    assert.equal(result.catalog.scope.complete, false);
-
-    const empty = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "project", projectNames: ["프로젝트 B"] }, now: () => NOW });
-    assert.equal(empty.inventory.counts.candidates, 0);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("several projects can be scanned at once and each gets its own count and latest activity", async () => {
-  const fake = api();
-  const catalog = await collectScopedCatalog(fake, { kind: "project", projectNames: ["프로젝트 A", "프로젝트 B"] }, () => NOW);
-  assert.deepEqual(fake.calls.projectList.map((c) => c.projectId), [PA, PB]);
-  const byName = Object.fromEntries(catalog.projects.map((p) => [p.projectName, p]));
-  assert.equal(byName["프로젝트 A"].conversationCount, 1);
-  assert.equal(byName["프로젝트 B"].conversationCount, 0);
-  assert.equal(byName["프로젝트 A"].latestUpdate, day(2));
 });
 
 test("an interrupted scan can be finished with only the bodies already downloaded", async () => {

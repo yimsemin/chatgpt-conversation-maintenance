@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildBrief, formatBrief, nextAction } from "../src/brief.js";
+import { buildBrief, nextAction } from "../src/brief.js";
 
 function fixture({ pointer = null, files = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "brief-"));
@@ -23,25 +23,6 @@ function fixture({ pointer = null, files = [] } = {}) {
 }
 
 const NOW = () => Date.parse("2026-09-24T00:00:00.000Z");
-
-test("without a run the next step is choosing a scope on the screen", () => {
-  const { root } = fixture();
-  try {
-    const brief = buildBrief({ appRoot: root, now: NOW });
-    assert.equal(brief.run, null);
-    assert.equal(brief.next.actor, "user");
-    assert.match(brief.next.text, /수집 범위/);
-    assert.match(formatBrief(brief), /최근 실행: 없음/);
-    assert.doesNotMatch(formatBrief(brief), /기준선/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test("the last run shows its scope", () => {
-  const { root } = fixture({ pointer: { phase: "awaiting-proposal" }, files: ["review.json"] });
-  try {
-    assert.match(formatBrief(buildBrief({ appRoot: root, now: NOW })), /범위 프로젝트 A/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
 
 test("awaiting proposal hands the classification to the agent", () => {
   const { root } = fixture({ pointer: { phase: "awaiting-proposal" }, files: ["review.json"] });

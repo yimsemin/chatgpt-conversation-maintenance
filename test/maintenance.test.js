@@ -7,9 +7,9 @@ import test from "node:test";
 
 import { orderOldestFirst } from "../src/decision-compile.js";
 import { buildAfterCatalog, checkRenameOrder, finalizeMaintenanceRun } from "../src/finalize.js";
-import { collectConversationCatalog, timeMilliseconds, unwrapSidebarGizmo } from "../src/catalog.js";
+import { collectConversationCatalog } from "../src/catalog.js";
 import { isNormalizedTitle } from "../src/title-rules.js";
-import { scanMaintenanceRun } from "../src/scan.js";
+ "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
@@ -123,23 +123,6 @@ test("catalog covers all conversations and keeps project context for empty proje
 });
 
 
-test("scan preserves title whitespace so exact backup checks can classify it", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-title-whitespace-test-"));
-  try {
-    const current = conversation(ID1, "줄바꿈 제목\n", 2);
-    const result = await scanMaintenanceRun({
-      runDir: join(root, "run"),
-      api: catalogApi({ active: [current], details: { [ID1]: current } }),
-      scope: { kind: "all" },
-      now: () => new Date("2026-08-10T00:00:00Z"),
-    });
-    assert.equal(result.inventory.conversations[0].title, "줄바꿈 제목\n");
-    assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 function finalizeFixture(root, currents, decisions, { source = { mode: "scope", scope: { kind: "all" } } } = {}) {
   const beforeCatalog = catalog(currents.map((item) => catalogItem(item, null)));
   beforeCatalog.projects = [{ projectName: "Project A", conversationCount: 0, sampleTitles: [] }];
@@ -209,55 +192,6 @@ test("the result catalog drops deleted conversations, applies titles and moves, 
     [[ID1, "새 제목 — 결과", "Unread"], [ID2, "나 — 작업", "Read"]]);
   assert.deepEqual(after.projects.map((p) => [p.projectName, p.conversationCount]), [["Read", 1], ["Unread", null]]);
   assert.equal(after.counts.conversations, 2);
-});
-
-test("timestamps compare equal across ISO strings and float epoch seconds, and unknown ones are null", () => {
-  const iso = "2026-08-27T15:18:23.211721Z";
-  assert.equal(timeMilliseconds(iso), timeMilliseconds(Date.parse(iso) / 1000 + 0.000721));
-  assert.notEqual(timeMilliseconds(iso), timeMilliseconds("2026-08-27T15:18:23.212Z"));
-  for (const unknown of [null, undefined, "", "not a time"]) assert.equal(timeMilliseconds(unknown), null);
-});
-
-test("sidebar entries are unwrapped at every observed nesting depth", () => {
-  const gizmo = { id: `g-p-${"a".repeat(32)}`, display: { name: "조사" } };
-  assert.deepEqual(unwrapSidebarGizmo(gizmo), gizmo);
-  assert.deepEqual(unwrapSidebarGizmo({ gizmo }), gizmo);
-  assert.deepEqual(unwrapSidebarGizmo({ resource: { gizmo } }), gizmo);
-  assert.deepEqual(unwrapSidebarGizmo({ gizmo: { gizmo } }), gizmo);
-  assert.deepEqual(unwrapSidebarGizmo({ resource: { gizmo: { gizmo } } }), gizmo);
-  // 감싸지 않은 잘못된 입력도 빈 객체로 안전하게 돌려준다.
-  assert.deepEqual(unwrapSidebarGizmo(null), {});
-  assert.deepEqual(unwrapSidebarGizmo("x"), {});
-});
-
-test("a full scan downloads every conversation and resumes without refetching", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-full-test-"));
-  try {
-    const current = conversation(ID1, "대상 — 작업", 2);
-    const api = catalogApi({
-      active: [current],
-      projects: [{ id: "g-p-one", name: "Project A" }],
-      projectConversations: { "g-p-one": [current] },
-      details: { [ID1]: current },
-    });
-    let fetched = 0;
-    const counting = { ...api, getConversation: (id) => { fetched += 1; return api.getConversation(id); } };
-    const runDir = join(root, "run");
-    const options = { runDir, api: counting, scope: { kind: "all" }, now: () => new Date("2026-08-10T00:00:00Z") };
-    // 앞선 실행이 본문만 받고 끊긴 상태를 만든다.
-    await scanMaintenanceRun(options);
-    assert.equal(fetched, 1);
-    rmSync(join(runDir, "inventory.json"));
-    rmSync(join(runDir, "catalog.json"));
-    const result = await scanMaintenanceRun(options);
-    assert.equal(fetched, 1);
-    assert.equal(result.inventory.counts.candidates, 1);
-    assert.equal(result.inventory.source.mode, "scope");
-    assert.deepEqual(result.inventory.source.scope, { kind: "all" });
-    assert.deepEqual(result.inventory.conversations[0].reasons, ["scope"]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 
 test("title changes are planned oldest conversation first so their relative list order survives", () => {

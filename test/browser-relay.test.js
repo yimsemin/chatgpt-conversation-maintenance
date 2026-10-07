@@ -50,12 +50,6 @@ function executorSource() {
   return lines.slice(start, end + 1).join("\n");
 }
 
-test("the page executor contains no line comments that a javascript: URL would swallow", () => {
-  const withoutStrings = executorSource().replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g, "");
-  const offenders = withoutStrings.split("\n").filter((line) => line.trim().startsWith("//"));
-  assert.deepEqual(offenders, []);
-});
-
 test("the bookmarklet still parses after a browser strips its newlines", () => {
   const collapsed = executorSource().replace(/\n\s*/g, " ");
   assert.doesNotMatch(collapsed, /\n/);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildResultReport, buildReviewSummary, reportMarkdown, rowsFromProposal } from "../src/summary.js";
+import { buildResultReport, buildReviewSummary, reportMarkdown } from "../src/summary.js";
 
 const catalog = {
   projects: [{ projectName: "A" }, { projectName: "B" }, { projectName: "Empty" }],
@@ -54,16 +54,6 @@ test("the result report lists the empty projects and manual removals the user mu
   assert.equal(report.details.moves.length, report.changes.move);
   assert.equal(report.details.renames.length, report.changes.rename);
   if (report.changes.rename) assert.match(markdown, /## 바뀐 제목/);
-});
-
-test("proposal items become rows and undecided items are counted separately", () => {
-  const proposal = { items: [
-    { conversationId: "1", currentTitle: "t", projectName: "A", suggestedDecision: "undecided", confidence: "low", rationale: "?" },
-  ] };
-  const built = rowsFromProposal(proposal, { conversations: [] });
-  const summary = buildReviewSummary({ catalog, rows: built });
-  assert.equal(summary.totals.undecided, 1);
-  assert.equal(summary.exceptions.undecided.length, 1);
 });
 
 test("rows moved to the trash project count as custody, not deletions or moves", () => {

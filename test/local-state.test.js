@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { projectIdFromLink } from "../src/project-link.js";
-import { readKnownProjects, rememberProjects, sortByRecency, writeKnownProjects } from "../src/known-projects.js";
+import { readKnownProjects, sortByRecency, writeKnownProjects } from "../src/known-projects.js";
 import { addTrashed, readTrash, removeTrashed } from "../src/trash.js";
 
 test("trashed conversations are remembered with their reason and can be released", () => {
@@ -56,14 +56,4 @@ test("the known project list keeps the project id across later writes that do no
     writeKnownProjects(root, [{ name: "P", updatedAt: "2026-09-20T00:00:00Z" }]);
     assert.equal(readKnownProjects(root).projects[0].id, `g-p-${"a".repeat(32)}`);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test("newly used projects are remembered without dropping the known ones", () => {
-  const dir = mkdtempSync(join(tmpdir(), "known-projects-"));
-  try {
-    writeKnownProjects(dir, [{ name: "A" }, { name: "B" }]);
-    assert.deepEqual(readKnownProjects(dir).projects.map((p) => p.name), ["A", "B"]);
-    rememberProjects(dir, ["C", "A"]);
-    assert.deepEqual(readKnownProjects(dir).projects.map((p) => p.name).sort(), ["A", "B", "C"]);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

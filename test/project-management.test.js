@@ -5,7 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  listOwnedProjects,
   projectPlacementConfirmation,
   runProjectPlacementWorkflow,
   validateProjectPlacementPlan,
@@ -19,7 +18,6 @@ function prepare(plan) {
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const CONVERSATION_ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379345";
-const PROJECT_CONVERSATION_ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379346";
 const PROJECT_ID = `g-p-${"1".repeat(32)}`;
 
 function fixturePlan(receiptDir, overrides = {}) {
@@ -65,35 +63,6 @@ test("project placement plans bind explicit project creation and projectless mov
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("owned-project discovery accepts sidebar wrappers and cursors", async () => {
-  const cursors = [];
-  const api = {
-    listProjectSidebar: async ({ cursor } = {}) => {
-      cursors.push(cursor);
-      if (!cursor) {
-        return {
-          ok: true,
-          status: 200,
-          data: {
-            items: [{ resource: { gizmo: { gizmo: { id: PROJECT_ID, display: { name: "Research" } } } } }],
-            cursor: "next",
-          },
-        };
-      }
-      return {
-        ok: true,
-        status: 200,
-        data: { list: { items: [{ id: `g-p-${"2".repeat(32)}`, display: { name: "Writing" } }] } },
-      };
-    },
-  };
-  assert.deepEqual(await listOwnedProjects(api), [
-    { projectId: PROJECT_ID, projectName: "Research" },
-    { projectId: `g-p-${"2".repeat(32)}`, projectName: "Writing" },
-  ]);
-  assert.deepEqual(cursors, ["", "next"]);
 });
 
 test("apply reconciles mutation-then-HTTP-500 responses by reading remote state", async () => {

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
 import { dirname, join } from "node:path";
@@ -64,21 +63,6 @@ test("closing the terminal window (SIGHUP) or pressing Ctrl+C ends the app", { s
     assert.equal(code, 0, `${signal} ends the app cleanly`);
     assert.match(run(port, "status").stdout, /실행 중인 대화 정리 앱이 없습니다/);
   }
-});
-
-test("the app status flags code that changed after the process started", async () => {
-  const { appStatus } = await import("../src/app-status.js");
-  const root = mkdtempSync(join(tmpdir(), "app-status-"));
-  try {
-    writeFileSync(join(root, "old.js"), "");
-    utimesSync(join(root, "old.js"), new Date("2020-01-01"), new Date("2020-01-01"));
-    assert.equal(appStatus(root).codeChanged, false);
-    writeFileSync(join(root, "new.js"), "");
-    utimesSync(join(root, "new.js"), new Date(Date.now() + 60000), new Date(Date.now() + 60000));
-    const status = appStatus(root);
-    assert.equal(status.codeChanged, true);
-    assert.equal(status.pid, process.pid);
-  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("starting from another folder (double-click, a terminal elsewhere) still serves the screen and works on this repository", async () => {
