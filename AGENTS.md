@@ -89,7 +89,7 @@
 
 ## Node.js 실행 환경
 
-`package.json`의 `engines.node`(>=24)를 충족하는 Node를 쓴다. 권장 버전은 `.node-version`(CI도 이 파일을 읽는다)이고 mise를 쓰면 `mise.toml`이 그것을 따른다. mise는 선택 사항이다. Codex/ChatGPT 데스크톱 앱 번들의 `Contents/Resources/cua_node/bin/node`가 있고 요구 버전을 충족하면 그 `bin`을 해당 명령에서만 `PATH` 앞에 둘 수 있다. 앱 내부 경로는 안정 계약이 아니므로 매번 존재와 `--version`을 확인하고 저장소에 고정하지 않는다.
+`package.json`의 `engines.node`(>=24)를 충족하는 Node를 쓴다. 권장 버전은 `.node-version`(CI도 이 파일을 읽는다)이고 mise 같은 버전 관리자를 쓰면 `.node-version`을 읽게 하면 된다(선택 사항이며 저장소에는 mise 설정을 두지 않는다). Codex/ChatGPT 데스크톱 앱 번들의 `Contents/Resources/cua_node/bin/node`가 있고 요구 버전을 충족하면 그 `bin`을 해당 명령에서만 `PATH` 앞에 둘 수 있다. 앱 내부 경로는 안정 계약이 아니므로 매번 존재와 `--version`을 확인하고 저장소에 고정하지 않는다.
 
 ## 완료 전 점검
 

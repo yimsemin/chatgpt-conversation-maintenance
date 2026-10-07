@@ -6,18 +6,20 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE_BIN=""
 
-for CANDIDATE in \
-  "/Applications/Codex.app/Contents/Resources/cua_node/bin/node" \
-  "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
-do
-  if [ -x "$CANDIDATE" ]; then
-    NODE_BIN="$CANDIDATE"
-    break
-  fi
-done
-
-if [ -z "$NODE_BIN" ] && command -v node >/dev/null 2>&1; then
+if command -v node >/dev/null 2>&1; then
   NODE_BIN="$(command -v node)"
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  for CANDIDATE in \
+    "/Applications/Codex.app/Contents/Resources/cua_node/bin/node" \
+    "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
+  do
+    if [ -x "$CANDIDATE" ]; then
+      NODE_BIN="$CANDIDATE"
+      break
+    fi
+  done
 fi
 
 if [ -z "$NODE_BIN" ]; then
