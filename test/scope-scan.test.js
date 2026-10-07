@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import { collectScopedCatalog } from "../src/catalog.js";
 import { countDownloaded, finishPartialScan, keptTitleMap, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
@@ -123,8 +123,7 @@ test("the untidy scope reads newest first and stops after three consecutive stan
 });
 
 test("bodies saved by an earlier run are reused only while the conversation is unmodified", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-reuse-"));
-  try {
+  await withTemp("chatgpt-maintenance-reuse-", async (root) => {
     const old = join(root, "runs", "old-run", "json");
     mkdirSync(old, { recursive: true });
     const saved = (id, title, updateTime) => writeFileSync(join(old, `${id}.json`), JSON.stringify({ conversation_id: id, id, title, update_time: updateTime,
@@ -144,28 +143,22 @@ test("bodies saved by an earlier run are reused only while the conversation is u
     assert.deepEqual(fetched.sort(), [ID3, ID4].sort(), "the modified and the missing conversation are downloaded");
     assert.equal(result.inventory.counts.candidates, 3);
     assert.equal(JSON.parse(readFileSync(join(root, "runs", "new-run", "json", `${ID1}.json`), "utf8")).mapping.one.message.content.parts[0], "예전", "the reused body is copied into the new run");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("a title that changed between the list and the body is adopted instead of aborting the scan", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-retitle-"));
-  try {
+  await withTemp("chatgpt-maintenance-retitle-", async (root) => {
     const fake = api();
     const body = fake.getConversation;
     fake.getConversation = async (id) => { const res = await body(id); if (id === ID1) res.data.title = "ChatGPT가 새로 붙인 제목"; return res; };
     const result = await scanMaintenanceRun({ runDir: join(root, "run"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
     assert.equal(result.inventory.counts.candidates, 3);
     assert.equal(result.inventory.conversations.find((c) => c.conversationId === ID1).title, "ChatGPT가 새로 붙인 제목");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("skipFailed skips a conversation that keeps failing after four tries and records it; without it the scan stops", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-skip-"));
-  try {
+  await withTemp("chatgpt-maintenance-skip-", async (root) => {
     const fake = api();
     const body = fake.getConversation;
     const seen = [];
@@ -185,14 +178,11 @@ test("skipFailed skips a conversation that keeps failing after four tries and re
     assert.deepEqual(skippedEvents, [ID3]);
     assert.equal(result.inventory.counts.candidates, 2, "the skipped conversation is not a candidate");
     assert.deepEqual(result.inventory.warnings, [], "skipping does not make the inventory unusable");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("skipStandardTitles downloads only conversations whose title is not standard and counts the others", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-standard-"));
-  try {
+  await withTemp("chatgpt-maintenance-standard-", async (root) => {
     const fake = api();
     const items = [
       { id: ID1, title: "정리 안 된 제목", update_time: day(1), gizmo_id: null },
@@ -217,14 +207,11 @@ test("skipStandardTitles downloads only conversations whose title is not standar
     const all = await scanMaintenanceRun({ runDir: join(root, "run2"), api: fake, scope: { kind: "unassigned" }, now: () => NOW });
     assert.equal(all.inventory.counts.candidates, 3);
     assert.equal("standardTitlesExcluded" in all.inventory, false, "the option is off by default");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
-test("kept titles are read from the reviewed decisions of every run", () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-kept-"));
-  try {
+test("kept titles are read from the reviewed decisions of every run", async () => {
+  await withTemp("chatgpt-maintenance-kept-", async (dataDir) => {
     mkdirSync(join(dataDir, "runs", "one"), { recursive: true });
     mkdirSync(join(dataDir, "runs", "broken"), { recursive: true });
     writeFileSync(join(dataDir, "runs", "one", "reviewed-decisions.json"), JSON.stringify({ decisions: [
@@ -232,14 +219,11 @@ test("kept titles are read from the reviewed decisions of every run", () => {
     writeFileSync(join(dataDir, "runs", "broken", "reviewed-decisions.json"), "{ 깨짐");
     assert.deepEqual([...keptTitleMap(dataDir)], [[ID1, "그대로 둔 제목"]]);
     assert.equal(keptTitleMap(join(dataDir, "missing")).size, 0);
-  } finally {
-    rmSync(dataDir, { recursive: true, force: true });
-  }
+  });
 });
 
 test("an interrupted scan can be finished with only the bodies already downloaded", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-partial-test-"));
-  try {
+  await withTemp("chatgpt-maintenance-partial-test-", async (root) => {
     const fake = api();
     let downloads = 0;
     const realGet = fake.getConversation;
@@ -259,7 +243,5 @@ test("an interrupted scan can be finished with only the bodies already downloade
     assert.deepEqual(result.inventory.warnings, []);
     assert.equal(readScanDraft(runDir), null, "a finished folder is no longer resumable");
     assert.throws(() => finishPartialScan({ runDir }), /끊긴 수집이 없습니다/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });

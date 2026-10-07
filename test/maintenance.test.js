@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import { orderOldestFirst } from "../src/decision-compile.js";
 import { buildAfterCatalog, checkRenameOrder, finalizeMaintenanceRun } from "../src/finalize.js";
@@ -203,9 +204,8 @@ test("title changes are planned oldest conversation first so their relative list
   assert.deepEqual(actions.map((a) => a.conversationId), [ID1, ID2, ID3, ID4], "input is not mutated");
 });
 
-test("the rename order check compares the original order with the times recorded in the receipts", () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-order-test-"));
-  try {
+test("the rename order check compares the original order with the times recorded in the receipts", async () => {
+  await withTemp("chatgpt-maintenance-order-test-", async (root) => {
     const inventory = { conversations: [{ conversationId: ID1, updateTime: day(30) }, { conversationId: ID2, updateTime: day(20) }, { conversationId: ID3, updateTime: day(10) }] };
     const write = (afters) => {
       rmSync(root, { recursive: true, force: true }); mkdirSync(root, { recursive: true });
@@ -219,7 +219,5 @@ test("the rename order check compares the original order with the times recorded
     assert.equal(flipped.preserved, false);
     assert.deepEqual(flipped.outOfOrder, [ID2, ID3]);
     assert.deepEqual(checkRenameOrder(inventory, join(root, "missing")), { renamed: 0, preserved: true, outOfOrder: [] });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });

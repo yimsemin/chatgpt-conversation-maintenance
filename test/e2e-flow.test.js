@@ -45,6 +45,12 @@ async function startDev(port, extraArgs = [], env = {}) {
   return { child, call, get, waitJob, stop: async () => { child.kill("SIGTERM"); await once(child, "exit").catch(() => {}); } };
 }
 
+// 서버를 띄워 fn(dev)에 주고, 끝나면(실패해도) 끈다.
+async function withDev(port, extraArgs, env, fn) {
+  const dev = await startDev(port, extraArgs, env);
+  try { return await fn(dev); } finally { await dev.stop(); }
+}
+
 async function untilProposal(dev) {
   const end = Date.now() + 30000;
   while (Date.now() < end) {
@@ -59,8 +65,7 @@ const UNASSIGNED = { scope: { kind: "unassigned" } };
 const isStandard = (title) => { const parts = String(title).split(" — "); return parts.length === 2 && parts.every((p) => p && p === p.trim() && !p.includes("—")); };
 
 test("scan, review and apply run end to end against the fake ChatGPT", async () => {
-  const dev = await startDev(18601, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
+  await withDev(18601, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     let session = await dev.get("/maintenance/session");
     assert.equal(session.relay.connected, true);
     assert.equal(session.step, "scan");
@@ -105,12 +110,11 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     // 적용한 범위를 다시 읽으면 남은 대화는 정리를 마친 것(표준 제목)뿐이다.
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(again.ok, true, JSON.stringify(again.error));
-  } finally { await dev.stop(); }
+  });
 });
 
 test("a project scope scans only that project and applies without a baseline", async () => {
-  const dev = await startDev(18608, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
+  await withDev(18608, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const listed = await dev.waitJob((await dev.call("/maintenance/projects", {})).jobId);
     assert.equal(listed.ok, true, JSON.stringify(listed.error));
     const name = (await dev.get("/maintenance/session")).knownProjects.projects[0].name;
@@ -125,12 +129,11 @@ test("a project scope scans only that project and applies without a baseline", a
     assert.deepEqual(report.mismatches, []);
     // 읽지 않은 프로젝트의 대화 수를 지어내지 않는다.
     assert.ok(report.projects.some((item) => item.before === null || item.actualAfter === null) || report.projects.every((item) => item.before !== null));
-  } finally { await dev.stop(); }
+  });
 });
 
 test("a burst of 429 during apply is waited out and the run still finishes on its own", async () => {
-  const dev = await startDev(18602, ["--inject=patchConversation:429:12"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" });
-  try {
+  await withDev(18602, ["--inject=patchConversation:429:12"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" }, async (dev) => {
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
     await untilProposal(dev);
@@ -139,21 +142,19 @@ test("a burst of 429 during apply is waited out and the run still finishes on it
     assert.equal(applied.ok, true, JSON.stringify(applied.error));
     assert.ok(applied.events.some((event) => event.stage === "rate-limit" || event.stage === "retry"),
       "the 429 wait should be visible in the log");
-  } finally { await dev.stop(); }
+  });
 });
 
 test("a relay window that is replaced mid-scan is recovered from automatically", async () => {
-  const dev = await startDev(18606, ["--drop-relay-after=5"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
+  await withDev(18606, ["--drop-relay-after=5"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId, 120000);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
     await untilProposal(dev);
-  } finally { await dev.stop(); }
+  });
 });
 
 test("a second job is refused while one runs, and a cancelled scan can be started again", async () => {
-  const dev = await startDev(18607, ["--slow"], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
+  await withDev(18607, ["--slow"], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const first = await dev.call("/maintenance/scan", UNASSIGNED);
     await assert.rejects(() => dev.call("/maintenance/scan", UNASSIGNED));
     await dev.call("/maintenance/cancel", { jobId: first.jobId });
@@ -161,12 +162,11 @@ test("a second job is refused while one runs, and a cancelled scan can be starte
     assert.equal(cancelled.ok, false);
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId, 120000);
     assert.equal(again.ok, true, JSON.stringify(again.error));
-  } finally { await dev.stop(); }
+  });
 });
 
 test("delete candidates move to the trash project with standard titles and are later confirmed or restored", async () => {
-  const dev = await startDev(18603, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" });
-  try {
+  await withDev(18603, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
     await untilProposal(dev);
@@ -214,12 +214,11 @@ test("delete candidates move to the trash project with standard titles and are l
     const report = (await dev.get("/maintenance/report")).report;
     assert.deepEqual(report.mismatches, []);
     assert.equal(report.totals.delete, 1);
-  } finally { await dev.stop(); }
+  });
 });
 
 test("when a title changes after review, apply stops with a rescan recovery and a new scan picks it up again", async () => {
-  const dev = await startDev(18605, ["--rename-after-proposal"], { MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" });
-  try {
+  await withDev(18605, ["--rename-after-proposal"], { MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" }, async (dev) => {
     await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     await untilProposal(dev);
     const failed = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 60000);
@@ -234,5 +233,5 @@ test("when a title changes after review, apply stops with a rescan recovery and 
     assert.equal(again.ok, true, JSON.stringify(again.error));
     session = await dev.get("/maintenance/session");
     assert.ok(session.run.candidates >= 1);
-  } finally { await dev.stop(); }
+  });
 });

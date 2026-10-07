@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import {
   projectPlacementConfirmation,
@@ -42,9 +43,8 @@ function fixturePlan(receiptDir, overrides = {}) {
   };
 }
 
-test("project placement plans bind explicit project creation and projectless moves", () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-project-plan-test-"));
-  try {
+test("project placement plans bind explicit project creation and projectless moves", async () => {
+  await withTemp("chatgpt-project-plan-test-", async (root) => {
     const prepared = prepare(fixturePlan(root));
     assert.equal(prepared.project.createIfMissing, true);
     assert.equal(prepared.actions.length, 1);
@@ -60,9 +60,7 @@ test("project placement plans bind explicit project creation and projectless mov
     withSource.actions[0].expectedSourceProjectId = sourceProjectId;
     const preparedWithSource = prepare(withSource);
     assert.equal(preparedWithSource.actions[0].expectedSourceProjectId, sourceProjectId);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("apply reconciles mutation-then-HTTP-500 responses by reading remote state", async () => {

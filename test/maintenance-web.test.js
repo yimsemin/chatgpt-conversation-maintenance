@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import { createSafeDiagnostic } from "../src/web-common.js";
 import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
@@ -183,9 +183,8 @@ test("plan reuse follows the decisions digest: reuse, compile, recompile or halt
   assert.deepEqual(decide({ stampDigest: null, hasReceipts: true }), { action: "halt", reason: "unknown-source-after-apply" });
 });
 
-test("an interrupted collection of the same scope resumes its run folder; other scopes, finished runs and stale folders start a new one", () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "maintenance-resume-"));
-  try {
+test("an interrupted collection of the same scope resumes its run folder; other scopes, finished runs and stale folders start a new one", async () => {
+  await withTemp("maintenance-resume-", async (dataDir) => {
     const scope = { kind: "recent", days: 7 };
     const first = resumableRunDir(dataDir, scope);
     mkdirSync(join(first, "json"), { recursive: true });
@@ -194,7 +193,5 @@ test("an interrupted collection of the same scope resumes its run folder; other 
     assert.notEqual(resumableRunDir(dataDir, scope, { now: Date.now() + 25 * 3600 * 1000 }), first);
     writeFileSync(join(first, "inventory.json"), "{}");
     assert.notEqual(resumableRunDir(dataDir, scope), first);
-  } finally {
-    rmSync(dataDir, { recursive: true, force: true });
-  }
+  });
 });

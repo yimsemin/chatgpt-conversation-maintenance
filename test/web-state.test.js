@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appendFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { withTemp } from "./support/tmp.js";
+import { appendFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { explainError } from "../src/errors.js";
@@ -26,9 +26,8 @@ test("eta is estimated from the rate since the phase started", () => {
   assert.equal(formatDuration(3900), "1시간 5분");
 });
 
-test("job logs restore a finished job and close an interrupted one", () => {
-  const dir = mkdtempSync(join(tmpdir(), "job-log-"));
-  try {
+test("job logs restore a finished job and close an interrupted one", async () => {
+  await withTemp("job-log-", async (dir) => {
     const log = createJobLog(dir);
     const done = { id: "aaaaaaaa-1", kind: "scan", workspace: "/w", createdAt: Date.now() - 2000, ok: true };
     log.open(done);
@@ -50,7 +49,7 @@ test("job logs restore a finished job and close an interrupted one", () => {
     assert.equal(readdirSync(dir).length, 2);
     appendFileSync(join(dir, readdirSync(dir)[0]), "not json\n");
     assert.equal(log.recent().length, 2);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 import { deriveStep } from "../src/session.js";

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import {
   prepareProjectRouting,
@@ -57,9 +58,8 @@ function routingFixture(receiptDir) {
   };
 }
 
-test("routing plans bind every target and conversation to one confirmation", () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-routing-test-"));
-  try {
+test("routing plans bind every target and conversation to one confirmation", async () => {
+  await withTemp("chatgpt-routing-test-", async (root) => {
     const routing = routingFixture(root);
     const prepared = prepareProjectRouting(routing);
     assert.equal(prepared.targetCount, 2);
@@ -70,9 +70,7 @@ test("routing plans bind every target and conversation to one confirmation", () 
 
     routing.targets[1].actions[0].conversationId = IDS[0];
     assert.throws(() => validateProjectRouting(routing), /more than one routing target/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("routing reuses one project catalog and applies existing and new targets", async () => {

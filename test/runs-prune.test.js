@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import { applyPrune, planPrune } from "../src/runs-prune.js";
 
@@ -11,9 +11,8 @@ const ID2 = "22222222-2222-4222-8222-222222222222";
 const ID3 = "33333333-3333-4333-8333-333333333333";
 const ID4 = "44444444-4444-4444-8444-444444444444";
 
-test("pruning keeps one newest body per conversation and never touches protected copies", () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "chatgpt-maintenance-prune-"));
-  try {
+test("pruning keeps one newest body per conversation and never touches protected copies", async () => {
+  await withTemp("chatgpt-maintenance-prune-", async (dataDir) => {
     const run = (name, { inventory = true, bodies }) => {
       const dir = join(dataDir, "runs", name);
       mkdirSync(join(dir, "json"), { recursive: true });
@@ -44,7 +43,5 @@ test("pruning keeps one newest body per conversation and never touches protected
     assert.equal(existsSync(join(b, "json", `${ID3}.json`)), false);
     assert.equal(existsSync(join(draft, "json", `${ID4}.json`)), true);
     assert.equal(existsSync(join(a, "report.json")), true, "records other than bodies are never removed");
-  } finally {
-    rmSync(dataDir, { recursive: true, force: true });
-  }
+  });
 });
