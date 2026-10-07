@@ -229,8 +229,8 @@ export function buildClaudePrompt(review, { inventoryPath = null, proposalPath =
     "",
     "결과 JSON 전문을 답변에 그대로 붙여 유지관리 앱의 '분류 결과 JSON 붙여넣기'에 넣을 수 있게 한다.",
     ...(inventoryPath && proposalPath
-      ? [`파일 접근이 가능하면 ${proposalPath} 로 저장하고 \`node workflow.js validate-proposal "${inventoryPath}" "${proposalPath}"\` 로 검증한다.`]
-      : ["파일 접근이 가능하면 proposal.json으로 저장하고 `node workflow.js validate-proposal <inventory.json> <proposal.json>` 로 검증한다."]),
+      ? [`파일 접근이 가능하면 ${proposalPath} 로 저장하고 \`node src/workflow.js validate-proposal "${inventoryPath}" "${proposalPath}"\` 로 검증한다. 검증 경고(제목 길이 등)가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증한 뒤 제시한다.`]
+      : ["파일 접근이 가능하면 proposal.json으로 저장하고 `node src/workflow.js validate-proposal <inventory.json> <proposal.json>` 로 검증한다. 검증 경고(제목 길이 등)가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증한 뒤 제시한다."]),
   ].join("\n");
 }
 

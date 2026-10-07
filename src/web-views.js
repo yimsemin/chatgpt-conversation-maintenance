@@ -128,7 +128,7 @@ function classificationPrompt(pointer) {
     "",
     "review.json의 후보 전체만 분류하고, 첨부·비텍스트 때문에 불분명한 항목만 원본 JSON을 추가 확인해.",
     "모든 후보에 보존·삭제·미결정, 표준 제목(null 가능), 최종 프로젝트, 프로젝트 조치, 확신도, 근거를 제안해 proposal.json으로 저장해.",
-    `저장 후 node workflow.js validate-proposal "${pointer.inventoryPath}" "${proposalPath}" 로 검증하고, 결과 JSON 전문을 답변에도 붙여줘 — 유지관리 앱의 '분류 결과 JSON 붙여넣기' 칸에 넣을 수 있게.`,
+    `저장 후 node src/workflow.js validate-proposal "${pointer.inventoryPath}" "${proposalPath}" 로 검증하고(경고가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증), 결과 JSON 전문을 답변에도 붙여줘 — 유지관리 앱의 '분류 결과 JSON 붙여넣기' 칸에 넣을 수 있게.`,
   ].join("\n");
 }
 

@@ -10,9 +10,9 @@ try { process.umask(0o077); } catch {}
 function usage() {
   return [
     "Usage:",
-    "  node workflow.js review <inventory.json> <review.json>",
-    "  node workflow.js claude-prompt <review.json> <prompt.md> [<inventory.json> <proposal.json>]",
-    "  node workflow.js validate-proposal <inventory.json> <proposal.json>",
+    "  node src/workflow.js review <inventory.json> <review.json>",
+    "  node src/workflow.js claude-prompt <review.json> <prompt.md> [<inventory.json> <proposal.json>]",
+    "  node src/workflow.js validate-proposal <inventory.json> <proposal.json>",
   ].join("\n");
 }
 

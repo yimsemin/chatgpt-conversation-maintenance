@@ -59,7 +59,7 @@ export function nextAction({ lock, run }) {
   if (run.phase === PHASE.AWAITING_PROPOSAL && !run.hasProposal) {
     return {
       actor: "agent",
-      text: `AI 분류: node workflow.js claude-prompt "${run.reviewPath}" "${run.promptPath}" "${run.inventoryPath}" "${run.proposalPath}" 로 요청문을 만들고, 그 지시대로 proposal.json 을 쓴 뒤 validate-proposal 로 검증한다`,
+      text: `AI 분류: node src/workflow.js claude-prompt "${run.reviewPath}" "${run.promptPath}" "${run.inventoryPath}" "${run.proposalPath}" 로 요청문을 만들고, 그 지시대로 proposal.json 을 쓴 뒤 validate-proposal 로 검증한다`,
     };
   }
   if (run.hasProposal && !run.hasDecisions) {
