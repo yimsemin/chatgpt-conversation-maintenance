@@ -20,7 +20,7 @@ export async function loadReview() {
   } catch (e) { fail(e); }
 }
 
-// ignoreSkips: 이동·제목 변경 목록은 "적용 안 함"으로 해제한 항목도 계속 보여 줘야 다시 켤 수 있다.
+// ignoreSkips: 바뀌는 대화 목록은 "적용 안 함"으로 해제한 항목도 계속 보여 줘야 다시 켤 수 있다.
 function effectiveRows(ignoreSkips = false) {
   const rows = rowsFromProposal(S.proposal, { conversations: [] });
   return rows.map((row) => {
@@ -96,10 +96,8 @@ function drawReview() {
   const invalid = rows.filter((r) => r.decision === "keep" && !S.overrides.get(r.conversationId)?.skipTitle && !isNormalizedTitle(r.newTitle || r.title));
   const blockers = [];
   if (t.undecided) blockers.push(`미결정 ${t.undecided}건을 정해 주세요`);
-  if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — 아래 목록에서 제목을 고쳐 주세요`);
-  const listed = buildReviewSummary({ catalog: S.catalog, rows: effectiveRows(true) }).exceptions;
+  if (invalid.length) blockers.push(`제목 형식이 맞지 않는 대화 ${invalid.length}건 — ‘바뀌는 대화’ 목록에서 제목을 고쳐 주세요`);
   const dests = destinationEntries();
-  const renamesOff = listed.renames.filter((r) => S.overrides.get(r.conversationId)?.skipTitle).length;
   const panel = $("panel");
   fill(panel, 
     h("p", { class: "lead", text: summary.headline }),
@@ -113,9 +111,6 @@ function drawReview() {
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, "보존"),
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "delete" }) }, S.trash.permanent ? "영구 삭제" : "삭제후보로")])), true),
     destinationSection(dests),
-    section("제목 변경", listed.renames.length, [
-      bulkBar(listed.renames, "skipTitle", "제목 변경", renamesOff),
-      paged("제목 변경", listed.renames, titleItem)], false, "", "건", renamesOff ? `${listed.renames.length - renamesOff}건 적용` : ""),
     section("확신이 낮은 항목", ex.lowConfidence.length, ex.lowConfidence.map((d) => item(d.title, d.why || "", [])), false),
     c.newProjects.length ? section("새로 만들 프로젝트", c.newProjects.length, c.newProjects.map((n) => item(n, "적용할 때 자동으로 만듭니다", [])), true, "", "개") : null,
     ex.manualRemoves.length ? section("직접 빼야 하는 대화", ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, `현재 프로젝트: ${m.project} — 앱은 프로젝트에서 뺄 수 없어 결과 화면에 안내합니다`, [])), false) : null,
@@ -229,10 +224,12 @@ function paged(key, list, render) {
   return [bar("top"), shown.map((x) => render(x)), bar("bottom")];
 }
 
-// ---------- 옮길 곳: 프로젝트 이동과 삭제후보를 한 목록에서 다룬다 ----------
-// 대화마다 "어디로 보낼까"를 그 자리에서 고른다: 삭제후보(제안값) · 프로젝트 없음 · 각 프로젝트. 체크를 해제하면 원래 자리에 그대로 둔다.
+// ---------- 바뀌는 대화: 이동·삭제후보·제목 변경을 대화 한 줄에서 함께 다룬다 ----------
+// 대화마다 "어디로 보낼까"(삭제후보 · 프로젝트 없음 · 각 프로젝트)와 "제목을 무엇으로 바꿀까"를 같은 자리에서 고친다.
+// 적용 체크를 해제하면 그 대화는 원래 자리·원래 제목 그대로 둔다.
 const TRASH_VALUE = "__trash__";
-let destFilter = "all"; // all | move | trash
+const DEST_KEY = "바뀌는 대화";
+let destFilter = "all"; // all | move | trash | title
 
 function destinationEntries() {
   const entries = [];
@@ -241,9 +238,14 @@ function destinationEntries() {
     const o = S.overrides.get(r.conversationId);
     const kind = r.trashed ? "trash" : r.marked ? "mark" : r.decision === "delete" ? "delete" : "move";
     const moving = Boolean(r.project) && r.project !== r.currentProject;
-    if (kind === "move" && !moving && !o?.listed) continue;
-    entries.push({ conversationId: r.conversationId, title: r.title, from: r.currentProject, kind, to: r.project,
-      groupTrash: kind !== "move", effTitle: (r.newTitle || r.title).trim(), off: Boolean(o?.skipMove) });
+    const effTitle = (r.newTitle || r.title).trim();
+    const renaming = effTitle !== (r.title || "").trim();
+    if (kind === "move" && !moving && !renaming && !o?.listed) continue;
+    const groupTrash = kind !== "move";
+    const changesPlace = groupTrash || moving;
+    entries.push({ conversationId: r.conversationId, title: r.title, from: r.currentProject, kind, to: r.project, groupTrash, moving, renaming, effTitle,
+      group: groupTrash ? "trash" : moving ? "move" : "title",
+      off: Boolean(changesPlace ? o?.skipMove : o?.skipTitle), titleOff: Boolean(o?.skipTitle) });
   }
   return entries;
 }
@@ -254,37 +256,37 @@ function trashLabel() {
   return `삭제후보로 보내기 → 「${trashTarget().name}」`;
 }
 
-// 해제는 항목을 원래 자리·원래 제목 그대로 두는 것이다. 삭제후보였던 대화도 같다(해제한 항목은 표준 제목 예외).
-const releaseChanges = (entry, off) => ({ skipMove: off, ...(entry.groupTrash ? { skipTitle: off } : {}) });
+// 해제는 대화를 원래 자리·원래 제목 그대로 두는 것이다(해제한 대화는 표준 제목 예외). 다시 켜면 이동·제목 변경이 모두 돌아온다.
+const releaseChanges = (entry, off) => (entry.group === "title" ? { skipTitle: off } : { skipMove: off, skipTitle: off });
 
 function destinationSection(all) {
   if (!all.length) return null;
-  const list = destFilter === "all" ? all : all.filter((e) => (destFilter === "trash") === e.groupTrash);
+  const list = destFilter === "all" ? all : all.filter((e) => e.group === destFilter);
   const off = all.filter((e) => e.off).length;
   const setFilter = (value) => { destFilter = value; pageState.delete(DEST_KEY); redraw(); };
-  const count = (pred) => all.filter(pred).length;
+  const count = (group) => all.filter((e) => e.group === group).length;
   const tab = (value, label, n) => h("button", { class: `btn ghost${destFilter === value ? " on" : ""}`, type: "button", "data-fk": `f:${value}`,
     "aria-pressed": destFilter === value ? "true" : "false", onclick: () => setFilter(value) }, `${label} ${n}`);
   const bulk = (offValue) => () => {
-    for (const group of [true, false]) {
-      const ids = list.filter((e) => e.groupTrash === group).map((e) => e.conversationId);
-      if (ids.length) patchMany(ids, releaseChanges({ groupTrash: group }, offValue));
+    for (const group of ["trash", "move", "title"]) {
+      const sub = list.filter((e) => e.group === group);
+      if (sub.length) patchMany(sub.map((e) => e.conversationId), releaseChanges({ group }, offValue));
     }
   };
-  const scope = { all: "", move: "프로젝트 이동 ", trash: "삭제후보 " }[destFilter];
+  const scope = { all: "", move: "프로젝트 이동 ", trash: "삭제후보 ", title: "제목만 바꾸는 " }[destFilter];
   const listOff = list.filter((e) => e.off).length;
   const note = list.length > PAGE_SIZE ? "모두 적용·해제는 이 탭의 다른 쪽 항목까지 바꿉니다." : "";
-  return section("옮길 곳", all.length, [
-    h("div", { class: "seg" }, tab("all", "전체", all.length), tab("move", "프로젝트 이동", count((e) => !e.groupTrash)), tab("trash", "삭제후보", count((e) => e.groupTrash))),
+  const tabs = [tab("all", "전체", all.length), tab("move", "프로젝트 이동", count("move")), tab("trash", "삭제후보", count("trash")), tab("title", "제목만", count("title"))];
+  return section(DEST_KEY, all.length, [
+    h("div", { class: "seg" }, tabs),
     h("div", { class: "bulk" },
       h("button", { class: "btn ghost", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope}모두 적용`),
       h("button", { class: "btn ghost", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope}모두 해제`),
       note ? h("span", { class: "muted small", text: note }) : null),
     list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: "이 탭에 항목이 없습니다." })],
-  true, "삭제후보로 제안된 대화도 여기서 다른 프로젝트로 보낼 수 있습니다. ‘프로젝트 없음’을 고르면 현재 프로젝트 안의 대화는 결과 화면에서 직접 빼도록 안내합니다.",
+  true, "대화마다 보낼 곳과 새 제목을 한 줄에서 고칩니다. 삭제후보로 제안된 대화도 다른 프로젝트로 보낼 수 있고, ‘프로젝트 없음’을 고르면 현재 프로젝트 안의 대화는 결과 화면에서 직접 빼도록 안내합니다.",
   "건", off ? `${all.length - off}건 적용` : "");
 }
-const DEST_KEY = "옮길 곳";
 
 function destinationItem(e) {
   const id = e.conversationId;
@@ -298,42 +300,28 @@ function destinationItem(e) {
     ...projectNames().map((n) => h("option", { value: n, text: n })));
   select.value = e.groupTrash ? TRASH_VALUE : (e.to || "");
   const dest = e.groupTrash ? trashLabel() : (e.to || "프로젝트 없음");
-  // 삭제후보로 보내거나 제목이 표준이 아닌 채 옮기는 대화는 표준 제목이 필요하다(해제한 항목은 예외).
-  const needsTitle = !e.off && e.kind !== "delete" && (e.groupTrash || !isNormalizedTitle(e.effTitle));
-  const input = needsTitle ? h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
-    onchange: (ev) => patch(id, { title: ev.target.value.trim() }) }) : null;
-  return h("div", { class: `item${e.off ? " off" : ""}` }, h("div", { class: "t", text: e.title }), h("div", { class: "ctl" }, toggle, select),
-    h("div", { class: "m", text: `${e.from || "프로젝트 없음"} → ${dest}` }), input);
-}
-
-// 목록의 모든 항목을 한 번에 적용하거나(체크) 적용 안 함(해제)으로 바꾼다.
-function bulkBar(list, flag, label, off) {
-  const note = list.length > PAGE_SIZE ? "모두 적용·해제는 다른 쪽 항목까지 바꿉니다." : "";
-  const ids = list.map((x) => x.conversationId);
-  return h("div", { class: "bulk" },
-    h("button", { class: "btn ghost", type: "button", disabled: off === 0 ? true : null, onclick: () => patchMany(ids, { [flag]: false }) }, `${label} 모두 적용`),
-    h("button", { class: "btn ghost", type: "button", disabled: off === ids.length ? true : null, onclick: () => patchMany(ids, { [flag]: true }) }, `${label} 모두 해제`),
-    note ? h("span", { class: "muted small", text: note }) : null);
-}
-
-// 적용 체크 상자. 해제하면 그 항목은 바꾸지 않는다(원래 제목 그대로).
-function applyToggle(id, flag) {
-  const off = !!S.overrides.get(id)?.[flag];
-  return h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:${flag}:${id}`, checked: off ? null : true,
-    onchange: (e) => patch(id, { [flag]: !e.target.checked }) }), "적용");
+  const place = e.groupTrash || e.moving ? `${e.from || "프로젝트 없음"} → ${dest}` : `프로젝트는 그대로: ${e.from || "프로젝트 없음"}`;
+  // 영구 삭제는 제목이 필요 없다. 프로젝트만 옮기는 대화는 제목을 그대로 둘 수도 있어 그 경우만 따로 해제한다.
+  const canKeepTitle = e.moving && !e.groupTrash;
+  const keepTitle = !e.off && canKeepTitle
+    ? h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:title:${id}`, checked: e.titleOff ? true : null,
+      onchange: (ev) => patch(id, { skipTitle: ev.target.checked }) }), "제목 그대로") : null;
+  let titleRow = null;
+  if (e.kind !== "delete") {
+    if (e.off) titleRow = h("div", { class: "m", text: "해제됨 — 원래 제목 그대로 둡니다" });
+    else if (e.titleOff && canKeepTitle) titleRow = h("div", { class: "m", text: "제목은 그대로 둡니다" });
+    else titleRow = h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
+      placeholder: "새 제목 (주제 — 작업/결과)", onchange: (ev) => {
+        const v = ev.target.value.trim(); ev.target.classList.toggle("invalid", !isNormalizedTitle(v));
+        patch(id, { title: v, skipTitle: false, listed: true });
+      } });
+  }
+  return h("div", { class: `item${e.off ? " off" : ""}` }, h("div", { class: "t", text: e.title }), h("div", { class: "ctl" }, toggle, keepTitle, select),
+    h("div", { class: "m", text: place }), titleRow);
 }
 
 export function item(title, meta, controls) {
   return h("div", { class: "item" }, h("div", { class: "t", text: title }), h("div", { class: "ctl" }, controls), h("div", { class: "m", text: meta }));
-}
-
-function titleItem(r) {
-  const off = !!S.overrides.get(r.conversationId)?.skipTitle;
-  const input = h("input", { class: "title-input", type: "text", value: S.overrides.get(r.conversationId)?.title ?? r.to, "data-fk": `t:${r.conversationId}` });
-  const apply = () => { const v = input.value.trim(); input.classList.toggle("invalid", !isNormalizedTitle(v)); patch(r.conversationId, { title: v, skipTitle: false }); };
-  input.addEventListener("change", apply);
-  return h("div", { class: `item${off ? " off" : ""}` }, h("div", { class: "t", text: r.from }), h("div", { class: "ctl" }, applyToggle(r.conversationId, "skipTitle")),
-    h("div", { class: "m", text: "→ 새 제목 (주제 — 작업/결과)" }), input);
 }
 
 function projectTable(summary) {
