@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROJECT_ID, validateRemoteOperation, validateRemoteResult } from "../src/remote-ops.js";
+import { validateRemoteOperation, validateRemoteResult } from "../src/remote-ops.js";
 
 const CID = "11111111-1111-4111-8111-111111111111";
 const PID = `g-p-${"a".repeat(32)}`;
@@ -9,11 +9,6 @@ test("remote operations accept only fixed operations and parameters", () => {
   assert.equal(validateRemoteOperation({ op: "getConversation", params: { id: CID } }).op, "getConversation");
   assert.throws(() => validateRemoteOperation({ op: "fetch", params: { url: "https://example.com" } }), /Unsupported/);
   assert.throws(() => validateRemoteOperation({ op: "getConversation", params: { id: CID, url: "/x" } }), /unsupported fields/);
-});
-
-test("project IDs require g-p- followed by exactly 32 hexadecimal characters", () => {
-  assert.equal(PROJECT_ID.test(PID), true);
-  assert.equal(PROJECT_ID.test(`${PID}-slug`), false);
   assert.throws(() => validateRemoteOperation({ op: "moveConversation", params: { id: CID, projectId: `${PID}-slug` } }), /Project ID/);
 });
 

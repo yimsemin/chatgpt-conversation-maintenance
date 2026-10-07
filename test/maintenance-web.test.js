@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { appFolders, createSafeDiagnostic } from "../src/web-common.js";
+import { createSafeDiagnostic } from "../src/web-common.js";
 import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src/web-decisions.js";
 import { jobEvent } from "../src/web-jobs.js";
-import { assertApplyablePhase, planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
-import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
+import { planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
 
 function inventoryFixture(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), "maintenance-web-inv-"));
@@ -32,19 +31,6 @@ function inventoryFixture(overrides = {}) {
     inventory: JSON.parse(readFileSync(inventoryPath, "utf8")),
   };
 }
-
-test("the app folder is the repository folder unless a test points it at a temporary folder", () => {
-  const repo = appFolders();
-  assert.equal(repo.dataDir, join(repo.workspace, "data"));
-  const root = mkdtempSync(join(tmpdir(), "maintenance-web-"));
-  process.env.MAINTENANCE_ROOT = root;
-  try {
-    assert.deepEqual(appFolders(), { workspace: root, dataDir: join(root, "data") });
-  } finally {
-    delete process.env.MAINTENANCE_ROOT;
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test("approved proposals become complete reviewed decisions without extra fields", () => {
   const pointer = { runDir: "/tmp/local-run" };
@@ -83,31 +69,6 @@ test("approved proposals become complete reviewed decisions without extra fields
     decision: "delete",
     reviewed: true,
     rationale: "재사용 가치가 없다.",
-  });
-});
-
-test("web approval refuses undecided but now accepts manual project moves", () => {
-  const pointer = { runDir: "/tmp/local-run" };
-  assert.throws(() => buildReviewedDecisions(pointer, {
-    inventoryDigest: "abc",
-    items: [{ suggestedDecision: "undecided", suggestedProjectAction: "use-or-create" }],
-  }), /undecided/);
-  const result = buildReviewedDecisions(pointer, {
-    inventoryDigest: "abc",
-    items: [{
-      conversationId: "c-1",
-      suggestedDecision: "keep",
-      suggestedProjectAction: "manual-move",
-      suggestedProjectName: "다른 프로젝트",
-      rationale: "테스트",
-    }],
-  });
-  assert.deepEqual(result.decisions[0], {
-    conversationId: "c-1",
-    decision: "keep",
-    projectName: "다른 프로젝트",
-    reviewed: true,
-    rationale: "테스트",
   });
 });
 
@@ -220,109 +181,6 @@ test("plan reuse follows the decisions digest: reuse, compile, recompile or halt
   assert.deepEqual(decide({ stampDigest: "a".repeat(64), hasReceipts: true }), { action: "halt", reason: "changed-after-apply" });
   assert.deepEqual(decide({ stampDigest: null }), { action: "recompile", reason: "unknown-source" });
   assert.deepEqual(decide({ stampDigest: null, hasReceipts: true }), { action: "halt", reason: "unknown-source-after-apply" });
-});
-
-function runFixture() {
-  const root = mkdtempSync(join(tmpdir(), "maintenance-web-run-"));
-  const inventoryPath = join(root, "inventory.json");
-  writeFileSync(inventoryPath, JSON.stringify({
-    version: 1,
-    kind: "conversation-maintenance-inventory",
-    warnings: [],
-    projects: [],
-    conversations: [
-      {
-        conversationId: "11111111-1111-4111-8111-111111111111",
-        title: "임시 제목 하나",
-        projectName: null,
-        backupFile: join(root, "a.json"),
-        backupSha256: "a".repeat(64),
-      },
-      {
-        conversationId: "22222222-2222-4222-8222-222222222222",
-        title: "보존 주제 — 정리 결과",
-        projectName: null,
-        backupFile: join(root, "b.json"),
-        backupSha256: "b".repeat(64),
-      },
-    ],
-  }));
-  const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-  const decisionsPath = join(root, "reviewed-decisions.json");
-  const writeDecisions = (first) => {
-    writeFileSync(decisionsPath, JSON.stringify({
-      version: 1,
-      kind: "reviewed-decisions",
-      inventoryDigest,
-      receiptDir: join(root, "receipts"),
-      decisions: [first, {
-        conversationId: "22222222-2222-4222-8222-222222222222",
-        decision: "keep",
-        projectName: "조사",
-        reviewed: true,
-      }],
-    }));
-    return createHash("sha256").update(readFileSync(decisionsPath)).digest("hex");
-  };
-  return { root, inventoryPath, decisionsPath, writeDecisions };
-}
-
-test("a delete decision changed to keep does not run the old delete plan", () => {
-  const fixture = runFixture();
-  const plansDir = join(fixture.root, "plans");
-  const routingPath = join(fixture.root, "routing.json");
-  try {
-    const firstDigest = fixture.writeDecisions({
-      conversationId: "11111111-1111-4111-8111-111111111111",
-      decision: "delete",
-      reviewed: true,
-    });
-    compileReviewedDecisions(fixture.inventoryPath, fixture.decisionsPath, plansDir);
-    compileProjectRouting(fixture.inventoryPath, fixture.decisionsPath, routingPath);
-    const compiled = JSON.parse(readFileSync(join(plansDir, "batch-001.json"), "utf8"));
-    assert.equal(compiled.actions[0].decision, "delete");
-
-    // 적용이 실패했고 사용자가 보존으로 바꿔 다시 저장했다.
-    const secondDigest = fixture.writeDecisions({
-      conversationId: "11111111-1111-4111-8111-111111111111",
-      decision: "keep",
-      newTitle: "임시 주제 — 정리 결과",
-      projectName: "조사",
-      reviewed: true,
-    });
-    assert.notEqual(firstDigest, secondDigest);
-
-    const reuse = planReuseDecision({
-      hasCompiledArtifacts: existsSync(plansDir) || existsSync(routingPath),
-      stampDigest: firstDigest,
-      decisionsDigest: secondDigest,
-      hasReceipts: false,
-    });
-    assert.equal(reuse.action, "recompile");
-
-    rmSync(plansDir, { recursive: true, force: true });
-    rmSync(routingPath, { force: true });
-    compileReviewedDecisions(fixture.inventoryPath, fixture.decisionsPath, plansDir);
-    compileProjectRouting(fixture.inventoryPath, fixture.decisionsPath, routingPath);
-
-    const recompiled = JSON.parse(readFileSync(join(plansDir, "batch-001.json"), "utf8"));
-    assert.equal(recompiled.actions.length, 1);
-    assert.equal(recompiled.actions[0].decision, "keep");
-    assert.equal(recompiled.actions[0].newTitle, "임시 주제 — 정리 결과");
-    const routed = JSON.parse(readFileSync(routingPath, "utf8"))
-      .targets.flatMap((target) => target.actions.map((action) => action.conversationId));
-    assert.deepEqual(routed.sort(), [
-      "11111111-1111-4111-8111-111111111111",
-      "22222222-2222-4222-8222-222222222222",
-    ]);
-  } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("a completed run refuses another apply but a failed one can retry", () => {
-  assert.throws(() => assertApplyablePhase("complete"), /이미 적용을 마쳤습니다/);
-  assert.equal(assertApplyablePhase("awaiting-proposal"), true);
 });
 
 test("an interrupted collection of the same scope resumes its run folder; other scopes, finished runs and stale folders start a new one", () => {

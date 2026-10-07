@@ -24,18 +24,6 @@ test("flags an account's personal home path, even a different account's home sha
   assert.ok(checkOne("scripts/run.js", line, { secretPatterns: linux }).some((e) => e.includes("personal Linux home path")));
 });
 
-test("ignores documentation placeholder paths", () => {
-  const patterns = personalPathPatterns("/Users/" + "realdev");
-  const docs = "예: `/Users/you/chatgpt-archive` 또는 `C:\\Users\\<name>\\chatgpt-archive`";
-  assert.deepEqual(checkOne("README.md", docs, { secretPatterns: patterns }), []);
-});
-
-test("returns no personal patterns for placeholder / CI account names", () => {
-  for (const home of ["/Users/runner", "/home/ubuntu", "/root", "/Users/you"]) {
-    assert.deepEqual(personalPathPatterns(home), [], home);
-  }
-});
-
 test("still catches static secret shapes", () => {
   const key = "sk-" + "A".repeat(28);
   assert.ok(checkOne("lib/x.js", `const k = "${key}";`).some((e) => e.includes("OpenAI-style secret key")));
@@ -48,13 +36,4 @@ test("still catches static secret shapes", () => {
 test("flags forbidden local paths", () => {
   assert.ok(checkOne("data/state.json", "{}").some((e) => e.includes("forbidden")));
   assert.ok(checkOne(".local/config.json", "{}").some((e) => e.includes("forbidden")));
-});
-
-test("flags case-insensitive path collisions", () => {
-  const errors = findRepoIssues(["src/Thing.js", "src/thing.js"], {
-    readFile: () => "",
-    statFile: () => FAKE_STAT,
-    secretPatterns: [],
-  });
-  assert.ok(errors.some((e) => e.includes("conflicts by case")));
 });

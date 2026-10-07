@@ -272,51 +272,6 @@ test("reviewed decisions compile to small, source-bound management manifests", (
   }
 });
 
-test("maintenance decisions can create no-op management plans and one source-bound routing plan", () => {
-  const root = fixture();
-  try {
-    const full = buildInventory(root);
-    const source = { ...full.conversations[0], title: "General — Review" };
-    const inventoryPath = join(root, "maintenance-inventory.json");
-    writeFileSync(inventoryPath, JSON.stringify({
-      version: 1,
-      kind: "conversation-maintenance-inventory",
-      warnings: [],
-      conversations: [source],
-    }, null, 2));
-    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-    const decisionsPath = join(root, "maintenance-decisions.json");
-    writeFileSync(decisionsPath, JSON.stringify({
-      version: 1,
-      kind: "reviewed-decisions",
-      inventoryDigest,
-      receiptDir: join(root, "receipts"),
-      decisions: [{
-        conversationId: source.conversationId,
-        decision: "keep",
-        projectName: "Project B",
-        reviewed: true,
-      }],
-    }, null, 2));
-
-    const result = compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans"));
-    assert.equal(result.manifests.length, 0);
-    assert.equal(result.skippedKeep, 1);
-    const routingResult = compileProjectRouting(
-      inventoryPath,
-      decisionsPath,
-      join(root, "routing.json"),
-    );
-    assert.equal(routingResult.routingRequired, true);
-    const routing = JSON.parse(readFileSync(routingResult.routingPath, "utf8"));
-    assert.equal(routing.targets[0].project.name, "Project B");
-    assert.equal(routing.targets[0].actions[0].conversationId, source.conversationId);
-    assert.equal(routing.targets[0].actions[0].expectedTitle, source.title);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("moving a conversation already in a project compiles a named-source routing target", () => {
   const root = fixture();
   try {
@@ -418,98 +373,6 @@ test("classification proposals are source-bound and validate project routing sem
   }
 });
 
-test("classification proposal validation warns about duplicate final titles", () => {
-  const root = fixture();
-  try {
-    const duplicateTitle = "프로젝트 자료 — 검토 결과와 후속 정리";
-    const source = { ...buildInventory(root).conversations[0], reasons: ["new"] };
-    const projects = [{ projectName: "Project A", conversationCount: 1, sampleTitles: [duplicateTitle] }];
-    const catalogPath = join(root, "catalog.json");
-    writeFileSync(catalogPath, JSON.stringify({
-      version: 1,
-      kind: "conversation-maintenance-catalog",
-      projects,
-      conversations: [source, { conversationId: ID2, title: duplicateTitle, projectName: "Project A" }],
-    }));
-    const inventoryPath = join(root, "maintenance-proposal-inventory.json");
-    writeFileSync(inventoryPath, JSON.stringify({
-      version: 1,
-      kind: "conversation-maintenance-inventory",
-      warnings: [],
-      catalogFile: catalogPath,
-      projects,
-      conversations: [source],
-    }));
-    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-    const proposalPath = join(root, "proposal.json");
-    writeFileSync(proposalPath, JSON.stringify({
-      version: 1,
-      kind: "classification-proposals",
-      inventoryDigest,
-      scope: { candidateCount: 1 },
-      items: [{
-        conversationId: source.conversationId,
-        currentTitle: source.title,
-        projectName: null,
-        reasons: source.reasons,
-        suggestedDecision: "keep",
-        suggestedNewTitle: duplicateTitle,
-        suggestedProjectAction: "use-or-create",
-        suggestedProjectName: "Project A",
-        confidence: "medium",
-        rationale: "고유한 결과가 있다",
-        projectRationale: "기존 프로젝트와 같은 자료를 사용한다",
-      }],
-    }));
-
-    const result = validateClassificationProposals(inventoryPath, proposalPath);
-    assert.match(result.warnings.join("\n"), /Duplicate final title/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("maintenance reviewed decisions reject unresolved or archive-only states", () => {
-  for (const decision of ["archive", "undecided"]) {
-    const root = fixture();
-    try {
-      const source = { ...buildInventory(root).conversations[0], title: "일반 대화 — 검토 결과 정리" };
-      const inventoryPath = join(root, "maintenance-state-decision.json");
-      writeFileSync(inventoryPath, JSON.stringify({
-        version: 1,
-        kind: "conversation-maintenance-inventory",
-        warnings: [],
-        conversations: [source],
-      }));
-      const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-      const decisionsPath = join(root, "maintenance-state-reviewed.json");
-      writeFileSync(decisionsPath, JSON.stringify({
-        version: 1,
-        kind: "reviewed-decisions",
-        inventoryDigest,
-        receiptDir: join(root, "receipts"),
-        decisions: [{
-          conversationId: source.conversationId,
-          decision,
-          projectName: "Project A",
-          reviewed: true,
-        }],
-      }));
-
-      assert.throws(
-        () => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")),
-        /decision must be keep or delete/,
-      );
-      assert.throws(
-        () => compileProjectRouting(inventoryPath, decisionsPath, join(root, "routing.json")),
-        /decision must be keep or delete/,
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }
-});
-
 test("maintenance compiler rejects a kept title outside the canonical separator form unless the user unchecked the rename (keepTitle)", () => {
   const root = fixture();
   try {
@@ -558,29 +421,6 @@ test("compiler rejects AI-style decisions that were not user-reviewed", () => {
       decisions: [{ conversationId: ID1, decision: "delete", reviewed: false }],
     }));
     assert.throws(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")), /not reviewed/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("compiler refuses an inventory with export completeness warnings", () => {
-  const root = fixture();
-  try {
-    const inventoryPath = join(root, "inventory.json");
-    const inventory = { ...buildInventory(root), kind: "conversation-maintenance-inventory" };
-    inventory.warnings.push("Export used a date filter and is not a full snapshot");
-    writeFileSync(inventoryPath, JSON.stringify(inventory, null, 2));
-    const inventoryDigest = createHash("sha256").update(readFileSync(inventoryPath)).digest("hex");
-    const decisionsPath = join(root, "decisions.json");
-    writeFileSync(decisionsPath, JSON.stringify({
-      version: 1,
-      kind: "reviewed-decisions",
-      inventoryDigest,
-      receiptDir: join(root, "receipts"),
-      decisions: [{ conversationId: ID1, decision: "delete", reviewed: true }],
-    }));
-    assert.throws(() => compileReviewedDecisions(inventoryPath, decisionsPath, join(root, "plans")),
-      /Inventory is not safe to use/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

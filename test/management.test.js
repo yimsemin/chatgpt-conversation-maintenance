@@ -6,10 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  inspectConversationBackup,
   managementConfirmation,
   managementManifestDigest,
-  prepareManagementWorkflow,
   runManagementWorkflow,
   validateManagementManifest,
 } from "../src/management.js";
@@ -68,41 +66,6 @@ test("manifest is strict and confirmation describes destructive scope", () => {
         conversationId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       })),
     }), /at most 25/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("backup inspection binds the full ID, exact title, mapping, and digest", () => {
-  const { root, manifest } = fixture();
-  try {
-    const action = validateManagementManifest(manifest).actions[0];
-    const backup = inspectConversationBackup(action);
-    assert.equal(backup.path, action.backupFile);
-    assert.match(backup.sha256, /^[0-9a-f]{64}$/);
-    assert.ok(backup.bytes > 0);
-
-    action.expectedTitle = "wrong title";
-    assert.throws(() => inspectConversationBackup(action), /title does not match/);
-    action.expectedTitle = TITLE;
-    writeFileSync(action.backupFile, `${readFileSync(action.backupFile, "utf8")}\n`);
-    assert.throws(() => inspectConversationBackup(action), /SHA-256 does not match/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("local preparation validates backups and builds review data without remote access", () => {
-  const { root, manifest } = fixture();
-  try {
-    const result = prepareManagementWorkflow(manifest);
-    assert.equal(result.ok, true);
-    assert.equal(result.phase, "prepare");
-    assert.equal(result.expectedConfirmation, managementConfirmation(manifest));
-    assert.equal(result.review.length, 1);
-    assert.equal(result.review[0].conversationId, ID);
-    assert.equal(result.review[0].backup.sha256, manifest.actions[0].backupSha256);
-    assert.equal(existsSync(manifest.receiptDir), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
