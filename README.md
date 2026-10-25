@@ -1,5 +1,9 @@
 # ChatGPT 대화 유지관리
 
+**English summary.** A personal tool that tidies your logged-in ChatGPT conversations: it normalizes titles, files conversations into projects, and moves low-value ones to a trash-candidate project. Every change is reviewed and approved by you in a local web UI; AI classification only happens in your own agent chat, never in this code. It drives ChatGPT's undocumented web API through a bookmarklet, so it may break at any time and is not affiliated with or endorsed by OpenAI. Requires Node.js 24+. Documentation is in Korean.
+
+**Disclaimer.** This software is provided "AS IS", without warranty of any kind, express or implied. Use it at your own risk: the authors are not liable for any claim, damages (including data loss or account restrictions) or other liability arising from its use. See [LICENSE](LICENSE).
+
 > **처음이신가요?** 설치부터 첫 정리까지 단계별로 → [시작하기 가이드](docs/GETTING_STARTED.md)
 >
 > **에이전트에게 설치를 맡기려면** → 같은 가이드의 [13절](docs/GETTING_STARTED.md#13-에이전트에게-설치운영을-맡길-때)
@@ -9,7 +13,7 @@
 ChatGPT를 오래 쓰면 대화가 수백 개 쌓인다. 일회성 질문이나 잡담이 다른 대화의 답변에 예시처럼 섞이기도 하고, 프로젝트에 넣지 않은 대화가 흩어져 있기도 하다. 이 도구는 **로그인한 내 ChatGPT 대화를 프로젝트별로 정돈하고, 제목을 표준 형식으로 맞추고, 재사용 가치가 없는 대화를 가려내는 개인용 정리 도구**다.
 
 - 프로젝트에 넣지 않은 대화를 알맞은 프로젝트로 옮긴다. 맞는 프로젝트가 없으면 프로젝트 없음이 정상이다.
-- 재사용 가치가 없는 대화는 바로 지우지 않고 **삭제후보 프로젝트**로 옮긴다. 실제 삭제는 사용자가 ChatGPT에서 직접 한다.
+- 재사용 가치가 없는 대화는 바로 지우지 않고 **삭제후보 프로젝트**로 옮긴다. 실제 삭제는 사용자가 삭제후보 확인 화면에서 대화마다 확정한다.
 - 제목을 `핵심 주제 — 실제 작업 또는 결과` 형식으로 통일한다. 목록을 탐색할 때 무슨 대화인지 알아보기 위해서다.
 
 왜 이렇게 정리하는지(원본·프로젝트·대화 기록의 역할)는 [docs/GOALS.md](docs/GOALS.md)에 있다. 공식 제품이 아니며 ChatGPT 웹 앱의 비공식 내부 API를 쓴다(아래 "중요한 전제").
@@ -36,7 +40,7 @@ ChatGPT를 오래 쓰면 대화가 수백 개 쌓인다. 일회성 질문이나 
 
 재사용 가치가 없는 대화는 바로 지우지 않고 **삭제후보 프로젝트**로 옮긴다(표준 제목은 그대로 붙인다). 처리 방식은 검토 화면에서 고르고 기본값은 `.local/config.json`의 `trash`로 정한다: 자동(기본 이름 `삭제후보`, 없으면 생성) · 정해 둔 프로젝트 · 이동 없이 표시만. 설정 예는 [시작하기 가이드](docs/GETTING_STARTED.md) 5단계에 있다. **영구 삭제**는 검토 화면의 고급 접힘에서 켠다(되돌릴 수 없음).
 
-옮겨 둔 대화는 첫 화면의 **삭제후보 확인**에서 대화마다 삭제하거나 복원(원래 자리로 이동)한다. ChatGPT에서 직접 지우거나 옮긴 대화는 "ChatGPT에서 다시 확인"으로 목록에서 뺀다.
+옮겨 둔 대화는 첫 화면의 **삭제후보 확인**에서 대화마다 삭제하거나 복원(원래 자리로 이동)한다. 이동 없이 표시만 한 대화는 ChatGPT에서 직접 지운다. ChatGPT에서 직접 지우거나 옮긴 대화는 "ChatGPT에서 다시 확인"으로 목록에서 뺀다.
 
 ## 제목 규칙과 목록 순서
 
@@ -45,7 +49,7 @@ ChatGPT를 오래 쓰면 대화가 수백 개 쌓인다. 일회성 질문이나 
 
 ## 빠른 시작
 
-Node.js 24 이상과, 세션에 계정 ID(`chatgpt_account_id`)가 있는 ChatGPT 워크스페이스 계정이 필요하다. 실계정 검증은 Business 워크스페이스 한 곳뿐이며(2026-08-10, [API_COMPATIBILITY.md](API_COMPATIBILITY.md)) Enterprise·Team·개인 계정은 확인되지 않았다.
+Node.js 24 이상과, 세션에 계정 ID(`chatgpt_account_id`)가 있는 ChatGPT 워크스페이스 계정이 필요하다.
 
 ```text
 git clone https://github.com/yimsemin/chatgpt-conversation-maintenance.git
@@ -72,7 +76,7 @@ Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 4
 | 승인 | 화면에서 승인한 변경만 실행한다. 승인 파일의 해시, 확인 문구, 로컬 잠금이 함께 걸린다. |
 | 되돌릴 수 있는 삭제 | 삭제후보는 삭제후보 프로젝트로 옮긴다. 영구 삭제는 고급 옵션이다. |
 | 재조회 검증 | 제목 변경·삭제·프로젝트 이동은 적용하면서 대화마다 다시 읽어 확인하고 영수증(`runs/<id>/receipts/`)에 남긴다. 결과 화면의 프로젝트별 변화는 이 기록으로 예상과 대조한다. |
-| 작업 기록 | 어떤 작업을 했는지는 실행 폴더(`runs/<id>/`: 결정, 계획, 영수증, `report.md`)와 작업 로그(`jobs/`)에 남는다. 별도의 "기준 상태" 기록은 두지 않는다. |
+| 작업 기록 | 어떤 작업을 했는지는 실행 폴더(`runs/<id>/`: 결정, 계획, 영수증, `report.md`)와 작업 로그(`jobs/`)에 남는다. |
 | 한 번에 하나 | 한 컴퓨터에서 한 작업만 돌린다(잠금). |
 | 데이터 분리 | 대화 본문·실행 결과는 `data/`에만 있고 Git에 올라가지 않는다. |
 

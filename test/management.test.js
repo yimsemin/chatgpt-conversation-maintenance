@@ -12,7 +12,7 @@ import {
   validateManagementManifest,
 } from "../src/management.js";
 
-const ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379345";
+const ID = "55555555-5555-4555-8555-555555555501";
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const TITLE = "Robocopy로 파일 전송 속도 개선";
 
@@ -129,7 +129,7 @@ test("a backup that does not match blocks every action before any write", async 
 
 test("a conversation whose remote title changed is not written and the rest are skipped", async () => {
   const { root, manifest } = fixture();
-  const secondId = "6a66ddf8-ecac-83ee-9311-0d3d3e379346";
+  const secondId = "55555555-5555-4555-8555-555555555502";
   const backup = JSON.stringify({ conversation_id: secondId, title: TITLE, create_time: 1, update_time: 2, mapping: { root: { id: "root", message: null } } });
   const secondFile = join(root, "second.json");
   writeFileSync(secondFile, backup);

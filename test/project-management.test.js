@@ -18,7 +18,7 @@ function prepare(plan) {
 }
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
-const CONVERSATION_ID = "6a66ddf8-ecac-83ee-9311-0d3d3e379345";
+const CONVERSATION_ID = "55555555-5555-4555-8555-555555555501";
 const PROJECT_ID = `g-p-${"1".repeat(32)}`;
 
 function fixturePlan(receiptDir, overrides = {}) {

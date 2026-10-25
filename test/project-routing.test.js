@@ -14,8 +14,8 @@ import {
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const IDS = [
-  "6a66ddf8-ecac-83ee-9311-0d3d3e379345",
-  "6a66ddf8-ecac-83ee-9311-0d3d3e379346",
+  "55555555-5555-4555-8555-555555555501",
+  "55555555-5555-4555-8555-555555555502",
 ];
 
 function routingFixture(receiptDir) {

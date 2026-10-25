@@ -183,7 +183,7 @@ function createReceiptFile(receiptDir, receipt) {
 // 승인된 제목 변경·삭제를 한 건씩 적용한다. 쓰기 직전에 그 대화를 원격에서 다시 읽어 예상 제목과 맞는지 확인하고,
 // 쓴 뒤에는 결과를 다시 읽어 검증한다. 한 건이 실패하면 나머지는 건너뛴다. 결과는 토큰이 없는 영수증에 남는다.
 export async function runManagementWorkflow({ manifest: rawManifest, accountId, confirmation, reviewedConversationIds, api, now = () => new Date(), onProgress = () => {} }) {
-  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
+  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT account ID is required");
   assert(api?.getConversation && api?.patchConversation, "Management API adapter is incomplete");
 
   const manifest = validateManagementManifest(rawManifest);

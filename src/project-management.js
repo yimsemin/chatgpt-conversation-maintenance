@@ -171,7 +171,7 @@ export async function runProjectPlacementWorkflow({
   sourceProjectIds = {},
   sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
 }) {
-  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
+  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT account ID is required");
   assert(api?.getConversation && api?.listProjectSidebar && api?.createProject && api?.moveConversation,
     "Project API adapter is incomplete");
   assert(Number.isInteger(discoveryAttempts) && discoveryAttempts >= 1,

@@ -202,7 +202,7 @@ test("delete candidates move to the trash project with standard titles and are l
     // 하나는 삭제 확정, 나머지는 원래 자리로.
     const [toDelete, ...toKeep] = listing.items;
     const followUp = [{ conversationId: toDelete.conversationId, decision: "delete" },
-      ...toKeep.map((item) => ({ conversationId: item.conversationId, decision: "keep", projectName: "오디오" }))];
+      ...toKeep.map((item) => ({ conversationId: item.conversationId, decision: "keep", projectName: "취미" }))];
     const prepared = await dev.call("/maintenance/trash/prepare", { decisions: followUp });
     assert.equal(prepared.deletes, 1);
     session = await dev.get("/maintenance/session");

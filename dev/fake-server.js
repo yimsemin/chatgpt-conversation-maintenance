@@ -24,7 +24,7 @@ writeFileSync(join(root, "package.json"), JSON.stringify({ name: "chatgpt-conver
 writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: join(root, "data") }));
 mkdirSync(join(root, "data", "runs"), { recursive: true });
 
-const PROJECTS = ["2609 혁신제품 도전", "오디오", "AI 개발도구", "개인 IT", "주식"];
+const PROJECTS = ["업무 프로젝트", "취미", "개발 도구", "개인 IT", "재테크"];
 const projects = PROJECTS.map((name, i) => ({ id: fakeProjectId(i + 1), name }));
 const TITLES = ["이어폰 리뷰 — 구매 검토", "프롬프트 지침 — 간결화", "제안서 문안 — 사업화 계획", "맥 설정 — 키 반복", "종목 검토 — 메모"];
 const conversations = [];

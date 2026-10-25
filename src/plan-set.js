@@ -191,7 +191,7 @@ export async function applyPlanSet({
   onProgress = () => {},
 }) {
   assert(api?.getConversation && api?.patchConversation, "Management API adapter is incomplete");
-  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT Business account ID is required");
+  assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT account ID is required");
 
   const prepared = preparePlanSet(plansDir);
   if (prepared.summary.remainingActions === 0) {

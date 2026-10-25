@@ -6,7 +6,7 @@
 
 **원격 호출은 브라우저가 한다.** Node의 `/backend-api` 호출은 TLS 핑거프린트 때문에 차단되므로 HTTP 수행만 chatgpt.com 페이지로 옮겼다. 판단·계획·검증·잠금은 로컬 앱에 남는다. 앱은 `src/remote-ops.js`가 허용한 `{op, params}`만 보내고 세션 토큰은 페이지 밖으로 나오지 않는다. 우회하지 않는다: TLS 핑거프린트 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작.
 
-## 사용자가 세운 불변 원칙 (어기지 않는다)
+## 불변 원칙 (어기지 않는다)
 
 큰 변경 전에 아래를 대조한다. 어긋나는 설계는 만들기 전에 사용자에게 묻는다.
 
@@ -90,7 +90,7 @@
 
 ## Node.js 실행 환경
 
-`package.json`의 `engines.node`(>=24)를 충족하는 Node를 쓴다. 권장 버전은 `.node-version`(CI도 이 파일을 읽는다)이고 mise 같은 버전 관리자를 쓰면 `.node-version`을 읽게 하면 된다(선택 사항이며 저장소에는 mise 설정을 두지 않는다). Codex/ChatGPT 데스크톱 앱 번들의 `Contents/Resources/cua_node/bin/node`가 있고 요구 버전을 충족하면 그 `bin`을 해당 명령에서만 `PATH` 앞에 둘 수 있다. 앱 내부 경로는 안정 계약이 아니므로 매번 존재와 `--version`을 확인하고 저장소에 고정하지 않는다.
+`package.json`의 `engines.node`(>=24)를 충족하는 Node를 쓴다. 권장 버전은 `.node-version`(CI도 이 파일을 읽는다)이고 mise 같은 버전 관리자를 쓰면 `.node-version`을 읽게 하면 된다(선택 사항이며 저장소에는 mise 설정을 두지 않는다).
 
 ## 완료 전 점검
 
