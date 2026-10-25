@@ -40,7 +40,7 @@ test("a project link yields the project id and anything else yields nothing", ()
   assert.equal(projectIdFromLink(`https://chatgpt.com/g/${id}/project`), id);
   assert.equal(projectIdFromLink(`  https://chatgpt.com/g/${id}-이름-슬러그/project?x=1 `), id);
   assert.equal(projectIdFromLink(`https://chatgpt.com/g/${id.toUpperCase().replace("G-P-", "g-p-")}/project`), id);
-  assert.equal(projectIdFromLink("https://chatgpt.com/c/6ab604d8-ab80-8191-aadad3877240"), null);
+  assert.equal(projectIdFromLink("https://chatgpt.com/c/77777777-7777-4777-8777-777777777777"), null);
   assert.equal(projectIdFromLink("g-p-short"), null);
   assert.equal(projectIdFromLink(""), null);
 });
