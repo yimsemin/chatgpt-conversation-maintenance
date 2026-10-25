@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "Private, review-gated maintenance for ChatGPT conversations and projects",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yimsemin/chatgpt-conversation-maintenance.git"
+  },
   "type": "module",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
@@ -15,7 +19,8 @@
     "repo:check": "node src/repo-check.js",
     "stop": "node src/launcher.js stop",
     "status": "node src/launcher.js status",
-    "runs:prune": "node src/runs-prune.js"
+    "runs:prune": "node src/runs-prune.js",
+    "release-notes": "node src/release-notes.js"
   },
   "engines": {
     "node": ">=24"

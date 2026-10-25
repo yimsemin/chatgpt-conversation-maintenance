@@ -54,12 +54,13 @@ Node.js 24 이상과, 세션에 계정 ID(`chatgpt_account_id`)가 있는 ChatGP
 ```text
 git clone https://github.com/yimsemin/chatgpt-conversation-maintenance.git
 cd chatgpt-conversation-maintenance
-npm install        # 로컬 커밋 훅 설정(런타임 의존성 없음)
 npm test           # 자체 점검 (fail 0)
 npm run repo:check # 민감 파일 점검
 npm run app        # 앱 켜기(127.0.0.1:8523). 이 터미널 창이 앱이다(닫거나 Ctrl+C 로 종료). 하나만 켜진다
 npm run stop       # 터미널 창을 잃었을 때 앱 끄기 (npm run status 로 실행 여부·프로세스 확인)
 ```
+
+`main`은 릴리스된 안정 버전이다. 업데이트는 `git pull --ff-only`이며 절차는 [시작하기 가이드](docs/GETTING_STARTED.md#14-업데이트)에 있다.
 
 북마클릿을 북마크바에 등록하고 chatgpt.com에서 누르면 **정리 창**이 열리고 오른쪽 위가 "ChatGPT 연결됨"이 된다(정리 화면과 ChatGPT 연결을 이 창 하나가 맡는다). 그 창에서 수집 범위를 골라 "이 범위 수집"을 누른다. 확인은 ChatGPT를 바꾸지 않는다. 각 단계와 문제 해결은 **[시작하기 가이드](docs/GETTING_STARTED.md)** 에 있다.
 
@@ -115,7 +116,8 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·화면 설계와 용어·파일 계약, 반복된 함정 |
 | [API_COMPATIBILITY.md](API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
 | [docs/OVERHAUL.md](docs/OVERHAUL.md) | 전체 재정비 절차 |
-| [docs/GIT.md](docs/GIT.md) | 커밋·병합 규칙, 공개 전 점검 |
+| [CHANGELOG.md](CHANGELOG.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) | 버전별 변경 이력(앱의 업데이트 내역과 같음), 작성 기준 |
+| [docs/GIT.md](docs/GIT.md) | 브랜치·커밋·릴리스 규칙, 공개 전 점검 |
 
 분류 규칙이나 API 계약을 다른 문서에 복사하지 않는다. 문서와 구현이 다르면 코드·테스트·원격 상태를 대조해 해당 문서를 함께 고친다.
 

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-release" content="__APP_RELEASE__">
-<meta name="relay-protocol" content="__RELAY_PROTOCOL_VERSION__">
+<meta name="app-version" content="__APP_VERSION__">
+<meta name="relay-version" content="__RELAY_VERSION__">
 <title>대화 정리</title>
 <script src="/assets/theme.js"></script>
 <link rel="stylesheet" href="/assets/app.css">
@@ -13,6 +13,8 @@
 <header class="top">
   <h1>대화 정리</h1>
   <div class="top-right">
+    <button class="pill" id="version" type="button" title="업데이트 내역 보기">v__APP_VERSION__</button>
+    <a class="pill" href="__REPO_URL__" target="_blank" rel="noopener noreferrer" title="GitHub 저장소">GitHub</a>
     <button class="pill" id="relay-pill" type="button" aria-live="polite"><i class="dot"></i><span id="relay-label">연결 확인 중…</span></button>
     <button class="icon" id="theme" type="button" title="테마 전환" aria-label="테마 전환">◐</button>
   </div>
@@ -59,6 +61,13 @@
   </section>
 </div>
 
+<dialog id="changelog">
+  <form method="dialog">
+    <h2>업데이트 내역</h2>
+    <div id="changelog-body" class="changelog"></div>
+    <div class="row"><button class="btn ghost" value="close">닫기</button></div>
+  </form>
+</dialog>
 <dialog id="confirm"><form method="dialog" id="confirm-form"></form></dialog>
 <div class="toast" id="toast" hidden></div>
 <script type="module" src="/assets/app.js"></script>

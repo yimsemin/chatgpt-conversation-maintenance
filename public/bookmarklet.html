@@ -26,11 +26,11 @@
   <a class="back" href="/">← 유지관리 화면으로</a>
   <h1 style="margin-top:14px;">ChatGPT 릴레이 북마클릿</h1>
   <p class="lede">ChatGPT 세션을 페이지 안에 둔 채, 로컬 앱이 승인한 작업의 HTTP 수행만 중계합니다.</p>
-  <p class="muted">앱 버전 <code>__APP_RELEASE__</code> · 릴레이 <code>v__RELAY_PROTOCOL_VERSION__</code></p>
+  <p class="muted">앱 <code>v__APP_VERSION__</code> · 북마클릿 <code>__RELAY_VERSION__</code></p>
 
   <ol>
     <li>아래 <strong>ChatGPT → 유지관리</strong> 버튼을 브라우저의 북마크바로 드래그해 등록합니다.
-      <div style="margin-top:10px;"><a class="drag" id="bm" href="#">ChatGPT → 유지관리 (__APP_RELEASE__)</a></div>
+      <div style="margin-top:10px;"><a class="drag" id="bm" href="#">ChatGPT → 유지관리 (__RELAY_VERSION__)</a></div>
     </li>
     <li><code>chatgpt.com</code>에 로그인한 탭에서 방금 만든 북마크를 클릭합니다.</li>
     <li>‘대화 정리’ 창이 새로 열리고 오른쪽 위가 “ChatGPT 연결됨”으로 바뀝니다. <strong>정리 작업은 이 창 하나에서 합니다.</strong> 이 창은 ChatGPT와의 연결도 맡으니 <strong>정리가 끝날 때까지 이 창과 원래 ChatGPT 탭을 닫거나 최소화하지 마세요.</strong></li>
@@ -47,19 +47,18 @@
 (() => {
   // 이 앱의 출처. bookmarklet.html은 항상 127.0.0.1:8523에서 서빙된다.
   const target = location.origin;
-  const release = "__APP_RELEASE__";
-  const protocolVersion = Number("__RELAY_PROTOCOL_VERSION__");
-  function executor(T, R, V) {
+  const relayVersion = "__RELAY_VERSION__";
+  function executor(T, R) {
     if (location.origin !== "https://chatgpt.com") { alert("chatgpt.com에서 실행해 주세요."); return; }
     const existing = window.__CHATGPT_MAINTENANCE_RELAY__;
-    if (existing?.window && !existing.window.closed && existing.release === R && existing.protocolVersion === V) {
+    if (existing?.window && !existing.window.closed && existing.relayVersion === R) {
       existing.window.focus(); return;
     }
     existing?.stop?.();
     const w = window.open(T, "chatgptMaintenance");
     if (!w) { alert("팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요."); return; }
     try { w.focus(); } catch (_) {}
-    const state = { window: w, queue: Promise.resolve(), release: R, protocolVersion: V };
+    const state = { window: w, queue: Promise.resolve(), relayVersion: R };
     window.__CHATGPT_MAINTENANCE_RELAY__ = state;
     const session = (async () => {
       const controller = new AbortController();
@@ -147,7 +146,7 @@
     state.stop = stop;
     const heartbeat = setInterval(() => {
       if (w.closed) stop();
-      else w.postMessage({ type: "chatgpt-relay-v2-ready", release: R, protocolVersion: V }, T);
+      else w.postMessage({ type: "chatgpt-relay-v2-ready", relayVersion: R }, T);
     }, 500);
   }
   // javascript: URL 은 저장·실행 과정에서 줄바꿈이 사라진다. 그러면 `//` 라인 주석이
@@ -162,7 +161,7 @@
     }
     return source.replace(/\n\s*/g, " ");
   }
-  const code = `javascript:(${inlineSource(executor)})(${JSON.stringify(target)},${JSON.stringify(release)},${protocolVersion})`;
+  const code = `javascript:(${inlineSource(executor)})(${JSON.stringify(target)},${JSON.stringify(relayVersion)})`;
   document.getElementById("bm").setAttribute("href", code);
 })();
 </script>

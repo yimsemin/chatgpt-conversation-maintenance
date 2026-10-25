@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createPacer, createRelayApi, createRelayBroker } from "../src/relay-api.js";
 import { createRelayTrace } from "../src/relay-trace.js";
-import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "../src/app-version.js";
+import { RELAY_VERSION } from "../src/app-version.js";
 import { validateRelayVersion } from "../src/remote-relay.js";
 
 test("relay adapter preserves no-retry semantics for ambiguous writes", async () => {
@@ -187,8 +187,8 @@ test("the trace keeps only fixed diagnostic fields, refuses unknown stages and c
   assert.equal(capped.list().at(-1).seq, 10);
 });
 
-test("relay connection accepts only the current release and protocol", () => {
-  assert.doesNotThrow(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION));
-  assert.throws(() => validateRelayVersion("old-release", RELAY_PROTOCOL_VERSION), /version mismatch/);
-  assert.throws(() => validateRelayVersion(APP_RELEASE, RELAY_PROTOCOL_VERSION - 1), /version mismatch/);
+test("relay connection accepts only the current relay version", () => {
+  assert.doesNotThrow(() => validateRelayVersion(RELAY_VERSION));
+  assert.throws(() => validateRelayVersion("relay-0.0.1"), /version mismatch/);
+  assert.throws(() => validateRelayVersion(undefined), /version mismatch/);
 });

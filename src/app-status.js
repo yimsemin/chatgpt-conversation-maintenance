@@ -2,7 +2,7 @@
 // 서버(/health)와 화면(세션)이 같은 값을 쓴다. 파일을 읽기만 한다.
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { APP_RELEASE } from "./app-version.js";
+import { APP_VERSION } from "./app-version.js";
 
 // 이 모듈을 처음 불러온 시각 = 앱 프로세스가 시작된 시각.
 const STARTED_AT = Date.now();
@@ -30,7 +30,7 @@ export function appStatus(rootDir, { now = Date.now() } = {}) {
     pid: process.pid,
     startedAt: new Date(STARTED_AT).toISOString(),
     uptimeSeconds: Math.max(0, Math.floor((now - STARTED_AT) / 1000)),
-    release: APP_RELEASE,
+    version: APP_VERSION,
     codeChanged: latestSourceChange(rootDir) > STARTED_AT,
   };
 }

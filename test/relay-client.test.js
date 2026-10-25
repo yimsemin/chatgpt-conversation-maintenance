@@ -22,7 +22,7 @@ async function setup({ pageBehaviour }) {
   globalThis.fetch = async () => ({ ok: true });
   const { startRelay } = await import("../public/assets/relay-client.js");
   const broker = createRelayBroker({ timeoutMs: 2000 });
-  const RELEASE = "test-release";
+  const RELAY = "relay-test";
   const api = async (url, options) => {
     const body = options?.body ? JSON.parse(options.body) : {};
     if (url === "/relay/connect") return broker.connect(body.clientId);
@@ -37,9 +37,9 @@ async function setup({ pageBehaviour }) {
     },
   };
   const states = [];
-  const relay = startRelay({ api, release: RELEASE, protocolVersion: 2, onState: (state) => states.push(state), pageTimeoutMs: 150 });
+  const relay = startRelay({ api, relayVersion: RELAY, onState: (state) => states.push(state), pageTimeoutMs: 150 });
   // 북마클릿 하트비트
-  window.dispatch({ origin: "https://chatgpt.com", source: peer, data: { type: "chatgpt-relay-v2-ready", release: RELEASE, protocolVersion: 2 } });
+  window.dispatch({ origin: "https://chatgpt.com", source: peer, data: { type: "chatgpt-relay-v2-ready", relayVersion: RELAY } });
   await new Promise((resolve) => setTimeout(resolve, 30));
   return { broker, states, window, relay };
 }

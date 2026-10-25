@@ -17,7 +17,8 @@ import { handleMaintenanceWebRequest } from "./maintenance-web.js";
 import { CONFIG } from "./config.js";
 import { DEFAULT_TRASH_PROJECT, configuredTrash } from "./data-dir.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
-import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
+import { APP_VERSION, RELAY_VERSION, REPO_URL } from "./app-version.js";
+import { changelogForScreen, readChangelog } from "./release-notes.js";
 import { appStatus } from "./app-status.js";
 import { jobs } from "./web-jobs.js";
 import { MAX_BODY_BYTES, appFolders, jsonResponse, readRequestJson } from "./web-common.js";
@@ -72,8 +73,9 @@ function serveLocalHtml(res, filename, { strict = false } = {}) {
     "Referrer-Policy": "no-referrer",
   });
   res.end(html
-    .replaceAll("__APP_RELEASE__", APP_RELEASE)
-    .replaceAll("__RELAY_PROTOCOL_VERSION__", String(RELAY_PROTOCOL_VERSION)));
+    .replaceAll("__APP_VERSION__", APP_VERSION)
+    .replaceAll("__RELAY_VERSION__", RELAY_VERSION)
+    .replaceAll("__REPO_URL__", REPO_URL));
 }
 
 // 릴레이 결과에는 대화 본문 전체가 실린다. 일반 요청의 한도로는 실제 대화가 거부되고, 그러면
@@ -105,7 +107,11 @@ const server = createServer(async (req, res) => {
   // 로컬 런처가 쓰는 준비 상태 확인
   } else if (req.method === "GET" && req.url === "/health") {
     jsonResponse(res, 200, { ok: true, service: "chatgpt-conversation-maintenance",
-      relayProtocolVersion: RELAY_PROTOCOL_VERSION, ...appStatus(APP_DIR) });
+      relayVersion: RELAY_VERSION, ...appStatus(APP_DIR) });
+
+  // 화면의 '업데이트 내역'. CHANGELOG.md 가 유일한 원본이다.
+  } else if (req.method === "GET" && req.url === "/changelog") {
+    jsonResponse(res, 200, { version: APP_VERSION, sections: changelogForScreen(readChangelog()) });
 
   // 앱 종료. 실행 중인 작업이 있으면 force 없이는 거절한다(작업이 도중에 끊기지 않게).
   } else if (req.method === "POST" && req.url === "/app/shutdown") {

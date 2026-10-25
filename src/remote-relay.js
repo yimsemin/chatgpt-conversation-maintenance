@@ -1,6 +1,6 @@
 import { createRelayBroker } from "./relay-api.js";
 import { relayTrace } from "./relay-trace.js";
-import { APP_RELEASE, RELAY_PROTOCOL_VERSION } from "./app-version.js";
+import { APP_VERSION, RELAY_VERSION } from "./app-version.js";
 
 export const relayBroker = createRelayBroker({ trace: relayTrace });
 
@@ -11,9 +11,9 @@ const CLIENT_STAGES = new Set([
   "peer-ignored", "version-mismatch", "loop-error",
 ]);
 
-export function validateRelayVersion(release, protocolVersion) {
-  if (release !== APP_RELEASE || protocolVersion !== RELAY_PROTOCOL_VERSION) {
-    throw new Error(`Relay version mismatch: app=${APP_RELEASE}/v${RELAY_PROTOCOL_VERSION}`);
+export function validateRelayVersion(relayVersion) {
+  if (relayVersion !== RELAY_VERSION) {
+    throw new Error(`Relay version mismatch: app=${RELAY_VERSION}`);
   }
 }
 
@@ -22,7 +22,7 @@ export async function handleRemoteRelayRequest(req, res, { readJson, jsonRespons
   if (!url.pathname.startsWith("/relay/")) return false;
   try {
     if (req.method === "GET" && url.pathname === "/relay/trace") {
-      jsonResponse(res, 200, { release: APP_RELEASE, events: relayTrace.list() });
+      jsonResponse(res, 200, { version: APP_VERSION, relayVersion: RELAY_VERSION, events: relayTrace.list() });
       return true;
     }
     if (req.method === "POST" && url.pathname === "/relay/trace") {
@@ -39,13 +39,13 @@ export async function handleRemoteRelayRequest(req, res, { readJson, jsonRespons
       return true;
     }
     if (req.method === "GET" && url.pathname === "/relay/status") {
-      jsonResponse(res, 200, { ...relayBroker.status(), release: APP_RELEASE,
-        relayProtocolVersion: RELAY_PROTOCOL_VERSION });
+      jsonResponse(res, 200, { ...relayBroker.status(), version: APP_VERSION,
+        relayVersion: RELAY_VERSION });
       return true;
     }
     if (req.method === "POST" && url.pathname === "/relay/connect") {
       const body = await readJson(req);
-      validateRelayVersion(body.release, body.protocolVersion);
+      validateRelayVersion(body.relayVersion);
       jsonResponse(res, 200, relayBroker.connect(body.clientId));
       return true;
     }

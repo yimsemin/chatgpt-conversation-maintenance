@@ -11,6 +11,7 @@ import { proposalPanel } from "/assets/panel-proposal.js";
 import { loadReview } from "/assets/panel-review.js";
 import { loadResult } from "/assets/panel-result.js";
 import { loadTrash } from "/assets/panel-trash.js";
+import { initChangelog } from "/assets/changelog.js";
 
 const BOOTED_AT = Date.now();
 
@@ -198,7 +199,8 @@ async function boot() {
     if (saved && ["auto", "fixed", "none"].includes(saved.mode)) S.trash = { ...S.trash, mode: saved.mode, ...(saved.name ? { name: saved.name } : {}) };
   } catch {}
   // 북마클릿이 연 창은 연결만 맡는다. 작업 화면을 둘로 나누면 어디서 눌러야 할지 헷갈리고 동시에 두 곳에서 작업을 시작할 수 있다.
-  startRelay({ api, release: meta("app-release"), protocolVersion: Number(meta("relay-protocol")), onState: (state) => { S.relayLocal = state; refreshSession(); } });
+  initChangelog();
+  startRelay({ api, relayVersion: meta("relay-version"), onState: (state) => { S.relayLocal = state; refreshSession(); } });
   await refreshSession();
   schedulePoll();
 }

@@ -3,7 +3,7 @@
 const CHATGPT = "https://chatgpt.com";
 const PAGE_TIMEOUT_MS = 60000;
 
-export function startRelay({ api, release, protocolVersion, onState = () => {}, pageTimeoutMs = PAGE_TIMEOUT_MS }) {
+export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutMs = PAGE_TIMEOUT_MS }) {
   const clientId = crypto.randomUUID();
   let running = false;
   let connected = false;
@@ -55,7 +55,7 @@ export function startRelay({ api, release, protocolVersion, onState = () => {}, 
     if (running) return;
     running = true;
     try {
-      const claim = await api("/relay/connect", { method: "POST", body: JSON.stringify({ clientId, release, protocolVersion }) });
+      const claim = await api("/relay/connect", { method: "POST", body: JSON.stringify({ clientId, relayVersion }) });
       if (claim.connected !== true) { ownedElsewhere = true; connected = false; emit(); return; }
       ownedElsewhere = false;
       connected = true;
@@ -83,8 +83,8 @@ export function startRelay({ api, release, protocolVersion, onState = () => {}, 
 
   window.addEventListener("message", (event) => {
     if (stopped || event.origin !== CHATGPT || event.data?.type !== "chatgpt-relay-v2-ready") return;
-    if (event.data.release !== release || event.data.protocolVersion !== protocolVersion) {
-      trace("version-mismatch", { note: String(event.data.release || "unknown").slice(0, 40) });
+    if (event.data.relayVersion !== relayVersion) {
+      trace("version-mismatch", { note: String(event.data.relayVersion || "unknown").slice(0, 40) });
       if (peer) return;
       needsUpdate = true;
       connected = false;

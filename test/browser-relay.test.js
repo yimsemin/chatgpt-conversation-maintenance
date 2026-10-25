@@ -56,7 +56,7 @@ test("the page executor sends exactly the requests the app contract describes an
     return { ok: true, status: 200, headers: { get: () => "application/json" }, text: async () => JSON.stringify(data), json: async () => data };
   };
   const make = new Function("location", "window", "alert", "fetch", "setInterval", "clearInterval", `return (${executorSource()});`);
-  make(chatgpt, fakeWindow, () => {}, fakeFetch, () => 1, () => {})(ORIGIN, "release-x", 2);
+  make(chatgpt, fakeWindow, () => {}, fakeFetch, () => 1, () => {})(ORIGIN, "relay-test");
 
   const operations = [
     { op: "getConversation", params: { id: CID } },
