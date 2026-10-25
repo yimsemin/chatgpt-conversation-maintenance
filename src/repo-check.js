@@ -108,6 +108,13 @@ export function findRepoIssues(files, {
   return errors;
 }
 
+// 이력에 GitHub noreply 가 아닌 작성자·커밋터 이메일이 있으면 알려 준다(개인 이메일 노출 방지).
+export function findIdentityIssues(log) {
+  return log.split("\n").filter(Boolean)
+    .filter((line) => !/^\S+ (?:\S+@users\.noreply\.github\.com|noreply@github\.com) (?:\S+@users\.noreply\.github\.com|noreply@github\.com)$/.test(line))
+    .map((line) => `${line.split(" ")[0]}: author or committer email is not a GitHub noreply address`);
+}
+
 function main() {
   const result = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
     encoding: "utf8",
@@ -119,6 +126,8 @@ function main() {
 
   const files = result.stdout.split("\0").filter(Boolean);
   const errors = findRepoIssues(files);
+  const log = spawnSync("git", ["log", "--all", "--format=%h %ae %ce"], { encoding: "utf8" });
+  if (log.status === 0) errors.push(...findIdentityIssues(log.stdout));
 
   if (errors.length) {
     console.error(["Repository safety check failed:", ...errors.map((item) => `- ${item}`)].join("\n"));

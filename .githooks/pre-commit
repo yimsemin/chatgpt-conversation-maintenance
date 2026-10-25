@@ -1,10 +1,22 @@
 #!/bin/sh
-# main 에 직접 커밋하는 것을 막는다. 사용자가 "바로 고쳐"처럼 사소한 즉시 수정을
-# 요청했을 때만 ALLOW_MAIN_COMMIT=1 git commit ... 으로 우회한다.
+# 1) main·develop 에 직접 커밋하는 것을 막는다. 작업은 브랜치에서 하고 ff-only 로 병합한다.
+#    예외는 릴리스 커밋과, 사용자가 사소한 즉시 수정을 요청했을 때뿐이며 ALLOW_PROTECTED_COMMIT=1 git commit ... 으로 우회한다.
+# 2) 작성자·커밋터 이메일이 GitHub noreply 주소가 아니면 거부한다(개인 이메일이 이력에 남지 않게).
 
 branch="$(git symbolic-ref --short -q HEAD)"
-if [ "$branch" = "main" ] && [ "$ALLOW_MAIN_COMMIT" != "1" ]; then
-  echo "main 에 직접 커밋할 수 없다. 작업 브랜치를 만든다 (docs/GIT.md)." >&2
+if { [ "$branch" = "main" ] || [ "$branch" = "develop" ]; } && [ "$ALLOW_PROTECTED_COMMIT" != "1" ]; then
+  echo "$branch 에 직접 커밋할 수 없다. 작업 브랜치를 만든다 (docs/GIT.md)." >&2
   exit 1
 fi
+
+for ident in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+  email="$(git var "$ident" | sed -E 's/^.*<(.*)>.*$/\1/')"
+  case "$email" in
+    *@users.noreply.github.com) ;;
+    *)
+      echo "커밋 이메일이 GitHub noreply 주소가 아니다($email)." >&2
+      echo "git config --local user.email <id>+<계정>@users.noreply.github.com 으로 고친다 (docs/GIT.md)." >&2
+      exit 1 ;;
+  esac
+done
 exit 0

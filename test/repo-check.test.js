@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { findRepoIssues, personalPathPatterns } from "../src/repo-check.js";
+import { findIdentityIssues, findRepoIssues, personalPathPatterns } from "../src/repo-check.js";
+
+test("history with a non-noreply author or committer email is reported", () => {
+  const ok = "a1 12+me@users.noreply.github.com noreply@github.com";
+  assert.deepEqual(findIdentityIssues(ok), []);
+  assert.equal(findIdentityIssues(`${ok}\nb2 me@example.com 12+me@users.noreply.github.com`).length, 1);
+});
 
 const FAKE_STAT = { isFile: () => true, size: 12 };
 function checkOne(path, text, options = {}) {
