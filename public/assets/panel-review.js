@@ -52,7 +52,7 @@ function loadOverrides() {
 
 // 화면을 다시 그릴 때 펼침 상태·스크롤·입력 위치를 보존한다(항목 하나를 고칠 때마다 목록이 닫히지 않게).
 // change 는 포커스가 옮겨 가기 전에 오므로 다음 틱에 그려야 사용자가 옮겨 간 칸을 기억할 수 있다.
-let redrawTimer = null;
+let redrawTimer = null; let focusRequest = null;
 function redraw() {
   if (redrawTimer) return;
   redrawTimer = setTimeout(() => {
@@ -60,8 +60,9 @@ function redraw() {
     const panel = $("panel"); if (!panel) return;
     const open = new Set([...panel.querySelectorAll("details[data-key][open]")].map((d) => d.dataset.key));
     const known = new Set([...panel.querySelectorAll("details[data-key]")].map((d) => d.dataset.key));
-    const active = document.activeElement; const focusKey = active?.dataset?.fk || null;
-    const caret = focusKey && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
+    const active = document.activeElement; const focusKey = focusRequest || active?.dataset?.fk || null;
+    const caret = !focusRequest && focusKey && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
+    focusRequest = null;
     const { scrollX, scrollY } = window;
     drawReview();
     for (const d of $("panel").querySelectorAll("details[data-key]")) if (known.has(d.dataset.key)) d.open = open.has(d.dataset.key);
@@ -193,7 +194,7 @@ function trashControl(candidates) {
     h("label", { class: "check" }, radio("fixed"), "정해 둔 프로젝트로 이동 → ", select, newName, link,
       S.trash.mode === "fixed" && (!S.trash.name || target.fallback) ? h("span", { class: "small down", text: S.trash.name ? ` 그런 프로젝트가 없어 「${target.name}」를 새로 만들어 옮깁니다` : " 프로젝트를 고르지 않으면 「" + target.name + "」로 옮깁니다" }) : null),
     h("label", { class: "check" }, radio("none"), "이동 없이 표시만(프로젝트 안의 대화는 앱이 뺄 수 없어 직접 빼야 합니다)"),
-    h("details", { class: "advanced" }, h("summary", { text: "고급 — 영구 삭제" }), h("div", { class: "body" },
+    h("details", {}, h("summary", { text: "고급 — 영구 삭제" }), h("div", { class: "body" },
       h("label", { class: "check" }, h("input", { type: "checkbox", checked: S.trash.permanent ? true : null, onchange: (e) => set({ permanent: e.target.checked }) }),
         "삭제후보를 옮기지 않고 바로 영구 삭제합니다(되돌릴 수 없음)"))));
 }
@@ -265,7 +266,7 @@ function destinationSection(all) {
   const off = all.filter((e) => e.off).length;
   const setFilter = (value) => { destFilter = value; pageState.delete(DEST_KEY); redraw(); };
   const count = (group) => all.filter((e) => e.group === group).length;
-  const tab = (value, label, n) => h("button", { class: `btn ghost${destFilter === value ? " on" : ""}`, type: "button", "data-fk": `f:${value}`,
+  const tab = (value, label, n) => h("button", { class: destFilter === value ? "on" : null, type: "button", "data-fk": `f:${value}`,
     "aria-pressed": destFilter === value ? "true" : "false", onclick: () => setFilter(value) }, `${label} ${n}`);
   const bulk = (offValue) => () => {
     for (const group of ["trash", "move", "title"]) {
@@ -280,13 +281,16 @@ function destinationSection(all) {
   return section(DEST_KEY, all.length, [
     h("div", { class: "seg" }, tabs),
     h("div", { class: "bulk" },
-      h("button", { class: "btn ghost", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope}모두 적용`),
-      h("button", { class: "btn ghost", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope}모두 해제`),
+      h("button", { class: "btn link", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, `${scope}모두 적용`),
+      h("button", { class: "btn link", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, `${scope}모두 해제`),
       note ? h("span", { class: "muted small", text: note }) : null),
     list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: "이 탭에 항목이 없습니다." })],
   true, "대화마다 보낼 곳과 새 제목을 한 줄에서 고칩니다. 삭제후보로 제안된 대화도 다른 프로젝트로 보낼 수 있고, ‘프로젝트 없음’을 고르면 현재 프로젝트 안의 대화는 결과 화면에서 직접 빼도록 안내합니다.",
   "건", off ? `${all.length - off}건 적용` : "");
 }
+
+// "수정"을 누른 대화는 제목 입력칸을 연다. 제목 형식이 맞지 않는 대화는 늘 열려 있어 고치기 전에는 적용할 수 없다.
+const editingTitle = new Set();
 
 function destinationItem(e) {
   const id = e.conversationId;
@@ -299,25 +303,33 @@ function destinationItem(e) {
   } }, h("option", { value: TRASH_VALUE, text: trashLabel() }), h("option", { value: "", text: "프로젝트 없음" }),
     ...projectNames().map((n) => h("option", { value: n, text: n })));
   select.value = e.groupTrash ? TRASH_VALUE : (e.to || "");
-  const dest = e.groupTrash ? trashLabel() : (e.to || "프로젝트 없음");
-  const place = e.groupTrash || e.moving ? `${e.from || "프로젝트 없음"} → ${dest}` : `프로젝트는 그대로: ${e.from || "프로젝트 없음"}`;
+  const from = e.from || "프로젝트 없음";
+  const route = h("div", { class: "route" },
+    e.groupTrash || e.moving ? [h("span", { class: "from", text: from }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" })]
+      : h("span", { class: "from", text: "프로젝트는 그대로" }),
+    select);
   // 영구 삭제는 제목이 필요 없다. 프로젝트만 옮기는 대화는 제목을 그대로 둘 수도 있어 그 경우만 따로 해제한다.
   const canKeepTitle = e.moving && !e.groupTrash;
   const keepTitle = !e.off && canKeepTitle
     ? h("label", { class: "check apply-toggle" }, h("input", { type: "checkbox", "data-fk": `c:title:${id}`, checked: e.titleOff ? true : null,
       onchange: (ev) => patch(id, { skipTitle: ev.target.checked }) }), "제목 그대로") : null;
-  let titleRow = null;
+  let rename = null;
   if (e.kind !== "delete") {
-    if (e.off) titleRow = h("div", { class: "m", text: "해제됨 — 원래 제목 그대로 둡니다" });
-    else if (e.titleOff && canKeepTitle) titleRow = h("div", { class: "m", text: "제목은 그대로 둡니다" });
-    else titleRow = h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
-      placeholder: "새 제목 (주제 — 작업/결과)", onchange: (ev) => {
-        const v = ev.target.value.trim(); ev.target.classList.toggle("invalid", !isNormalizedTitle(v));
-        patch(id, { title: v, skipTitle: false, listed: true });
-      } });
+    if (e.off) rename = h("div", { class: "rename muted", text: "해제됨 — 원래 제목 그대로 둡니다" });
+    else if (e.titleOff && canKeepTitle) rename = h("div", { class: "rename muted" }, "제목은 그대로 둡니다", keepTitle);
+    else if (editingTitle.has(id) || !isNormalizedTitle(e.effTitle)) {
+      rename = h("div", { class: "rename" }, h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
+        placeholder: "새 제목 (주제 — 작업/결과)", onchange: (ev) => {
+          const v = ev.target.value.trim(); ev.target.classList.toggle("invalid", !isNormalizedTitle(v));
+          if (isNormalizedTitle(v)) editingTitle.delete(id);
+          patch(id, { title: v, skipTitle: false, listed: true });
+        } }), keepTitle);
+    } else {
+      rename = h("div", { class: "rename" }, h("span", { class: "muted", text: e.renaming ? "새 제목" : "제목 유지" }), e.renaming ? h("span", { class: "newtitle", text: e.effTitle }) : null,
+        h("button", { class: "btn link", type: "button", onclick: () => { editingTitle.add(id); focusRequest = `t:${id}`; redraw(); } }, "수정"), keepTitle);
+    }
   }
-  return h("div", { class: `item${e.off ? " off" : ""}` }, h("div", { class: "t", text: e.title }), h("div", { class: "ctl" }, toggle, keepTitle, select),
-    h("div", { class: "m", text: place }), titleRow);
+  return h("div", { class: `item dest${e.off ? " off" : ""}` }, h("div", { class: "t", text: e.title }), h("div", { class: "ctl" }, toggle), route, rename);
 }
 
 export function item(title, meta, controls) {

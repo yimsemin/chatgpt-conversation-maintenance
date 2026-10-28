@@ -19,8 +19,8 @@ export async function loadTrash() {
         h("p", { class: "muted", text: `ChatGPT의 「${data.project}」 프로젝트에서 대화를 직접 확인한 뒤, 대화마다 삭제하거나 복원(원래 자리로 이동)하세요. ChatGPT에서 직접 지우거나 옮긴 대화는 ‘ChatGPT에서 다시 확인’으로 목록에서 뺍니다.` }),
         !data.items.length ? h("p", { class: "chip good", text: "삭제후보로 옮겨 둔 대화가 없습니다" }) : null,
         data.items.length ? h("div", { class: "row" }, h("button", { class: "btn ghost", type: "button", disabled: !S.session?.relay?.connected, onclick: startTrashSync }, "ChatGPT에서 다시 확인(읽기 전용)")) : null,
-        h("div", { class: "row" }, h("button", { class: "btn ghost", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "delete"; draw(); } }, "전부 삭제"),
-          h("button", { class: "btn ghost", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "keep"; draw(); } }, "전부 복원")),
+        h("div", { class: "row" }, h("button", { class: "btn link", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "delete"; draw(); } }, "전부 삭제"),
+          h("button", { class: "btn link", type: "button", onclick: () => { for (const c of choices.values()) c.decision = "keep"; draw(); } }, "전부 복원")),
         ...data.items.map((i) => {
           const c = choices.get(i.conversationId);
           const needsTitle = !isNormalizedTitle(i.title) && c.decision === "keep";

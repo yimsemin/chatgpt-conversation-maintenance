@@ -35,10 +35,13 @@ function render() {
   // 정리 창 하나로 통합했다: 북마클릿이 여는 창이 정리 화면이면서 ChatGPT 연결도 맡는다.
   const note = $("relay-note");
   const owner = isRelayOwnerWindow();
-  note.hidden = !s?.relay?.connected;
-  note.textContent = owner
+  // 연결 안내는 작업이 도는 동안만 줄로 보이고, 평소에는 연결 표시(pill)의 설명으로만 둔다.
+  const noteText = owner
     ? "이 창이 ChatGPT와 연결되어 있습니다. 작업이 끝날 때까지 이 창과 chatgpt.com 탭을 닫지 마세요."
     : "ChatGPT 연결은 북마클릿으로 연 정리 창이 맡고 있습니다. 그 창을 닫으면 연결이 끊깁니다.";
+  note.hidden = !(s?.relay?.connected && s.job && !s.job.done);
+  note.textContent = noteText;
+  $("relay-pill").title = s?.relay?.connected ? noteText : "";
   renderAppInfo();
   renderTitle();
   renderFailure();
@@ -57,7 +60,8 @@ function renderAppInfo() {
   if (!app) { box.hidden = true; return; }
   box.hidden = false;
   const since = duration(app.uptimeSeconds);
-  box.textContent = `● 앱 실행 중 (프로세스 ${app.pid}, ${since} 전 시작) · 끄려면 앱을 켠 터미널 창을 닫거나 Ctrl+C. 이 탭을 닫아도 앱은 계속 실행됩니다.`;
+  box.textContent = `● 앱 실행 중 · 프로세스 ${app.pid} · ${since} 전 시작 · 끄려면 터미널 창을 닫거나 Ctrl+C`;
+  box.title = "이 탭을 닫아도 앱은 계속 실행됩니다. 끄려면 앱을 켠 터미널 창을 닫거나 Ctrl+C 를 누르세요.";
   if (app.codeChanged) box.textContent += " ⚠ 시작한 뒤 코드가 바뀌었으니 다시 켜세요.";
 }
 
@@ -130,7 +134,7 @@ function renderSteps() {
   $("steps").hidden = currentStep() === "trash";
   const order = STEPS.map(([id]) => id); const at = order.indexOf(currentStep());
   fill($("steps"), ...STEPS.map(([id, label], i) =>
-    h("li", { class: i < at ? "done" : i === at ? "current" : "", title: stepHint(id) }, h("b", { text: `${i + 1}` }), h("span", { class: "lbl", text: label }))));
+    h("li", { class: i < at ? "done" : i === at ? "current" : "", title: stepHint(id) }, h("b", { text: i < at ? "✓" : `${i + 1}` }), h("span", { class: "lbl", text: label }))));
 
 }
 

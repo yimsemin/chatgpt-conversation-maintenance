@@ -11,7 +11,10 @@
 </head>
 <body>
 <header class="top">
-  <h1>대화 정리</h1>
+  <div>
+    <h1>대화 정리</h1>
+    <p class="status" id="app-info" hidden></p>
+  </div>
   <div class="top-right">
     <button class="pill" id="version" type="button" title="업데이트 내역 보기">v__APP_VERSION__</button>
     <a class="pill" href="__REPO_URL__" target="_blank" rel="noopener noreferrer" title="GitHub 저장소">GitHub</a>
@@ -21,7 +24,6 @@
 </header>
 <p class="relay-hint" id="relay-hint" hidden></p>
 <p class="relay-note" id="relay-note" hidden></p>
-<p class="relay-note" id="app-info" hidden></p>
 
 <main>
   <section class="failure callout bad" id="failure" hidden></section>
