@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DOCS = ["README.md", "AGENTS.md", "CLASSIFICATION_WORKFLOW.md", "API_COMPATIBILITY.md",
+const DOCS = ["README.md", "AGENTS.md",
   ...readdirSync(join(ROOT, "docs")).map((name) => `docs/${name}`), ...readdirSync(join(ROOT, "templates")).map((name) => `templates/${name}`)]
   .filter((file) => file.endsWith(".md"));
 

@@ -14,7 +14,7 @@
   --accent:#1f5f5b; --accent-ink:#fbf9f4; --good:#3b7a4d; --warn:#946614; --danger:#b23a2e;
 }
 :root { --s1:8px; --s2:16px; --s3:24px; --s4:40px; --radius:8px; --w:min(960px,calc(100% - 32px));
-  --fs-title:24px; --fs-h2:18px; --fs-body:15px; --fs-meta:13px;
+  --fs-title:24px; --fs-h2:18px; --fs-body:16px; --fs-meta:16px;
   --serif:"Iowan Old Style","Palatino Linotype",AppleMyungjo,Batang,"Noto Serif KR",serif; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font-size:var(--fs-body); line-height:1.65; word-break:keep-all; overflow-wrap:break-word;
@@ -52,7 +52,7 @@ main > * + * { margin-top:var(--s3); }
 .steps li:not(:last-child) { flex:1; }
 .steps li:not(:last-child)::after { content:""; flex:1; min-width:var(--s2); height:1px; background:var(--line); margin:0 var(--s1); }
 .steps li b { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; border:1px solid var(--line);
-  font-size:12px; font-weight:600; color:var(--muted); }
+  font-size:var(--fs-meta); font-weight:600; color:var(--muted); }
 .steps li.current { color:var(--text); font-weight:600; }
 .steps li.current b { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 .steps li.done { color:var(--text); }
@@ -111,14 +111,15 @@ input.invalid { border-color:var(--danger); }
 .project-list { display:flex; flex-direction:column; gap:6px; max-height:240px; overflow:auto; padding:var(--s1); border:1px solid var(--line); border-radius:var(--radius); margin:var(--s1) 0; }
 .project-item { align-items:center; }
 .check { display:flex; flex-wrap:wrap; gap:var(--s1); align-items:flex-start; font-size:var(--fs-meta); color:var(--muted); }
-.check input { accent-color:var(--accent); }
+.check input { accent-color:var(--accent); flex:none; width:18px; height:18px; margin:4px 0 0; }
+.check:not(:has(select)) { flex-wrap:nowrap; }
 
 /* ---- 진행률·로그 ---- */
 .bar { height:8px; border-radius:999px; background:var(--surface2); overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .4s; }
 .bar.indeterminate > i { width:35%; animation:slide 1.4s infinite ease-in-out; }
 @keyframes slide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
-.log { font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); background:var(--surface2); border-radius:var(--radius); padding:10px 14px; max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.log { font:var(--fs-meta)/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); background:var(--surface2); border-radius:var(--radius); padding:10px 14px; max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
 .log .rl { color:var(--warn); } .log .er { color:var(--danger); }
 
 /* ---- 표·목록 ---- */
@@ -159,11 +160,11 @@ details .body { padding:0 0 var(--s2); }
 /* ---- 떠 있는 요소 ---- */
 .pill, .icon { border:0; background:transparent; color:var(--text); border-radius:999px; font:inherit; font-size:var(--fs-meta); cursor:pointer; }
 .pill { white-space:nowrap; display:inline-flex; gap:var(--s1); align-items:center; padding:6px 12px; }
-.icon { width:34px; height:34px; font-size:15px; }
+.icon { width:34px; height:34px; font-size:var(--fs-meta); }
 .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; }
 .pill.ok .dot { background:var(--good); } .pill.warn .dot { background:var(--warn); } .pill.bad .dot { background:var(--danger); }
 .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--surface); border:1px solid var(--danger); color:var(--text); border-radius:var(--radius); padding:12px var(--s2); max-width:min(560px,calc(100% - 32px)); z-index:10; }
-.toast pre { white-space:pre-wrap; margin:var(--s1) 0 0; font-size:12px; color:var(--muted); }
+.toast pre { white-space:pre-wrap; margin:var(--s1) 0 0; font-size:var(--fs-meta); color:var(--muted); }
 dialog { border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--text); max-width:min(520px,calc(100% - 32px)); padding:22px; }
 dialog::backdrop { background:rgba(0,0,0,.55); }
 dialog form > * + * { margin-top:var(--s2); }

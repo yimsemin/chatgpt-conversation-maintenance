@@ -1,7 +1,7 @@
 // 대화 카탈로그 수집. 범위(scope)에 따라 두 가지다.
 // - 전체 수집(collectConversationCatalog): 프로젝트를 순회하며 모든 활성·보관 대화를 읽는다. 완전하다.
 // - 범위 수집(collectScopedCatalog): 고른 범위의 활성 대화만 읽는다(프로젝트 범위는 그 프로젝트만, 나머지는 목록 기준).
-// 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, API_COMPATIBILITY.md) 목록만으로는 프로젝트 안의 대화를 다 못 찾는다.
+// 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, docs/API_COMPATIBILITY.md) 목록만으로는 프로젝트 안의 대화를 다 못 찾는다.
 // 프로젝트 없는 대화는 그 실측에서 빠진 적이 없어 목록으로 찾는다.
 import { assert } from "./assert.js";
 import { CONVERSATION_ID } from "./ids.js";

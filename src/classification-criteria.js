@@ -1,8 +1,8 @@
-// 분류 판단 기준의 압축본과 제안 파일 형식. review.json·요청문에 그대로 들어간다(정본은 CLASSIFICATION_WORKFLOW.md).
+// 분류 판단 기준의 압축본과 제안 파일 형식. review.json·요청문에 그대로 들어간다(정본은 docs/CLASSIFICATION_WORKFLOW.md).
 
 
 // 규칙 문서를 매번 통째로 보내지 않기 위한 압축 기준. 정본은
-// CLASSIFICATION_WORKFLOW.md이며 이 배열은 그 요약이다. review.json과 Claude
+// docs/CLASSIFICATION_WORKFLOW.md이며 이 배열은 그 요약이다. review.json과 Claude
 // 요청문에 그대로 삽입된다.
 export const CLASSIFICATION_CRITERIA = [
   "목적: 필요한 과거 맥락은 살리고, 오래되거나 잘못된 맥락이 답변에 섞이는 것을 줄이며, 관리 부담을 줄인다. 판단이 갈리면 '앞으로 ChatGPT를 더 정확하고 적은 관리비용으로 쓸 수 있는가'로 정한다.",

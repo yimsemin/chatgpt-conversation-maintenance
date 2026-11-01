@@ -4,7 +4,7 @@
 
 개발 경험이 없어도 따라 할 수 있도록 처음부터 끝까지 안내한다. 명령을 한 줄씩 그대로 입력하면 되고, 막히면 각 단계 아래의 "잘 안 될 때"를 본다.
 
-개요와 로컬 명령은 [README.md](../README.md), 분류 판단 기준은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다. 이 도구를 에이전트에게 맡기려면 13절을 본다.
+개요와 로컬 명령은 [README.md](../README.md), 분류 판단 기준은 [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md)에 있다. 이 도구를 에이전트에게 맡기려면 13절을 본다.
 
 ---
 
@@ -270,7 +270,7 @@ ChatGPT에서 직접 지우거나 다른 곳으로 옮긴 대화가 있으면 **
 5단계처럼 데이터 폴더를 내 백업 프로그램이 다루는 위치로 지정하면 된다. 정리 작업 자체는 한 컴퓨터에서만 한다. 새 컴퓨터에서는 거기서 새로 확인해서 시작하면 된다. 자세한 건 [README.md](../README.md)의 "데이터와 백업".
 
 **Q. API가 갑자기 안 돼요.**
-ChatGPT 내부 API가 바뀐 것일 수 있다. [API_COMPATIBILITY.md](../API_COMPATIBILITY.md)의 대조 순서를 따른다. 대량 재시도는 하지 않는다.
+ChatGPT 내부 API가 바뀐 것일 수 있다. [API_COMPATIBILITY.md](API_COMPATIBILITY.md)의 대조 순서를 따른다. 대량 재시도는 하지 않는다.
 
 ---
 
@@ -314,7 +314,7 @@ https://github.com/yimsemin/chatgpt-conversation-maintenance
 
 ### 운영을 맡길 때
 
-분류 제안처럼 판단이 필요한 작업은 에이전트에게 맡길 수 있다. 수집이 끝나면 화면이 에이전트에게 전달할 한 문장을 보여 주고(`npm run brief`의 "다음"이 가리키는 파일을 에이전트가 읽는다), 파일 접근이 없는 곳에 붙여넣을 요청문과 최소 요청문은 [CLASSIFICATION_WORKFLOW.md](../CLASSIFICATION_WORKFLOW.md)에 있다. 데이터 폴더에 분류체계(`classification-taxonomy.md`)가 있으면 함께 읽게 한다. 제안은 승인이 아니므로 사용자가 확인하기 전에는 `reviewed: true`를 만들거나 적용을 실행하지 않게 한다.
+분류 제안처럼 판단이 필요한 작업은 에이전트에게 맡길 수 있다. 수집이 끝나면 화면이 에이전트에게 전달할 한 문장을 보여 주고(`npm run brief`의 "다음"이 가리키는 파일을 에이전트가 읽는다), 파일 접근이 없는 곳에 붙여넣을 요청문과 최소 요청문은 [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md)에 있다. 데이터 폴더에 분류체계(`classification-taxonomy.md`)가 있으면 함께 읽게 한다. 제안은 승인이 아니므로 사용자가 확인하기 전에는 `reviewed: true`를 만들거나 적용을 실행하지 않게 한다.
 
 **분류체계를 먼저 만들어 두는 편이 낫다.** 없으면 실행마다 프로젝트 경계가 흔들려 비슷한
 프로젝트가 늘어난다. 형식은 [../templates/classification-taxonomy.example.md](../templates/classification-taxonomy.example.md)를 참고한다.
