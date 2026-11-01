@@ -45,7 +45,7 @@ ChatGPT를 오래 쓰면 대화가 수백 개 쌓인다. 일회성 질문이나 
 ## 제목 규칙과 목록 순서
 
 - 형식: `핵심 주제 — 실제 작업 또는 결과`(가운데 ` — `는 정확히 한 번). 표준이 아니면 검토 화면에서 적용이 막힌다(제목 변경을 직접 해제한 대화만 예외). 검토 화면의 "바뀌는 대화" 목록에서 대화마다 목적지(삭제후보·프로젝트 없음·각 프로젝트)·새 제목·적용 여부를 한 줄에서 고른다.
-- 제목을 바꾸면 그 대화의 수정 시각이 갱신되어 ChatGPT 목록에서 위로 올라오고 프로젝트 이동은 그렇지 않다([API_COMPATIBILITY.md](API_COMPATIBILITY.md) 실측). 그래서 여러 건을 바꿀 때는 **오래된 대화부터** 한 번에 하나씩 처리해 바꾼 대화끼리의 원래 순서를 유지하고, 결과 화면이 그 순서를 확인해 알려 준다. 바꾼 대화가 바꾸지 않은 대화보다 위로 올라오는 것은 피할 수 없다.
+- 제목을 바꾸면 그 대화의 수정 시각이 갱신되어 ChatGPT 목록에서 위로 올라오고 프로젝트 이동은 그렇지 않다([API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) 실측). 그래서 여러 건을 바꿀 때는 **오래된 대화부터** 한 번에 하나씩 처리해 바꾼 대화끼리의 원래 순서를 유지하고, 결과 화면이 그 순서를 확인해 알려 준다. 바꾼 대화가 바꾸지 않은 대화보다 위로 올라오는 것은 피할 수 없다.
 
 ## 빠른 시작
 
@@ -68,7 +68,7 @@ npm run stop       # 터미널 창을 잃었을 때 앱 끄기 (npm run status �
 
 이 도구는 로그인한 ChatGPT 웹 앱의 `https://chatgpt.com/backend-api`를 쓴다. 문서화된 공식 API가 아니어서 예고 없이 바뀔 수 있고, 공식 OpenAI API 키로 ChatGPT 사이드바 대화나 프로젝트를 관리할 수 있다는 뜻도 아니다. 자신의 데이터에만 쓰고 계정 약관을 확인할 책임은 사용자에게 있으며, 과도한 요청은 속도 제한을 일으킨다. 공식 제품이 아니다.
 
-Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 403이 나오므로 HTTP 수행만 chatgpt.com 페이지(북마클릿)로 옮겼다. 앱은 허용된 `{op, params}`만 보내고 세션 토큰은 페이지 밖으로 나오지 않는다. TLS 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작으로 우회하지 않는다. 장애 시에는 [API 호환성 기록](API_COMPATIBILITY.md)의 대조 순서를 따르고 대량 재시도하지 않는다(프로젝트 생성은 실패 응답이어도 만들어졌을 수 있어 목록을 먼저 확인한다).
+Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 403이 나오므로 HTTP 수행만 chatgpt.com 페이지(북마클릿)로 옮겼다. 앱은 허용된 `{op, params}`만 보내고 세션 토큰은 페이지 밖으로 나오지 않는다. TLS 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작으로 우회하지 않는다. 장애 시에는 [API 호환성 기록](docs/API_COMPATIBILITY.md)의 대조 순서를 따르고 대량 재시도하지 않는다(프로젝트 생성은 실패 응답이어도 만들어졌을 수 있어 목록을 먼저 확인한다).
 
 ## 안전 장치
 
@@ -89,7 +89,7 @@ Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`),
 
 정리는 **한 컴퓨터에서만** 한다. 백업·동기화는 사용자의 백업 프로그램이 하고 GitHub는 그 경로에 쓰지 않는다. 공개 전 점검은 [docs/GIT.md](docs/GIT.md).
 
-**한 가지 예외:** 선택 경로인 외부 AI 분류를 쓰면 후보 대화의 **발췌본**(요청문에 넣는 `review.json` — 제목, 프로젝트명, 사용자 요청과 최종 응답의 앞뒤 일부)이 사용자가 직접 복사해 그 AI 서비스로 나간다([CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md)). 쓰지 않으면 대화 내용은 이 컴퓨터를 벗어나지 않는다.
+**한 가지 예외:** 선택 경로인 외부 AI 분류를 쓰면 후보 대화의 **발췌본**(요청문에 넣는 `review.json` — 제목, 프로젝트명, 사용자 요청과 최종 응답의 앞뒤 일부)이 사용자가 직접 복사해 그 AI 서비스로 나간다([CLASSIFICATION_WORKFLOW.md](docs/CLASSIFICATION_WORKFLOW.md)). 쓰지 않으면 대화 내용은 이 컴퓨터를 벗어나지 않는다.
 
 ## 직접 쓰는 로컬 명령
 
@@ -112,9 +112,9 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | 비개발자용 설치·사용 가이드, 문제 해결 |
 | [AGENTS.md](AGENTS.md) | 에이전트의 시작 순서와 안전 경계 |
 | [docs/GOALS.md](docs/GOALS.md) | 왜 이렇게 정리하는가 |
-| [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md) | 삭제·제목·프로젝트 판단 기준, 제안·승인 파일 형식 |
+| [CLASSIFICATION_WORKFLOW.md](docs/CLASSIFICATION_WORKFLOW.md) | 삭제·제목·프로젝트 판단 기준, 제안·승인 파일 형식 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·화면 설계와 용어·파일 계약, 반복된 함정 |
-| [API_COMPATIBILITY.md](API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
+| [API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
 | [docs/OVERHAUL.md](docs/OVERHAUL.md) | 전체 재정비 절차 |
 | [CHANGELOG.md](CHANGELOG.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) | 버전별 변경 이력(앱의 업데이트 내역과 같음), 작성 기준 |
 | [docs/GIT.md](docs/GIT.md) | 브랜치·커밋·릴리스 규칙, 공개 전 점검 |
@@ -125,7 +125,7 @@ node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 �
 
 - 북마클릿 릴레이는 완전 무인이 아니다. 로그인 만료, MFA, 내부 API 변경에는 사람이 개입해야 한다.
 - 소유 프로젝트만 조회한다. 프로젝트 파일·지침·Library·Memory·연결 앱의 영향은 대화 정리로 없앨 수 없다.
-- "프로젝트에 넣지 않은 대화"와 "최근 며칠" 범위는 ChatGPT의 대화 목록을 기준으로 하는데 이 목록은 프로젝트 안 대화를 일부 빠뜨린다([API_COMPATIBILITY.md](API_COMPATIBILITY.md)). 프로젝트 안 대화를 빠짐없이 보려면 "특정 프로젝트" 범위를 쓴다. 프로젝트 없는 대화가 빠지는지는 표본이 1건뿐이었으므로, 처음 쓸 때 ChatGPT 화면의 목록과 대조하는 것이 좋다.
+- "프로젝트에 넣지 않은 대화"와 "최근 며칠" 범위는 ChatGPT의 대화 목록을 기준으로 하는데 이 목록은 프로젝트 안 대화를 일부 빠뜨린다([API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md)). 프로젝트 안 대화를 빠짐없이 보려면 "특정 프로젝트" 범위를 쓴다. 프로젝트 없는 대화가 빠지는지는 표본이 1건뿐이었으므로, 처음 쓸 때 ChatGPT 화면의 목록과 대조하는 것이 좋다.
 - 이미 프로젝트 안에 있는 대화를 프로젝트 없음으로 만들 수 없다(API가 지원하지 않는다). 사용자가 ChatGPT에서 직접 뺀다.
 - 실계정에서 돌려 본 것: 프로젝트 범위와 프로젝트 없는 대화 한 바퀴(2026-09-26), 최근 7일 범위 186건의 수집·적용(2026-09-28), 미정돈 범위 13건(2026-09-30). 아직 모의 ChatGPT로만 시험한 것: 여러 프로젝트 선택, 삭제후보 확인(삭제·복원 확정), 수집 옵션(4회 실패 건너뛰기·표준 제목 제외), 이전 실행 본문 재활용.
 - macOS·Windows 단위·저장소 검사는 CI에서 자동화되지만 실계정 인증은 각 컴퓨터에서 따로 확인해야 한다.
