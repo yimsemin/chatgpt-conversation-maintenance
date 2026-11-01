@@ -45,12 +45,12 @@ export function createJob(kind, workspace, dataDir = null) {
   return job;
 }
 
-const TRANSIENT_STAGES = new Set(["progress", "rate-limit", "retry", "request"]);
+const TRANSIENT_STAGES = new Set(["progress", "rate-limit", "retry"]);
 
 export function jobEvent(job, stage, message) {
   // A "progress" event updates in place instead of piling up one line per
-  // tick (e.g. one per downloaded conversation) — every other stage still
-  // appends normally so the milestone log stays readable.
+  // tick — every other stage (including each ChatGPT request) appends, so a
+  // slow spot can be located by the conversation named on its last line.
   const last = job.events[job.events.length - 1];
   // 429 재시도 알림도 같은 자리에 덮어써서 로그가 수백 줄로 늘지 않게 한다.
   if (TRANSIENT_STAGES.has(stage) && TRANSIENT_STAGES.has(last?.stage)) {
@@ -100,6 +100,9 @@ export function reportProgress(job, info) {
   const progress = trackProgress(job, { phase: info.phase, label: SCAN_PROGRESS_LABELS[info.phase] || info.phase,
     index: info.index, total: info.total });
   const eta = progress.etaSeconds ? ` · 남은 시간 약 ${formatDuration(progress.etaSeconds)}` : "";
+  // 대화 하나씩 처리하는 단계는 요청 로그 줄이 대화 이름을 달고 쌓이므로 진행 줄을 따로 남기지 않는다.
+  job.currentItem = info.item || null;
+  if (info.item) return;
   jobEvent(job, "progress", `${formatScanProgress(info)}${eta}`);
 }
 
@@ -109,7 +112,8 @@ export function publicJob(job) {
     kind: job.kind,
     done: job.done,
     ok: job.ok,
-    events: job.events,
+    events: job.events.slice(-300),
+    currentItem: job.currentItem || null,
     result: job.result,
     error: job.error,
     cancelled: job.cancelled === true,
@@ -160,7 +164,7 @@ export function relayApi(job, requestDelayMs = 1000) {
   return createRelayApi({ broker: relayBroker, requestDelayMs: CONFIG.requestDelayMs === undefined ? requestDelayMs : CONFIG.requestDelayMs,
     pacer: CONFIG.requestDelayMs === undefined ? readPacer : null,
     backoffBaseMs: CONFIG.relayBackoffMs, backoffCapMs: Math.max(CONFIG.relayBackoffMs, 300000), sleep: (ms) => cancellableSleep(job, ms),
-    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}`); },
+    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}${job.currentItem ? ` — ${job.currentItem}` : ""}`); },
     onRelayDown: () => jobEvent(job, "relay-down", "ChatGPT 연결이 끊겼습니다. chatgpt.com 탭에서 북마클릿을 눌러 주세요. 연결되면 자동으로 이어서 진행합니다."),
     onRelayUp: ({ waitedMs }) => jobEvent(job, "relay-up", `ChatGPT 연결이 돌아왔습니다(${formatDuration(Math.round(waitedMs / 1000))} 기다림). 이어서 진행합니다.`),
     onRetry: (retry) => {

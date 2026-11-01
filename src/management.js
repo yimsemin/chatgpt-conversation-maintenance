@@ -270,6 +270,7 @@ export async function runManagementWorkflow({ manifest: rawManifest, accountId, 
   let done = 0;
   for (const action of manifest.actions) {
     if (failure) break;
+    onProgress({ type: "action-start", title: action.expectedTitle, done, total: manifest.actions.length });
     await applyAction(action);
     done += 1;
   }

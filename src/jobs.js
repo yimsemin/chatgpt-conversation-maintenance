@@ -88,6 +88,14 @@ export function createJobLog(dir) {
       }
       return removed;
     },
+    // 한 작업의 기록 전체(화면의 "전체 기록 보기"). id 앞 8자가 파일 이름에 들어 있다.
+    read(id) {
+      const name = existsSync(dir) ? readdirSync(dir).find((item) => item.endsWith(`_${String(id).slice(0, 8)}.jsonl`)) : null;
+      if (!name) return [];
+      return readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      }).filter((line) => line?.type === "event").map(({ at, stage, message }) => ({ at, stage, message }));
+    },
     recent(limit = 10, tail = 12) {
       if (!existsSync(dir)) return [];
       return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort().reverse().slice(0, limit).map((name) => {

@@ -169,6 +169,7 @@ export async function runProjectPlacementWorkflow({
   verificationDelayMs = 1000,
   initialProjects = null,
   sourceProjectIds = {},
+  onProgress = () => {},
   sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
 }) {
   assert(ACCOUNT_ID.test(accountId || ""), "A valid ChatGPT account ID is required");
@@ -264,7 +265,9 @@ export async function runProjectPlacementWorkflow({
       writeJsonAtomic(receiptFile, receipt);
     }
 
+    let movedCount = 0;
     for (const action of plan.actions) {
+      onProgress({ type: "move-start", done: movedCount, total: plan.actions.length, conversationId: action.conversationId });
       receipt.currentAction = {
         type: "move-conversation",
         conversationId: action.conversationId,
@@ -282,6 +285,8 @@ export async function runProjectPlacementWorkflow({
         });
         delete receipt.currentAction;
         writeJsonAtomic(receiptFile, receipt);
+        movedCount += 1;
+        onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length });
         continue;
       }
 
@@ -326,6 +331,8 @@ export async function runProjectPlacementWorkflow({
       });
       delete receipt.currentAction;
       writeJsonAtomic(receiptFile, receipt);
+      movedCount += 1;
+      onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length });
     }
 
     receipt.status = "completed";

@@ -259,9 +259,10 @@ async function applyManagementPlans({ files, api, accountId, job }) {
     let done = 0;
     const applied = await applyPlanSet({ plansDir: files.plans, confirmation: remaining.expectedConfirmation, accountId, api,
       onProgress: (event) => {
+        if (event.type === "action-start") job.currentItem = `${base + event.done + 1}/${planTotal} ${event.title}`;
         if (event.type === "action-finish") {
           done += 1;
-          reportProgress(job, { phase: "apply-plan", total: planTotal, index: Math.min(planTotal, base + done) });
+          reportProgress(job, { phase: "apply-plan", total: planTotal, index: Math.min(planTotal, base + done), item: job.currentItem });
         }
         if (event.type === "batch-start" || event.type === "batch-finish") {
           jobEvent(job, "apply", event.type === "batch-start"
@@ -271,6 +272,7 @@ async function applyManagementPlans({ files, api, accountId, job }) {
       } });
     assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
   });
+  job.currentItem = null;
 }
 
 // 프로젝트 배치·이동(25건 단위 타깃)을 적용하고 결과를 반영한다.
@@ -281,15 +283,25 @@ async function routingStage({ files, api, accountId, job }) {
   if (routingStatus.pendingTargets > 0) {
     jobEvent(job, "routing", `대화 ${routingPrepare.conversationCount}건을 승인된 프로젝트로 이동합니다.`);
     reportProgress(job, { phase: "routing", index: routingStatus.completedConversations, total: routingStatus.totalConversations });
+    let targetBase = 0; let targetName = "";
     await untilDone(job, "프로젝트 이동", async () => {
       if (projectRoutingStatus(routing).pendingTargets === 0) return;
       const routed = await runProjectRouting({ routing, confirmation: routingPrepare.expectedConfirmation,
         accountId, api, pendingOnly: true,
         onProgress: (event) => {
+          if (event.type === "target-start") {
+            targetBase = projectRoutingStatus(routing).completedConversations;
+            targetName = event.projectName;
+          }
+          if (event.type === "move-start") job.currentItem = `「${targetName}」 ${event.done + 1}/${event.total}`;
+          if (event.type === "move-finish") {
+            reportProgress(job, { phase: "routing", index: targetBase + event.done, total: routingStatus.totalConversations, item: job.currentItem });
+          }
           if (event.type === "target-finish") {
             const status = projectRoutingStatus(routing);
-            reportProgress(job, { phase: "routing", index: status.completedConversations, total: status.totalConversations });
+            reportProgress(job, { phase: "routing", index: status.completedConversations, total: status.totalConversations, item: job.currentItem });
           }
+          if (event.type === "move-start" || event.type === "move-finish" || event.type === "action-start") return;
           jobEvent(job, "routing", event.type === "target-start"
             ? `프로젝트 ${event.index}/${event.targets}: ${event.projectName} (${event.conversations}건)`
             : `이동 완료: ${event.projectName}`);
@@ -297,6 +309,7 @@ async function routingStage({ files, api, accountId, job }) {
       const failed = routed.results?.find((item) => !item.ok);
       assert(routed.ok, `프로젝트 이동에 실패했습니다: ${failed?.error || ""}`);
     });
+    job.currentItem = null;
   } else {
     jobEvent(job, "routing", "기존 영수증으로 프로젝트 이동 완료를 확인했습니다.");
   }

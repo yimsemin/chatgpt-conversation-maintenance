@@ -253,6 +253,7 @@ export async function runProjectRouting({
       api,
       initialProjects: projectCatalog,
       sourceProjectIds,
+      onProgress,
     });
     results.push({ projectName: plan.project.name, ...result });
     onProgress({

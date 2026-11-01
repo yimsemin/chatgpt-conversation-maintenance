@@ -55,6 +55,7 @@ get("/maintenance/jobs", (ctx) => {
   const recent = jobLogFor(ctx.dataDir).recent(10).filter((item) => !active.some((job) => job.id === item.id));
   return { active, recent };
 });
+get("/maintenance/job-log", (ctx) => ({ events: jobLogFor(ctx.dataDir).read(String(ctx.url.searchParams.get("id") || "")) }));
 // 최근 작업 기록 지우기: 이 컴퓨터의 작업 로그(data/jobs)만 지운다. 정리 결과(runs/)와 ChatGPT는 그대로다.
 post("/maintenance/jobs/clear", (ctx) => {
   const active = [...jobs.values()].filter((job) => job.workspace === ctx.workspace && !job.done);

@@ -4,7 +4,7 @@ import { S, STEPS, hooks } from "/assets/state.js";
 import { $, ask, duration, fill, h, meta, when } from "/assets/dom.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
-import { applyStages, progressBlock } from "/assets/progress.js";
+import { applyStages, logLines, progressBlock } from "/assets/progress.js";
 import { applyReadyPanel, loadScope, scanPanel, scopeLabel, startScan } from "/assets/panel-scan.js";
 import { renderGuide, stepHint } from "/assets/help.js";
 import { proposalPanel } from "/assets/panel-proposal.js";
@@ -156,11 +156,19 @@ function buildPanel(step) {
 }
 
 // ---------- recent jobs ----------
+const openLogs = new Map(); // 펼친 작업 id → 불러온 전체 기록(화면이 다시 그려져도 펼친 채로 둔다)
+
 function renderRecent() {
   const jobs = S.session?.recentJobs || [];
   fill($("recent"), ...(jobs.length ? jobs.map((j) => h("div", { class: "job" },
     h("strong", { text: `${j.kind === "apply" ? "적용" : "수집"} · ${when(j.startedAt)} · ${!j.done ? "진행 중" : j.ok ? "성공" : j.interrupted ? "중단됨" : "실패"}` }),
-    j.error ? h("div", { class: "muted", text: j.error.message }) : h("div", { class: "muted", text: j.events.at(-1)?.message || "" }))) : [h("p", { class: "muted", text: "기록이 없습니다." })]));
+    j.error ? h("div", { class: "muted", text: j.error.message }) : h("div", { class: "muted", text: j.events.at(-1)?.message || "" }),
+    h("button", { class: "btn link", type: "button", onclick: async () => {
+      if (openLogs.has(j.id)) openLogs.delete(j.id);
+      else { try { openLogs.set(j.id, (await api(`/maintenance/job-log?id=${encodeURIComponent(j.id)}`)).events); } catch (err) { fail(err); return; } }
+      renderRecent();
+    } }, openLogs.has(j.id) ? "기록 접기" : "전체 기록 보기"),
+    openLogs.has(j.id) ? h("pre", { class: "log" }, ...logLines(openLogs.get(j.id))) : null)) : [h("p", { class: "muted", text: "기록이 없습니다." })]));
 }
 
 // ---------- boot ----------

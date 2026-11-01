@@ -155,6 +155,7 @@ details .body { padding:0 0 var(--s2); }
 .acts { display:grid; gap:var(--s2); } .act p { margin:var(--s1) 0 0; }
 .recent .job { padding:var(--s1) 0; border-top:1px solid var(--line); font-size:var(--fs-meta); }
 
+.recent .job .btn.link { margin-left:-6px; }
 /* ---- 떠 있는 요소 ---- */
 .pill, .icon { border:0; background:transparent; color:var(--text); border-radius:999px; font:inherit; font-size:var(--fs-meta); cursor:pointer; }
 .pill { white-space:nowrap; display:inline-flex; gap:var(--s1); align-items:center; padding:6px 12px; }

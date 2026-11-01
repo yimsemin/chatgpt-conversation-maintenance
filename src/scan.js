@@ -191,7 +191,7 @@ export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = fals
   const candidates = [];
   const skipped = [];
   for (const [index, candidate] of selected.entries()) {
-    onProgress({ phase: "downloads", index, total: selected.length });
+    onProgress({ phase: "downloads", index, total: selected.length, item: `${index + 1}/${selected.length} ${candidate.title}` });
     const record = await downloadConversation(api, candidate, join(root, "json"), { resume: true, reuseDirs, skipFailed, onReuse, onSkip: (item) => { skipped.push(item); onSkip(item); } });
     if (record) candidates.push({ ...record, reasons: candidate.reasons });
   }
