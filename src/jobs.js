@@ -33,6 +33,10 @@ export function trackProgress(job, { phase, label = phase, index = 0, total = nu
   return job.progress;
 }
 
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; }
+}
+
 export function createJobLog(dir) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const pathOf = (job) => job.logFile;
@@ -47,7 +51,7 @@ export function createJobLog(dir) {
     dir,
     open(job) {
       job.logFile = join(dir, `${new Date(job.createdAt).toISOString().replace(/[:.]/g, "-")}_${job.id.slice(0, 8)}.jsonl`);
-      write(job.logFile, { type: "start", id: job.id, kind: job.kind, workspace: job.workspace, at: new Date(job.createdAt).toISOString() });
+      write(job.logFile, { type: "start", id: job.id, kind: job.kind, workspace: job.workspace, pid: process.pid, at: new Date(job.createdAt).toISOString() });
     },
     event(job, entry) {
       if (!job.logFile) return;
@@ -59,7 +63,8 @@ export function createJobLog(dir) {
         error: job.error ? { code: job.error.code || null, message: String(job.error.message || "").slice(0, MAX_LINE), explain: job.error.explain || null } : null,
         cancelled: job.cancelled === true });
     },
-    // 서버가 죽어 end 가 없는 작업을 중단됨으로 닫는다.
+    // 서버가 죽어 end 가 없는 작업을 중단됨으로 닫는다. 다른 프로세스가 아직 돌리고 있는 작업은 닫지 않는다
+    // (2026-11-01 적용 도중 다른 앱 프로세스가 시작되며 살아 있는 작업을 중단으로 닫아, 끝난 적용이 계속 중단으로 보였다).
     closeInterrupted(activeIds = new Set()) {
       let closed = 0;
       for (const name of existsSync(dir) ? readdirSync(dir).filter((item) => item.endsWith(".jsonl")) : []) {
@@ -69,8 +74,10 @@ export function createJobLog(dir) {
         if (activeIds.has(start.id)) continue;
         const last = JSON.parse(lines.at(-1) || "{}");
         if (last.type === "end") continue;
+        if (Number.isInteger(start.pid) && start.pid !== process.pid && pidAlive(start.pid)) continue;
+        const retry = start.kind === "apply" ? "‘적용 시작’ 버튼" : start.kind === "scan" ? "‘이 범위 수집’ 버튼" : "같은 버튼";
         write(file, { type: "end", at: new Date().toISOString(), ok: false, interrupted: true,
-          error: { code: "INTERRUPTED", message: "서버가 종료되어 작업이 중단되었습니다. 같은 버튼으로 이어서 진행할 수 있습니다." } });
+          error: { code: "INTERRUPTED", message: `서버가 종료되어 작업이 중단되었습니다. ${retry}으로 이어서 진행할 수 있습니다.` } });
         closed += 1;
       }
       return closed;
@@ -103,7 +110,8 @@ export function createJobLog(dir) {
           try { return JSON.parse(line); } catch { return null; }
         }).filter(Boolean);
         const start = lines.find((line) => line.type === "start") || {};
-        const end = lines.find((line) => line.type === "end") || null;
+        // 중단으로 닫힌 뒤 이어져 다시 끝난 작업은 마지막 end 가 결과다.
+        const end = lines.findLast((line) => line.type === "end") || null;
         const events = lines.filter((line) => line.type === "event");
         return {
           id: start.id || null, kind: start.kind || null, startedAt: start.at || null,

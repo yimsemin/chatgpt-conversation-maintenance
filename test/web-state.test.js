@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { withTemp } from "./support/tmp.js";
-import { appendFileSync, readdirSync } from "node:fs";
+import { appendFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { explainError } from "../src/errors.js";
@@ -45,8 +45,17 @@ test("job logs restore a finished job and close an interrupted one", async () =>
     assert.equal(byId["bbbbbbbb-2"].interrupted, true);
     assert.equal(byId["bbbbbbbb-2"].ok, false);
     assert.match(byId["bbbbbbbb-2"].error.message, /이어서/);
+    assert.match(byId["bbbbbbbb-2"].error.message, /적용 시작/);
     assert.equal(log.closeInterrupted(new Set()), 0);
     assert.equal(readdirSync(dir).length, 2);
+
+    // 2026-11-01: 다른 프로세스가 아직 돌리는 작업은 닫지 않고, 중단 표시 뒤에 정상 종료된 작업은 성공으로 읽는다.
+    const foreign = join(dir, "2099-01-01T00-00-00-000Z_cccccccc.jsonl");
+    writeFileSync(foreign, `${JSON.stringify({ type: "start", id: "cccccccc-3", kind: "apply", pid: process.ppid, at: new Date().toISOString() })}\n`);
+    assert.equal(log.closeInterrupted(new Set()), 0);
+    appendFileSync(foreign, `${JSON.stringify({ type: "end", ok: false, interrupted: true })}\n${JSON.stringify({ type: "end", ok: true })}\n`);
+    assert.equal(log.recent().find((item) => item.id === "cccccccc-3").ok, true);
+    rmSync(foreign);
     appendFileSync(join(dir, readdirSync(dir)[0]), "not json\n");
     assert.equal(log.recent().length, 2);
   });

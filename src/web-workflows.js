@@ -9,7 +9,7 @@ import { runsDir } from "./data-dir.js";
 import { acquireLock, releaseLock } from "./maintenance-lock.js";
 import { applyPlanSet, preparePlanSet } from "./plan-set.js";
 import { finalizeMaintenanceRun } from "./finalize.js";
-import { describeScope, findPartialScan, finishPartialScan, keptTitleMap, reusableBodyDirs, scanMaintenanceRun, validateScope } from "./scan.js";
+import { RESUME_MAX_AGE_MS, describeScope, findPartialScan, finishPartialScan, keptTitleMap, reusableBodyDirs, scanMaintenanceRun, validateScope } from "./scan.js";
 import { prepareProjectRouting, projectRoutingStatus, runProjectRouting, validateProjectRouting } from "./project-routing.js";
 import { compileProjectRouting, compileReviewedDecisions } from "./decision-compile.js";
 import { writeClassificationReview } from "./classification-review.js";
@@ -25,8 +25,6 @@ import { buildReviewedDecisions } from "./web-decisions.js";
 
 // 수집은 도중에 끊겨도(취소·창 닫힘·재시작) 이어받도록, 같은 범위로 시작했고 인벤토리가 없는(=끝나지 않은)
 // 실행 폴더를 재사용한다. 받아 둔 본문이 낡지 않도록 마지막 수정이 RESUME_MAX_AGE_MS 안인 폴더만 쓴다.
-const RESUME_MAX_AGE_MS = 24 * 3600 * 1000;
-
 export function resumableRunDir(dataDir, scope, { now = Date.now() } = {}) {
   const root = runsDir(dataDir);
   const prefix = scope.kind === "all" ? "overhaul-" : `scan-${sha256(Buffer.from(JSON.stringify(scope))).slice(0, 8)}-`;

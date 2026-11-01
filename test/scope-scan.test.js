@@ -5,7 +5,7 @@ import test from "node:test";
 import { withTemp } from "./support/tmp.js";
 
 import { collectScopedCatalog } from "../src/catalog.js";
-import { countDownloaded, finishPartialScan, keptTitleMap, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
+import { RESUME_MAX_AGE_MS, countDownloaded, finishPartialScan, findPartialScan, keptTitleMap, readScanDraft, reusableBodyDirs, scanMaintenanceRun, validateScope } from "../src/scan.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
@@ -236,6 +236,14 @@ test("an interrupted scan can be finished with only the bodies already downloade
     const draft = readScanDraft(runDir);
     assert.equal(draft.selected.length, 3);
     assert.equal(countDownloaded(runDir, draft), 2);
+
+    // 2026-11-01: 낡은 끊긴 수집은 "받은 대화로 진행" 후보로 내놓지 않는다.
+    const oldRun = join(root, "runs", "scan-aaaaaaaa-20260101T000000Z-host-000000");
+    const old = api(); const realOld = old.getConversation; let n = 0;
+    old.getConversation = async (id) => { if (++n === 2) throw new Error("연결 끊김"); return realOld(id); };
+    await assert.rejects(() => scanMaintenanceRun({ runDir: oldRun, api: old, scope: { kind: "unassigned" }, now: () => NOW }), /연결 끊김/);
+    assert.equal(findPartialScan(root)?.downloaded, 1);
+    assert.equal(findPartialScan(root, { now: Date.now() + RESUME_MAX_AGE_MS + 3600000 }), null);
 
     const result = finishPartialScan({ runDir });
     assert.equal(result.inventory.counts.candidates, 2);

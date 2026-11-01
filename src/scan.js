@@ -224,7 +224,11 @@ export function countDownloaded(runDir, draft) {
 }
 
 // 가장 최근에 끊긴(대화 목록은 읽었고 인벤토리는 없는) 확인. 받아 둔 본문이 있을 때만 돌려준다.
-export function findPartialScan(dataDir) {
+// 받아 둔 본문이 낡지 않도록 이어받는 수집은 마지막 수정이 이 시간 안인 폴더만 쓴다.
+export const RESUME_MAX_AGE_MS = 24 * 3600 * 1000;
+
+// 2026-11-01: 기한 검사가 없어 33일 전 끊긴 수집이 "최근 1일" 후보로 진행됐다.
+export function findPartialScan(dataDir, { now = Date.now() } = {}) {
   const root = runsDir(dataDir);
   if (!existsSync(root)) return null;
   let best = null;
@@ -235,7 +239,9 @@ export function findPartialScan(dataDir) {
     if (!draft) continue;
     const downloaded = countDownloaded(runDir, draft);
     if (downloaded === 0) continue;
-    const modified = statSync(runFiles(runDir).scanDraft).mtimeMs;
+    const jsonDir = join(runDir, "json");
+    const modified = Math.max(statSync(runFiles(runDir).scanDraft).mtimeMs, existsSync(jsonDir) ? statSync(jsonDir).mtimeMs : 0);
+    if (now - modified > RESUME_MAX_AGE_MS) continue;
     if (!best || modified > best.modified) best = { runDir, scope: draft.scope, downloaded, total: draft.selected.length, modified };
   }
   return best && { runDir: best.runDir, scope: best.scope, downloaded: best.downloaded, total: best.total };
