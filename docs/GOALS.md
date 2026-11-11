@@ -1,6 +1,6 @@
 # 목적과 정보 구조
 
-이 도구가 왜 있는지, 그리고 정리의 판단 기준이 되는 전제를 적는다. 화면 흐름·용어는 [ARCHITECTURE.md](ARCHITECTURE.md), 분류 기준은 [../CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md), 전체를 처음부터 다시 정리하는 절차는 [OVERHAUL.md](OVERHAUL.md)에 있다.
+이 도구가 왜 있는지, 그리고 정리의 판단 기준이 되는 전제를 적는다. 화면 흐름·용어는 [ARCHITECTURE.md](ARCHITECTURE.md), 분류 기준은 [CLASSIFICATION_WORKFLOW.md](CLASSIFICATION_WORKFLOW.md), 전체를 처음부터 다시 정리하는 절차는 [OVERHAUL.md](OVERHAUL.md)에 있다.
 
 ## 목적
 
@@ -67,7 +67,7 @@ ChatGPT 안에서(`@` 호출이나 프로젝트 지침으로) 정리를 시키�
 
 ## 목록 순서
 
-ChatGPT 목록은 수정 시각 순이고 사용자는 대화의 위치로 대화를 기억하기도 한다. 제목 변경은 수정 시각을 갱신하고 프로젝트 이동은 갱신하지 않으므로([../API_COMPATIBILITY.md](API_COMPATIBILITY.md) 실측), 제목 변경 계획은 수정 시각 오름차순(오래된 대화부터)으로 한 번에 하나씩 적용해 **바꾼 대화끼리의 상대 순서**를 유지하고 결과 화면이 그 순서를 확인한다. 바꾼 대화가 바꾸지 않은 대화 위로 올라오는 것은 피할 수 없다.
+ChatGPT 목록은 수정 시각 순이고 사용자는 대화의 위치로 대화를 기억하기도 한다. 제목 변경은 수정 시각을 갱신하고 프로젝트 이동은 갱신하지 않으므로([API_COMPATIBILITY.md](API_COMPATIBILITY.md) 실측), 제목 변경 계획은 수정 시각 오름차순(오래된 대화부터)으로 한 번에 하나씩 적용해 **바꾼 대화끼리의 상대 순서**를 유지하고 결과 화면이 그 순서를 확인한다. 바꾼 대화가 바꾸지 않은 대화 위로 올라오는 것은 피할 수 없다.
 
 ## 피할 것
 
