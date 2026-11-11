@@ -117,6 +117,7 @@ input.invalid { border-color:var(--danger); }
 /* ---- 진행률·로그 ---- */
 .bar { height:8px; border-radius:999px; background:var(--surface2); overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .4s; }
+.bar.waiting > i { background:var(--warn); }
 .bar.indeterminate > i { width:35%; animation:slide 1.4s infinite ease-in-out; }
 @keyframes slide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
 .log { font:var(--fs-meta)/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); background:var(--surface2); border-radius:var(--radius); padding:10px 14px; max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }

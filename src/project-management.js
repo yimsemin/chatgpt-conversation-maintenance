@@ -267,7 +267,7 @@ export async function runProjectPlacementWorkflow({
 
     let movedCount = 0;
     for (const action of plan.actions) {
-      onProgress({ type: "move-start", done: movedCount, total: plan.actions.length, conversationId: action.conversationId });
+      onProgress({ type: "move-start", done: movedCount, total: plan.actions.length, conversationId: action.conversationId, title: action.expectedTitle });
       receipt.currentAction = {
         type: "move-conversation",
         conversationId: action.conversationId,
@@ -286,7 +286,7 @@ export async function runProjectPlacementWorkflow({
         delete receipt.currentAction;
         writeJsonAtomic(receiptFile, receipt);
         movedCount += 1;
-        onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length });
+        onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length, title: action.expectedTitle });
         continue;
       }
 
@@ -332,7 +332,7 @@ export async function runProjectPlacementWorkflow({
       delete receipt.currentAction;
       writeJsonAtomic(receiptFile, receipt);
       movedCount += 1;
-      onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length });
+      onProgress({ type: "move-finish", done: movedCount, total: plan.actions.length, title: action.expectedTitle });
     }
 
     receipt.status = "completed";

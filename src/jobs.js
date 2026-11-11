@@ -112,7 +112,7 @@ export function createJobLog(dir) {
         const start = lines.find((line) => line.type === "start") || {};
         // 중단으로 닫힌 뒤 이어져 다시 끝난 작업은 마지막 end 가 결과다.
         const end = lines.findLast((line) => line.type === "end") || null;
-        const events = lines.filter((line) => line.type === "event");
+        const events = lines.filter((line) => line.type === "event" && line.stage !== "request");
         return {
           id: start.id || null, kind: start.kind || null, startedAt: start.at || null,
           finishedAt: end?.at || null, done: Boolean(end), ok: end ? end.ok === true : null,

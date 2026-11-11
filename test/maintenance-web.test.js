@@ -72,16 +72,16 @@ test("approved proposals become complete reviewed decisions without extra fields
   });
 });
 
-test("jobEvent updates a running progress line in place instead of piling up", () => {
+test("jobEvent updates a retry notice in place instead of piling up", () => {
   const job = { events: [] };
   jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
-  jobEvent(job, "progress", "후보 대화 본문 받는 중 (1/3건, 33%)");
-  jobEvent(job, "progress", "후보 대화 본문 받는 중 (2/3건, 66%)");
-  jobEvent(job, "progress", "후보 대화 본문 받는 중 (3/3건, 100%)");
+  jobEvent(job, "retry", "연결이 잠시 끊겼습니다. 5초 뒤 다시 시도합니다(1번째 재시도).");
+  jobEvent(job, "rate-limit", "ChatGPT가 요청 속도를 제한했습니다(429). 10초 뒤 다시 시도합니다.");
+  jobEvent(job, "rate-limit", "ChatGPT가 요청 속도를 제한했습니다(429). 20초 뒤 다시 시도합니다.");
   jobEvent(job, "ready", "3개 후보의 분류 요청 준비가 끝났습니다.");
   assert.equal(job.events.length, 3);
-  assert.equal(job.events[1].stage, "progress");
-  assert.equal(job.events[1].message, "후보 대화 본문 받는 중 (3/3건, 100%)");
+  assert.equal(job.events[1].stage, "rate-limit");
+  assert.match(job.events[1].message, /20초/);
   assert.equal(job.events[2].stage, "ready");
 });
 

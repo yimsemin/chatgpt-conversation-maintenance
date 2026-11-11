@@ -122,17 +122,18 @@ export function reusableBodyDirs(dataDir, excludeRunDir) {
 
 // 본문을 준비한다. 순서: 이 실행에 이미 받은 것 → 이전 실행의 것(재활용) → ChatGPT에서 받기.
 // skipFailed 이면 SKIP_AFTER_FAILURES 번 시도해 실패하는 대화는 null 을 돌려주고(호출 쪽이 건너뜀), 아니면 실패로 중단한다.
-async function downloadConversation(api, catalogItem, jsonDirectory, { resume = false, reuseDirs = [], skipFailed = false, onSkip = () => {}, onReuse = () => {} } = {}) {
+async function downloadConversation(api, catalogItem, jsonDirectory, { resume = false, reuseDirs = [], skipFailed = false, onSkip = () => {}, onReuse = () => {}, onBody = () => {} } = {}) {
   const backupFile = resolve(jsonDirectory, `${catalogItem.conversationId}.json`);
   if (resume) {
     const own = existsSync(backupFile) ? storedBodyRecord(backupFile, catalogItem, backupFile) : null;
-    if (own) return own.record;
+    if (own) { onBody(catalogItem, "own"); return own.record; }
     for (const dir of reuseDirs) {
       const file = join(dir, `${catalogItem.conversationId}.json`);
       const found = existsSync(file) ? storedBodyRecord(file, catalogItem, backupFile) : null;
       if (!found) continue;
       writeFileSync(backupFile, found.raw, { mode: 0o600, flag: "w" });
       onReuse(catalogItem);
+      onBody(catalogItem, "reuse");
       return found.record;
     }
   }
@@ -144,6 +145,7 @@ async function downloadConversation(api, catalogItem, jsonDirectory, { resume = 
   const raw = Buffer.from(JSON.stringify(data, null, 2));
   const record = conversationRecord(catalogItem, data, raw, backupFile, { adoptTitle: true });
   writeFileSync(backupFile, raw, { mode: 0o600, flag: resume ? "w" : "wx" });
+  onBody(catalogItem, "fetch");
   return record;
 }
 
@@ -171,7 +173,7 @@ function maintenanceInventory({ runRoot, catalogPath, catalog, conversations, sc
 
 // 범위 안의 대화를 모두 후보로 받는다(지난 확인과 비교하지 않는다). 도중에 끊긴 실행 폴더는 같은 runDir 로 이어받는다.
 // 프로젝트·기록 파일은 만들지 않고 실행 폴더(runDir)에만 결과를 남긴다.
-export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, skipStandardTitles = false, keptTitles = new Map(), reuseDirs = [], knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {}, onReuse = () => {} }) {
+export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = false, skipStandardTitles = false, keptTitles = new Map(), reuseDirs = [], knownProjects = [], now = () => new Date(), onProgress = () => {}, onSkip = () => {}, onReuse = () => {}, onBody = () => {} }) {
   const validScope = validateScope(scope);
   const root = prepareRunDirectory(runDir);
   const catalog = validScope.kind === "all"
@@ -191,8 +193,8 @@ export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = fals
   const candidates = [];
   const skipped = [];
   for (const [index, candidate] of selected.entries()) {
-    onProgress({ phase: "downloads", index, total: selected.length, item: `${index + 1}/${selected.length} ${candidate.title}` });
-    const record = await downloadConversation(api, candidate, join(root, "json"), { resume: true, reuseDirs, skipFailed, onReuse, onSkip: (item) => { skipped.push(item); onSkip(item); } });
+    onProgress({ phase: "downloads", index, total: selected.length, item: `본문 받는 중  ${candidate.title}` });
+    const record = await downloadConversation(api, candidate, join(root, "json"), { resume: true, reuseDirs, skipFailed, onReuse, onBody, onSkip: (item) => { skipped.push(item); onSkip(item); } });
     if (record) candidates.push({ ...record, reasons: candidate.reasons });
   }
   onProgress({ phase: "downloads", index: selected.length, total: selected.length });

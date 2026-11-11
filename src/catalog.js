@@ -100,24 +100,33 @@ export async function listProjectsWithRecency(api) {
 // 대화 목록(활성 또는 보관)을 페이지 단위로 돌려준다. offset 으로 넘기며, 같은 페이지가 반복되면 멈춘 것으로 보고 실패한다.
 async function* listConversationPages(api, { archived, onProgress }) {
   let offset = 0;
+  let threw = false;
   const seenPages = new Set();
-  while (true) {
-    const data = unwrap(
-      await api.listConversations({ archived, offset, limit: PAGE_SIZE }),
-      `${archived ? "Archived" : "Active"} conversation discovery`);
-    const items = data.items || [];
-    if (!items.length) return;
-    const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
-    assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
-    seenPages.add(pageKey);
-    yield items.filter((item) => CONVERSATION_ID.test(item.id || ""));
-    offset += items.length;
-    const total = Number.isFinite(data.total) ? data.total : null;
-    onProgress({ phase: archived ? "archived" : "active", index: offset, total });
-    const hasNext = data.has_next ?? data.has_more;
-    if (hasNext === false) return;
-    if (hasNext !== true && total !== null && offset >= total) return;
-    if (hasNext !== true && total === null && items.length < PAGE_SIZE) return;
+  try {
+    while (true) {
+      const data = unwrap(
+        await api.listConversations({ archived, offset, limit: PAGE_SIZE }),
+        `${archived ? "Archived" : "Active"} conversation discovery`);
+      const items = data.items || [];
+      if (!items.length) return;
+      const pageKey = `${items[0]?.id || ""}:${items.at(-1)?.id || ""}:${items.length}`;
+      assert(!seenPages.has(pageKey), `Conversation pagination stalled at offset ${offset}`);
+      seenPages.add(pageKey);
+      yield items.filter((item) => CONVERSATION_ID.test(item.id || ""));
+      offset += items.length;
+      const total = Number.isFinite(data.total) ? data.total : null;
+      onProgress({ phase: archived ? "archived" : "active", index: offset, total });
+      const hasNext = data.has_next ?? data.has_more;
+      if (hasNext === false) return;
+      if (hasNext !== true && total !== null && offset >= total) return;
+      if (hasNext !== true && total === null && items.length < PAGE_SIZE) return;
+    }
+  } catch (error) {
+    threw = true;
+    throw error;
+  } finally {
+    // 목록을 다 읽었거나(기간 밖에서 멈춘 경우 포함) 읽기를 마친 곳을 알린다. 진행 정보가 아닌 "끝났다" 알림이다.
+    if (!threw) onProgress({ type: "list-read", archived, count: offset });
   }
 }
 
@@ -130,7 +139,9 @@ export async function collectConversationCatalog(api, now = () => new Date(), on
   const records = new Map();
   for (const [projectIndex, project] of projects.entries()) {
     onProgress({ phase: "projects", index: projectIndex, total: projects.length, projectName: project.projectName });
-    for (const item of await readProjectConversations(api, project)) records.set(item.id, catalogRecord(item, project.projectName));
+    const items = await readProjectConversations(api, project);
+    for (const item of items) records.set(item.id, catalogRecord(item, project.projectName));
+    onProgress({ type: "project-read", projectName: project.projectName, count: items.length });
   }
   // 전체 목록은 프로젝트 대화를 일부 빠뜨리므로(위 설명) 프로젝트를 순회한 결과가 정본이고, 목록은 프로젝트 없는 대화와 보관 상태를 채운다.
   for (const archived of [false, true]) {
@@ -213,6 +224,7 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
       onProgress({ phase: "projects", index, total: scope.projectNames.length, projectName: target.projectName });
       const items = await readProjectConversations(api, target);
       for (const item of items) records.set(item.id, catalogRecord(item, target.projectName));
+      onProgress({ type: "project-read", projectName: target.projectName, count: items.length });
       known.set(target.projectName, { count: items.length, samples: items.slice(0, 5).map((item) => item.title).filter(Boolean),
         latestUpdate: latestOf(items) });
     }

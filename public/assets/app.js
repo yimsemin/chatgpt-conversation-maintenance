@@ -4,7 +4,7 @@ import { S, STEPS, hooks } from "/assets/state.js";
 import { $, ask, duration, fill, h, meta, when } from "/assets/dom.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
-import { applyStages, logLines, progressBlock } from "/assets/progress.js";
+import { applyStages, logLines, progressBlock, scanStages } from "/assets/progress.js";
 import { applyReadyPanel, loadScope, scanPanel, scopeLabel, startScan } from "/assets/panel-scan.js";
 import { renderGuide, stepHint } from "/assets/help.js";
 import { proposalPanel } from "/assets/panel-proposal.js";
@@ -143,7 +143,7 @@ function buildPanel(step) {
   const s = S.session;
   if (!s) { panel.append(h("p", { class: "muted", text: "앱 서버에 연결하는 중입니다…" })); return; }
   if (s.job && !s.job.done) {
-    fill(panel, s.job.kind === "apply" ? applyStages() : null, progressBlock(s.job.kind));
+    fill(panel, s.job.kind === "apply" ? applyStages() : s.job.kind === "scan" ? scanStages() : null, progressBlock(s.job.kind));
     return;
   }
   if (step === "scan") panel.append(scanPanel());

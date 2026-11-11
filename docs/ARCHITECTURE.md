@@ -47,7 +47,7 @@
 
 노출하는 기능은 좁게 고정한다: 대화 목록(활성·보관), 대화 1건 읽기, 소유 프로젝트 목록, 프로젝트별 대화 목록, 대화 변경(제목·보관·표시), 프로젝트 생성, 프로젝트 배치.
 
-계약과 위험은 [../API_COMPATIBILITY.md](API_COMPATIBILITY.md)에만 기록한다. API 관련 **유일한 유지 대상**이다.
+계약과 위험은 [API_COMPATIBILITY.md](API_COMPATIBILITY.md)에만 기록한다. API 관련 **유일한 유지 대상**이다.
 
 ### C. 분류 핸드오프 (외부)
 
@@ -130,7 +130,7 @@
 
 ## 수집·정리 동작 계약
 
-화면이 고르는 옵션과 그 뒤의 동작이다. 정책의 이유는 [GOALS.md](GOALS.md)의 "조사 방식 결정", 로컬 API 제약은 [../API_COMPATIBILITY.md](API_COMPATIBILITY.md)에 있다.
+화면이 고르는 옵션과 그 뒤의 동작이다. 정책의 이유는 [GOALS.md](GOALS.md)의 "조사 방식 결정", 로컬 API 제약은 [API_COMPATIBILITY.md](API_COMPATIBILITY.md)에 있다.
 
 - **수집 범위** (`POST /maintenance/scan`의 `scope`): 범위 안의 대화가 모두 후보이고 지난 수집과 비교하는 "기준 상태"는 없다. 프로젝트 없는 대화(`scope.days`)는 대화 목록만 읽고 **프로젝트 목록은 읽지 않는다**(옮길 후보는 `known-projects.json`). 프로젝트 범위(`scope.projectNames`)는 고른 프로젝트만 읽고 나머지 대화 수는 `null`이다. 프로젝트 목록 읽기는 꼭 필요한 곳(프로젝트 범위·최근 N일·미정돈·적용 때 이동 대상 찾기)에만 쓴다.
 - **옵션** (요청 본문): `skipFailed`(기본 켬)는 `getConversation(id, { tries: 4 })`로 첫 시도 포함 4번만 시도하고 실패한 대화를 `inventory.skipped`에 기록해 넘어간다. 끄면 릴레이 기본 재시도 8회 뒤 예외로 멈추고 자동 재개가 반복한다. 릴레이 연결 끊김 같은 예외는 건너뛰지 않고 멈춘다. `skipStandardTitles`(기본 끔)는 표준 제목이거나 사용자가 제목 변경을 해제해 두고(`keptTitleMap`, 제목이 그대로인 동안) 있는 대화를 후보에서 빼고 `inventory.standardTitlesExcluded`에 센다. 제목만 보므로 프로젝트가 틀린 대화는 못 찾는다.
@@ -140,6 +140,7 @@
 - **수집 중 제목 변경**: 본문을 받는 사이 ChatGPT가 제목을 붙이거나 바꾸면 방금 받은 본문의 제목을 후보의 제목으로 쓴다(저장된 본문 재사용은 제목이 같아야 한다).
 - **쓰기 간격**: 읽기와 쓰기가 같은 계정 한도를 쓰므로 `createPacer` 상태를 공유한다. 쓰기는 고정 간격(`requestDelayMs`)을 바닥으로 두되 429 뒤 늘어난 간격을 따른다. 적용에는 건너뛰기 설정이 없다(쓰기는 순서·모호한 결과 때문에 건너뛰면 검증이 깨진다).
 - **`npm run runs:prune`**: 같은 대화의 본문이 여러 실행에 있으면 수정 시각이 가장 새로운 하나만 남긴다(수집 재활용 저장소이기도 하다). 진행 중인 실행 폴더·인벤토리 없는 이어받기 폴더·`trash.json`이 가리키는 파일은 남기고, 결정·계획·영수증·보고서는 건드리지 않는다. 기본은 미리보기이고 `--apply`에서만 잠금을 잡고 지운다.
+- **작업 로그·진행 표시**(`src/web-jobs.js`, `public/assets/progress.js`): 사용자가 읽는 로그는 대상(대화·프로젝트·목록) 하나가 끝날 때마다 한 줄이다(`jobItem`: `✓ 제목 변경  이전 → 새 제목`, `✓ 프로젝트 이동`, `✓ 삭제후보로 이동`, `✓ 본문 받음`·`본문 재활용`, `✓ 프로젝트 읽음`, `⚠ 건너뜀`, 실패 `✗`). 동사는 `ITEM_VERBS` 한 곳에 있고 화면 용어와 같다. 이 실행에 이미 받아 둔 본문(자동 재개로 다시 도는 경우)은 줄을 찍지 않는다. ChatGPT 요청 줄(`stage: request`)은 `data/jobs/*.jsonl`에만 남고 `publicJob`이 화면용 이벤트에서 뺀다("상세 기록 보기"는 파일 전체를 읽는다). 진행률·지금 처리 중인 대상은 로그에 줄을 쌓지 않고 `job.progress`·`job.currentItem`으로만 낸다. 적용은 제목 변경·삭제와 프로젝트 이동을 합친 전체 진행도(`overallIndex/overallTotal`, 시작 때 `job.overall`로 총량을 정한다)와 전체 기준 남은 시간을 내고, 마지막 검증·보고서 작성이 남은 동안 바는 99%에서 멈춘다. 마지막 이벤트가 `rate-limit`·`relay-down`·`retry`이면 `publicJob`이 `waiting`을 내고 진행바가 주황색이 된다. 종류별 누계는 `job.counts`다.
 - **개발·시험용 환경 변수**(`src/config.js`만 읽는다): `MAINTENANCE_PORT`, `MAINTENANCE_REQUEST_DELAY_MS`, `MAINTENANCE_RELAY_BACKOFF_MS`, `MAINTENANCE_RESUME_WAIT_SECONDS`, `MAINTENANCE_ROOT`. 실제 사용에서는 설정하지 않는다.
 
 ## 데이터와 코드의 분리
@@ -180,4 +181,4 @@
 - **인증은 북마클릿 하나로 단일화.** 전용 Chrome 디버깅 포트 경로와 세션 JSON 파이프 경로는 폐기했다. 세션이 브라우저 밖으로 나가지 않는 구조가 보안상 더 낫다.
 - **원격 호출 주체는 브라우저.** Node의 `/backend-api` 호출은 비브라우저 TLS 핑거프린트 때문에 차단된다(2026-09-09 관측). 우회하지 않고 호출 주체를 옮겼다. TLS 핑거프린트 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작은 배제한다.
 - **분류는 저장소 밖에서.** 코드가 AI를 호출하지 않는다. 모델·요금·프롬프트 변화를 저장소가 따라가지 않아도 되고, 검증 로직만 유지하면 된다.
-- **외부 프로젝트의 코드를 가져오지 않는다.** 비공개 API 계약을 확인할 때 다른 구현을 참고할 수는 있지만([../API_COMPATIBILITY.md](API_COMPATIBILITY.md)), 코드를 복사하거나 동기화하지 않는다. 필요한 기능은 직접 쓴다.
+- **외부 프로젝트의 코드를 가져오지 않는다.** 비공개 API 계약을 확인할 때 다른 구현을 참고할 수는 있지만([API_COMPATIBILITY.md](API_COMPATIBILITY.md)), 코드를 복사하거나 동기화하지 않는다. 필요한 기능은 직접 쓴다.

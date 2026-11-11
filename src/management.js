@@ -264,13 +264,14 @@ export async function runManagementWorkflow({ manifest: rawManifest, accountId, 
     receipt.results.push(result);
     delete receipt.currentActions;
     writeJsonAtomic(receiptFile, receipt);
-    onProgress({ type: "action-finish", done: receipt.results.length, total: manifest.actions.length });
+    onProgress({ type: "action-finish", done: receipt.results.length, total: manifest.actions.length, title: action.expectedTitle,
+      newTitle: action.newTitle, decision: action.decision, ok: result.ok === true, error: result.error });
   }
 
   let done = 0;
   for (const action of manifest.actions) {
     if (failure) break;
-    onProgress({ type: "action-start", title: action.expectedTitle, done, total: manifest.actions.length });
+    onProgress({ type: "action-start", title: action.expectedTitle, newTitle: action.newTitle, decision: action.decision, done, total: manifest.actions.length });
     await applyAction(action);
     done += 1;
   }

@@ -6,7 +6,7 @@ import { CONFIG } from "./config.js";
 import { ACCOUNT_ID } from "./ids.js";
 import { createRelayApi } from "./relay-api.js";
 import { relayBroker } from "./remote-relay.js";
-import { createJobLog, trackProgress, formatDuration } from "./jobs.js";
+import { computeEta, createJobLog, trackProgress, formatDuration } from "./jobs.js";
 import { createPacer } from "./relay-api.js";
 import { createSafeDiagnostic } from "./web-common.js";
 
@@ -45,14 +45,11 @@ export function createJob(kind, workspace, dataDir = null) {
   return job;
 }
 
-const TRANSIENT_STAGES = new Set(["progress", "rate-limit", "retry"]);
+const TRANSIENT_STAGES = new Set(["rate-limit", "retry"]);
 
 export function jobEvent(job, stage, message) {
-  // A "progress" event updates in place instead of piling up one line per
-  // tick — every other stage (including each ChatGPT request) appends, so a
-  // slow spot can be located by the conversation named on its last line.
+  // 대기·재시도 알림은 같은 자리에 덮어쓴다. 나머지 이벤트는 모두 줄을 더한다.
   const last = job.events[job.events.length - 1];
-  // 429 재시도 알림도 같은 자리에 덮어써서 로그가 수백 줄로 늘지 않게 한다.
   if (TRANSIENT_STAGES.has(stage) && TRANSIENT_STAGES.has(last?.stage)) {
     last.at = new Date().toISOString();
     last.stage = stage;
@@ -73,6 +70,25 @@ function persistTransient(job, entry) {
   job.log?.event(job, entry);
 }
 
+// 사용자가 읽는 로그 줄: 대상(대화·프로젝트·목록)마다 무슨 일이 있었는지 한 줄로 남긴다. 요청 단위 줄과 다르다.
+// COUNTED 종류는 화면의 종류별 누계(job.counts)에 센다.
+export const ITEM_VERBS = {
+  rename: "제목 변경", move: "프로젝트 이동", trash: "삭제후보로 이동", delete: "삭제", keep: "유지",
+  fetch: "본문 받음", reuse: "본문 재활용", skip: "건너뜀",
+  project: "프로젝트 읽음", listActive: "활성 대화 목록 읽음", listArchived: "보관 대화 목록 읽음",
+};
+const COUNTED = new Set(["rename", "move", "trash", "delete", "fetch", "reuse", "skip"]);
+
+export function jobItem(job, kind, { ok = true, title, to = "", detail = "", reason = "" }) {
+  job.counts ||= {};
+  const key = ok ? kind : "failed";
+  if (!ok || COUNTED.has(kind)) job.counts[key] = (job.counts[key] || 0) + 1;
+  const verb = ITEM_VERBS[kind];
+  const tail = `${to ? ` → ${to}` : ""}${detail ? ` — ${detail}` : ""}`;
+  if (kind === "skip") return jobEvent(job, "item-skip", `⚠ ${verb}  ${title}${reason ? ` — ${reason}` : ""}`);
+  return jobEvent(job, ok ? "item" : "item-fail", ok ? `✓ ${verb}  ${title}${tail}` : `✗ ${verb} 실패  ${title}${reason ? ` — ${reason}` : ""}`);
+}
+
 const SCAN_PROGRESS_LABELS = {
   projects: "프로젝트 목록 읽는 중",
   active: "활성 대화 목록 읽는 중",
@@ -82,29 +98,36 @@ const SCAN_PROGRESS_LABELS = {
   routing: "프로젝트 이동 중",
 };
 
-export function formatScanProgress({ phase, index, total, projectName }) {
-  const label = SCAN_PROGRESS_LABELS[phase] || phase;
-  const unit = phase === "projects" ? "개" : "건";
-  if (phase === "projects" && projectName) {
-    return `${label}: ${projectName} (${index + 1}/${total}${unit})`;
-  }
-  if (Number.isFinite(total) && total > 0) {
-    const percent = Math.min(100, Math.round((index / total) * 100));
-    return `${label} (${index}/${total}${unit}, ${percent}%)`;
-  }
-  return `${label}${Number.isFinite(index) && index > 0 ? ` (${index}건)` : ""}`;
+// 적용은 제목 변경·삭제 뒤에 프로젝트 이동이 이어진다. 단계마다 바가 0으로 돌아가지 않도록 전체 기준 진행도를 함께 낸다.
+// job.overall = { planTotal, total } 은 적용 시작 때 정해진다. 남은 시간은 전체 기준으로 다시 계산한다.
+function trackOverall(job, progress, info) {
+  const overall = job.overall;
+  if (!overall || (info.phase !== "apply-plan" && info.phase !== "routing")) return;
+  const index = (info.phase === "routing" ? overall.planTotal : 0) + (info.index || 0);
+  const now = Date.now();
+  overall.startedAtMs ??= now;
+  overall.startIndex ??= index;
+  const done = index - overall.startIndex;
+  progress.overallIndex = Math.min(index, overall.total);
+  progress.overallTotal = overall.total;
+  // 처음 몇 건은 표본이 적어 시간이 크게 흔들리므로 보여 주지 않는다.
+  progress.etaSeconds = done >= 3 ? computeEta({ startedAtMs: overall.startedAtMs, nowMs: now, index: done, total: overall.total - overall.startIndex }) : null;
 }
 
-// 진행 정보를 로그 줄과 job.progress(단계·건수·남은 시간)에 함께 남긴다.
+// 진행 정보를 job.progress(단계·건수·남은 시간)와 job.currentItem(지금 처리 중인 대상)에 기록한다.
 export function reportProgress(job, info) {
+  // 수집 중 "프로젝트·목록 하나를 다 읽었다"는 알림은 진행률이 아니라 로그 줄이다.
+  if (info.type === "project-read") return jobItem(job, "project", { title: info.projectName, detail: `대화 ${info.count}건` });
+  if (info.type === "list-read") return jobItem(job, info.archived ? "listArchived" : "listActive", { title: `${info.count}건` });
   const progress = trackProgress(job, { phase: info.phase, label: SCAN_PROGRESS_LABELS[info.phase] || info.phase,
     index: info.index, total: info.total });
-  const eta = progress.etaSeconds ? ` · 남은 시간 약 ${formatDuration(progress.etaSeconds)}` : "";
-  // 대화 하나씩 처리하는 단계는 요청 로그 줄이 대화 이름을 달고 쌓이므로 진행 줄을 따로 남기지 않는다.
-  job.currentItem = info.item || null;
-  if (info.item) return;
-  jobEvent(job, "progress", `${formatScanProgress(info)}${eta}`);
+  trackOverall(job, progress, info);
+  // 진행률·남은 시간·지금 처리 중인 대상은 화면의 진행바가 보여 주므로 로그에는 줄을 쌓지 않는다.
+  // 로그에는 대상 하나가 끝날 때마다 jobItem 줄이 남는다.
+  job.currentItem = info.item || (info.projectName ? `프로젝트 읽는 중  ${info.projectName}` : null);
 }
+
+const WAIT_STAGES = new Set(["rate-limit", "relay-down", "retry"]);
 
 export function publicJob(job) {
   return {
@@ -112,8 +135,12 @@ export function publicJob(job) {
     kind: job.kind,
     done: job.done,
     ok: job.ok,
-    events: job.events.slice(-300),
+    // 서버 요청 줄은 파일 기록에만 남기고 화면에는 대화 단위 줄만 보낸다("상세 기록"에서 요청 줄까지 본다).
+    events: job.events.filter((event) => event.stage !== "request").slice(-300),
     currentItem: job.currentItem || null,
+    counts: job.counts || null,
+    // 마지막 이벤트가 대기·재시도면 사용자 눈에는 멈춘 것처럼 보이므로 진행바가 이유를 알려 준다.
+    waiting: !job.done && WAIT_STAGES.has(job.events.at(-1)?.stage) ? { stage: job.events.at(-1).stage, message: job.events.at(-1).message } : null,
     result: job.result,
     error: job.error,
     cancelled: job.cancelled === true,
@@ -122,6 +149,7 @@ export function publicJob(job) {
     progress: job.progress ? {
       phase: job.progress.phase, label: job.progress.label, index: job.progress.index,
       total: job.progress.total, etaSeconds: job.progress.etaSeconds,
+      overallIndex: job.progress.overallIndex ?? null, overallTotal: job.progress.overallTotal ?? null,
     } : null,
   };
 }
