@@ -16,7 +16,7 @@ function importsOf(name) {
 
 const graph = new Map(files.map((name) => [name, importsOf(name)]));
 
-test("root modules have no import cycles", () => {
+function noCycles() {
   const state = new Map();
   const stack = [];
   function visit(name) {
@@ -27,22 +27,24 @@ test("root modules have no import cycles", () => {
     stack.pop(); state.set(name, 2);
   }
   for (const name of graph.keys()) visit(name);
-});
+}
+
 
 // 순수·하위 모듈은 서버·화면 계층을 알지 못한다.
 const LOW_LEVEL = ["assert.js", "fs-json.js", "run-files.js", "phases.js", "summary.js", "session.js", "errors.js", "jobs.js",
   "trash.js", "catalog.js", "title-rules.js", "content-hash.js", "ids.js", "remote-ops.js",
   "relay-api.js", "classification-criteria.js", "proposal-validation.js", "decision-compile.js"];
 
-test("low-level modules never import the web layer, the server or launcher", () => {
+function lowLevelStaysBelow() {
   for (const name of LOW_LEVEL) {
     for (const dep of graph.get(name) || []) {
       assert.ok(!/^(web-|maintenance-web|server|launcher|remote-relay)/.test(dep), `${name} must not import ${dep}`);
     }
   }
-});
+}
 
-test("web modules only depend downwards", () => {
+
+function webDependsDownwards() {
   const ORDER = ["web-common.js", "web-jobs.js", "web-views.js", "web-decisions.js", "web-workflows.js", "maintenance-web.js"];
   for (const [index, name] of ORDER.entries()) {
     for (const dep of graph.get(name) || []) {
@@ -50,9 +52,10 @@ test("web modules only depend downwards", () => {
       if (depIndex !== -1) assert.ok(depIndex < index, `${name} must not import ${dep} (higher layer)`);
     }
   }
-});
+}
 
-test("screen scripts import only screen modules or the shared pure modules", () => {
+
+function screenImportsOnlyScreen() {
   const dir = join(ROOT, "public", "assets");
   for (const name of readdirSync(dir).filter((item) => item.endsWith(".js"))) {
     const source = readFileSync(join(dir, name), "utf8");
@@ -61,11 +64,12 @@ test("screen scripts import only screen modules or the shared pure modules", () 
     }
     assert.doesNotMatch(source, /\bfetch\(\s*["'`]https?:/, `${name} must not call external URLs`);
   }
-});
+}
+
 
 // 화면 스크립트는 브라우저에서만 실행돼 다른 시험이 닿지 않는다. 다른 모듈이 내보내는 함수를 부르면서 import 하지 않은 실수를 잡는다
 // (삭제후보 화면이 `$ is not defined` 로 열리지 않았던 문제).
-test("screen scripts import every helper they call from another screen module", () => {
+function screenImportsWhatItCalls() {
   const dir = join(ROOT, "public", "assets");
   const names = readdirSync(dir).filter((item) => item.endsWith(".js"));
   const sources = new Map(names.map((name) => [name, readFileSync(join(dir, name), "utf8")]));
@@ -83,18 +87,20 @@ test("screen scripts import every helper they call from another screen module", 
       assert.ok(imported || local, `${name} calls ${symbol}() from ${owner} without importing it`);
     }
   }
-});
+}
 
-test("environment variables are read only in config.js", () => {
+
+function envOnlyInConfig() {
   for (const name of files) {
     if (["config.js", "repo-check.js", "launcher.js", "data-dir.js", "app-version.js"].includes(name)) continue;
     assert.doesNotMatch(readFileSync(join(SRC, name), "utf8"), /process\.env\./, `${name} reads process.env directly`);
   }
-});
+}
+
 
 // Node 쪽에서 ChatGPT 로 직접 나가는 HTTP 호출은 없다(TLS 핑거프린트로 막히고, 원격 호출은 브라우저가 한다).
 // 로컬 앱을 부르는 launcher·server 의 fetch 와 서버를 여는 server 의 node:http 만 허용한다.
-test("only the launcher and server call fetch (to the local app) and only the server imports node:http", () => {
+function networkOnlyInServer() {
   for (const name of files) {
     const source = readFileSync(join(SRC, name), "utf8");
     if (["launcher.js", "server.js"].includes(name)) {
@@ -102,4 +108,17 @@ test("only the launcher and server call fetch (to the local app) and only the se
     } else assert.doesNotMatch(source, /\bfetch\(/, `${name} calls fetch`);
     if (name !== "server.js") assert.doesNotMatch(source, /node:https?["']/, `${name} imports an HTTP module`);
   }
+}
+
+// 같은 규칙 묶음은 한 시험으로 둔다(어느 규칙이 깨졌는지는 단언 메시지가 알려 준다).
+test("backend modules keep the import layers: no cycles, low-level below the web layer, web layers downwards", () => {
+  noCycles(); lowLevelStaysBelow(); webDependsDownwards();
+});
+
+test("screen scripts import only screen or shared modules and every helper they call", () => {
+  screenImportsOnlyScreen(); screenImportsWhatItCalls();
+});
+
+test("environment variables, HTTP and fetch stay in their one place", () => {
+  envOnlyInConfig(); networkOnlyInServer();
 });

@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import test from "node:test";
+import test, { describe } from "node:test";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -64,6 +64,8 @@ async function untilProposal(dev) {
 const UNASSIGNED = { scope: { kind: "unassigned" } };
 const isStandard = (title) => { const parts = String(title).split(" — "); return parts.length === 2 && parts.every((p) => p && p === p.trim() && !p.includes("—")); };
 
+// 시험마다 서버와 포트가 따로라 서로 닿지 않는다. 나란히 돌려 전체 시간을 가장 느린 시험 하나로 줄인다.
+describe("end to end against the fake ChatGPT", { concurrency: true }, () => {
 test("scan, review and apply run end to end against the fake ChatGPT", async () => {
   await withDev(18601, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     let session = await dev.get("/maintenance/session");
@@ -234,4 +236,5 @@ test("when a title changes after review, apply stops with a rescan recovery and 
     session = await dev.get("/maintenance/session");
     assert.ok(session.run.candidates >= 1);
   });
+});
 });
