@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { catalogIssues } from "./i18n.js";
 
 const forbiddenPaths = [
   /^(?:exports|classification|management-plans|management-receipts|project-routing)(?:\/|$)/,
@@ -125,7 +126,7 @@ function main() {
   }
 
   const files = result.stdout.split("\0").filter(Boolean);
-  const errors = findRepoIssues(files);
+  const errors = [...findRepoIssues(files), ...catalogIssues()];
   const log = spawnSync("git", ["log", "--all", "--format=%h %ae %ce"], { encoding: "utf8" });
   if (log.status === 0) errors.push(...findIdentityIssues(log.stdout));
 

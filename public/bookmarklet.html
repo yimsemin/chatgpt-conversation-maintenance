@@ -1,32 +1,32 @@
 <!doctype html>
-<html lang="ko">
+<html lang="__LOCALE__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ChatGPT 세션 북마클릿</title>
+<title>__MSG_bookmarklet.title__</title>
 <script src="/assets/theme.js"></script>
+<script type="module" src="/assets/language.js"></script>
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 <div class="page">
-  <a class="back" href="/">← 유지관리 화면으로</a>
-  <h1>ChatGPT 릴레이 북마클릿</h1>
-  <p class="muted">ChatGPT 세션을 페이지 안에 둔 채, 로컬 앱이 승인한 작업의 HTTP 수행만 중계합니다.</p>
-  <p class="muted">앱 <code>v__APP_VERSION__</code> · 북마클릿 <code>__RELAY_VERSION__</code></p>
+  <a class="back" href="/">__MSG_bookmarklet.back__</a>
+  <p><select id="language" aria-label="__MSG_common.language__">__LANGUAGE_OPTIONS__</select></p>
+  <h1>__MSG_bookmarklet.heading__</h1>
+  <p class="muted">__MSG_bookmarklet.intro__</p>
+  <p class="muted">__MSG_bookmarklet.version__</p>
 
   <ol>
-    <li>아래 <strong>ChatGPT → 유지관리</strong> 버튼을 브라우저의 북마크바로 드래그해 등록합니다.
-      <div><a class="btn" id="bm" href="#">ChatGPT → 유지관리 (__RELAY_VERSION__)</a></div>
+    <li>__MSG_bookmarklet.install__
+      <div><a class="btn" id="bm" href="#">__MSG_bookmarklet.name__ (__RELAY_VERSION__)</a></div>
     </li>
-    <li><code>chatgpt.com</code>에 로그인한 탭에서 방금 만든 북마크를 클릭합니다.</li>
-    <li>‘대화 정리’ 창이 새로 열리고 오른쪽 위가 “ChatGPT 연결됨”으로 바뀝니다. <strong>정리 작업은 이 창 하나에서 합니다.</strong> 이 창은 ChatGPT와의 연결도 맡으니 <strong>정리가 끝날 때까지 이 창과 원래 ChatGPT 탭을 닫거나 최소화하지 마세요.</strong></li>
+    <li>__MSG_bookmarklet.run__</li>
+    <li>__MSG_bookmarklet.connected__</li>
   </ol>
 
   <div class="callout">
-    <strong>동작 방식 · 안전 경계</strong>
-    <p class="muted small">로컬 앱은 원시 URL 대신 고정된 <code>{op, params}</code>만 보냅니다. 이 페이지는
-      자체 op→URL 표에 있는 요청만 만들고 결과만 반환합니다. 액세스 토큰·쿠키는 페이지 밖으로
-      보내지 않으며 브라우저 저장소에도 기록하지 않습니다.</p>
+    <strong>__MSG_bookmarklet.security__</strong>
+    <p class="muted small">__MSG_bookmarklet.securityHelp__</p>
   </div>
 </div>
 <script>
@@ -34,15 +34,16 @@
   // 이 앱의 출처. bookmarklet.html은 항상 127.0.0.1:8523에서 서빙된다.
   const target = location.origin;
   const relayVersion = "__RELAY_VERSION__";
-  function executor(T, R) {
-    if (location.origin !== "https://chatgpt.com") { alert("chatgpt.com에서 실행해 주세요."); return; }
+  const messages = __BOOKMARKLET_MESSAGES__;
+  function executor(T, R, messages) {
+    if (location.origin !== "https://chatgpt.com") { alert(messages[0]); return; }
     const existing = window.__CHATGPT_MAINTENANCE_RELAY__;
     if (existing?.window && !existing.window.closed && existing.relayVersion === R) {
       existing.window.focus(); return;
     }
     existing?.stop?.();
     const w = window.open(T, "chatgptMaintenance");
-    if (!w) { alert("팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요."); return; }
+    if (!w) { alert(messages[1]); return; }
     try { w.focus(); } catch (_) {}
     const state = { window: w, queue: Promise.resolve(), relayVersion: R };
     window.__CHATGPT_MAINTENANCE_RELAY__ = state;
@@ -147,7 +148,7 @@
     }
     return source.replace(/\n\s*/g, " ");
   }
-  const code = `javascript:(${inlineSource(executor)})(${JSON.stringify(target)},${JSON.stringify(relayVersion)})`;
+  const code = `javascript:(${inlineSource(executor)})(${JSON.stringify(target)},${JSON.stringify(relayVersion)},${JSON.stringify(messages)})`;
   document.getElementById("bm").setAttribute("href", code);
 })();
 </script>

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { writeJsonAtomic } from "./fs-json.js";
+import { message, localizedError } from "./i18n.js";
 
 const FILE = "trash.json";
 
@@ -19,9 +20,17 @@ export function readTrash(dataDir) {
 
 const write = (dataDir, value) => writeJsonAtomic(pathOf(dataDir), value);
 
+export function assertTrashProject(current, project) {
+  if (current.items.length && current.project !== project) {
+    throw localizedError(message("error.trashProjectConflict", { project: current.project }));
+  }
+}
+
 // items: [{conversationId, title, fromProject, reason, intendedTarget, backupFile, backupSha256}]
 export function addTrashed(dataDir, { project, items, now = () => new Date() }) {
   const current = readTrash(dataDir);
+  if (items.length === 0) return current;
+  assertTrashProject(current, project);
   const byId = new Map(current.items.map((item) => [item.conversationId, item]));
   for (const item of items) {
     byId.set(item.conversationId, { ...byId.get(item.conversationId), ...item, trashedAt: now().toISOString() });

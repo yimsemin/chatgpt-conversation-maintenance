@@ -3,6 +3,8 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
+import { fallbackLocale, message, messageText } from "./i18n.js";
+
 const MAX_LINE = 2000;
 
 export function computeEta({ startedAtMs, nowMs, index, total }) {
@@ -37,13 +39,17 @@ function pidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; }
 }
 
+function publicEvent({ at, stage, message, content }) {
+  return { at, stage, message: message ?? messageText(fallbackLocale, content).slice(0, MAX_LINE), ...(content ? { content } : {}) };
+}
+
 export function createJobLog(dir) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const pathOf = (job) => job.logFile;
 
   function write(file, entry) {
     try {
-      appendFileSync(file, `${JSON.stringify(entry).slice(0, MAX_LINE * 4)}\n`, { mode: 0o600 });
+      appendFileSync(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
     } catch {}
   }
 
@@ -55,7 +61,8 @@ export function createJobLog(dir) {
     },
     event(job, entry) {
       if (!job.logFile) return;
-      write(pathOf(job), { type: "event", at: entry.at, stage: entry.stage, message: String(entry.message).slice(0, MAX_LINE) });
+      write(pathOf(job), { type: "event", at: entry.at, stage: entry.stage,
+        ...(entry.content ? { content: entry.content } : { message: String(entry.message).slice(0, MAX_LINE) }) });
     },
     end(job) {
       if (!job.logFile) return;
@@ -75,9 +82,10 @@ export function createJobLog(dir) {
         const last = JSON.parse(lines.at(-1) || "{}");
         if (last.type === "end") continue;
         if (Number.isInteger(start.pid) && start.pid !== process.pid && pidAlive(start.pid)) continue;
-        const retry = start.kind === "apply" ? "‘적용 시작’ 버튼" : start.kind === "scan" ? "‘이 범위 수집’ 버튼" : "같은 버튼";
+        const kind = start.kind === "apply" || start.kind === "scan" ? start.kind : "other";
+        const titleContent = message(`log.interrupted.${kind}`);
         write(file, { type: "end", at: new Date().toISOString(), ok: false, interrupted: true,
-          error: { code: "INTERRUPTED", message: `서버가 종료되어 작업이 중단되었습니다. ${retry}으로 이어서 진행할 수 있습니다.` } });
+          error: { code: "INTERRUPTED", message: messageText(fallbackLocale, titleContent), explain: { titleContent } } });
         closed += 1;
       }
       return closed;
@@ -101,7 +109,7 @@ export function createJobLog(dir) {
       if (!name) return [];
       return readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => {
         try { return JSON.parse(line); } catch { return null; }
-      }).filter((line) => line?.type === "event").map(({ at, stage, message }) => ({ at, stage, message }));
+      }).filter((line) => line?.type === "event").map(publicEvent);
     },
     recent(limit = 10, tail = 12) {
       if (!existsSync(dir)) return [];
@@ -117,7 +125,7 @@ export function createJobLog(dir) {
           id: start.id || null, kind: start.kind || null, startedAt: start.at || null,
           finishedAt: end?.at || null, done: Boolean(end), ok: end ? end.ok === true : null,
           interrupted: end?.interrupted === true, error: end?.error || null,
-          events: events.slice(-tail).map(({ at, stage, message }) => ({ at, stage, message })),
+          events: events.slice(-tail).map(publicEvent),
           eventCount: events.length,
         };
       });

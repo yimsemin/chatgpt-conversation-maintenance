@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fallbackLocale, translate } from "./i18n.js";
 
 const MODULE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -26,11 +27,11 @@ export function configuredDataDir(appRoot = MODULE_ROOT) {
 //   fixed        name 으로 정한 프로젝트로 옮긴다. 그 프로젝트가 없으면 auto 와 같이 기본 이름의 삭제후보 프로젝트를 새로 만들어 옮긴다.
 //   none         프로젝트로 옮기지 않고 삭제후보 표시만 한다(이미 프로젝트 안에 있는 대화는 API로 뺄 수 없어 직접 빼야 한다).
 // 프로젝트 주소·ID는 받지 않고 이름만 쓴다.
-export const DEFAULT_TRASH_PROJECT = "삭제후보";
+export const DEFAULT_TRASH_PROJECT = translate(fallbackLocale, "common.trashProject");
 const TRASH_MODES = ["auto", "fixed", "none"];
 
-export function configuredTrash(appRoot = MODULE_ROOT) {
-  const fallback = { mode: "auto", name: DEFAULT_TRASH_PROJECT };
+export function configuredTrash(appRoot = MODULE_ROOT, defaultName = DEFAULT_TRASH_PROJECT) {
+  const fallback = { mode: "auto", name: defaultName };
   try {
     const trash = JSON.parse(readFileSync(join(appRoot, ".local", "config.json"), "utf8"))?.trash;
     if (!trash || !TRASH_MODES.includes(trash.mode)) return fallback;

@@ -33,7 +33,11 @@ h3 { font-size:var(--fs-meta); font-weight:600; color:var(--muted); }
 .top { display:flex; align-items:center; justify-content:space-between; gap:var(--s2); width:var(--w); margin:0 auto; padding:var(--s3) 0 var(--s1); }
 .status { margin:0; font-size:var(--fs-meta); color:var(--muted); }
 .top > div:first-child { min-width:0; }
-.top-right { flex:none; display:flex; gap:var(--s1); align-items:center; }
+.top-right { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--s1); align-items:center; }
+@media (max-width: 640px) {
+  .top { flex-wrap:wrap; }
+  .top-right { justify-content:flex-start; }
+}
 .relay-hint, .relay-note { width:var(--w); margin:0 auto var(--s1); font-size:var(--fs-meta); }
 .relay-hint { font-weight:500; border-left:3px solid var(--warn); padding-left:var(--s1); }
 main { width:var(--w); margin:var(--s1) auto 0; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:var(--s3) var(--s4); }

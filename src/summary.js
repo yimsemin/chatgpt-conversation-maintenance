@@ -1,3 +1,5 @@
+import { translate, translator } from "./i18n.js";
+
 // 사용자에게 보이는 요약: 적용 전 "무엇이 바뀌는가"와 적용 후 "무엇이 바뀌었고 내가 할 일은 무엇인가".
 // 순수 함수만 둔다(파일·네트워크 없음). 입력은 카탈로그(기준 목록)와 대화별 결정 행이다.
 
@@ -150,20 +152,17 @@ export function buildReviewSummary({ catalog, rows }) {
     totals, changes, projects, exceptions,
     emptyProjects: projects.filter((project) => project.after === 0).map((project) => project.name),
     // 화면이 "이 결정으로 ChatGPT의 어떤 것이 바뀌는가"를 한 줄로 말할 수 있게 한다.
-    headline: headline(totals, changes),
+    headline: summaryHeadline({ totals, changes }),
   };
 }
 
-function headline(totals, changes) {
-  const parts = [];
-  if (totals.delete) parts.push(`영구 삭제 ${totals.delete}건`);
-  if (totals.trashed) parts.push(`삭제후보로 이동 ${totals.trashed}건`);
-  if (totals.marked) parts.push(`삭제후보 표시 ${totals.marked}건`);
-  if (changes.move) parts.push(`프로젝트 이동 ${changes.move}건`);
-  if (changes.rename) parts.push(`제목 변경 ${changes.rename}건`);
-  if (changes.newProjects.length) parts.push(`새 프로젝트 ${changes.newProjects.length}개`);
-  if (!parts.length) return "바뀌는 것이 없습니다";
-  return parts.join(" · ");
+export function summaryHeadline({ totals, changes }, locale) {
+  const t = translator(locale);
+  const counts = { delete: totals.delete, trashed: totals.trashed, marked: totals.marked,
+    move: changes.move, rename: changes.rename, newProjects: changes.newProjects.length };
+  const parts = Object.entries(counts).filter(([, count]) => count > 0)
+    .map(([kind, count]) => t(`summary.${kind}`, { count }));
+  return parts.length ? parts.join(" · ") : t("summary.noChanges");
 }
 
 // 적용을 마친 뒤의 결과 보고서. catalogAfter 는 이번 실행의 결과 카탈로그다(스캔 카탈로그에 승인된 결정을 반영한 것).
@@ -192,38 +191,39 @@ export function buildResultReport({ catalogBefore, catalogAfter, rows, renameOrd
       removeFromProject: plan.exceptions.manualRemoves,
       deleteYourself: plan.exceptions.marked,
     },
-    note: "제목 변경·삭제·이동은 적용하면서 대화마다 다시 읽어 확인했고, 그 기록(영수증)이 이 실행 폴더에 있습니다.",
+    note: translate(undefined, "summary.note"),
   };
 }
 
-export function reportMarkdown(report) {
-  const lines = [`# 정리 결과 (${report.finishedAt})`, "", `**${report.headline}**`, "", report.note, ""];
-  lines.push("## 프로젝트별 변화", "", "| 프로젝트 | 이전 | 이후 | 변화 |", "| --- | ---: | ---: | ---: |");
+export function reportMarkdown(report, locale) {
+  const t = translator(locale);
+  const lines = [`# ${t("report.heading", { when: report.finishedAt })}`, "", `**${summaryHeadline(report, locale)}**`, "", t("summary.note"), ""];
+  lines.push(`## ${t("result.project.changes")}`, "", t("report.table"), "| --- | ---: | ---: | ---: |");
   for (const project of report.projects.filter((item) => item.delta !== 0 || item.isNew)) {
-    lines.push(`| ${project.name}${project.isNew ? " (신규)" : ""} | ${project.before ?? "—"} | ${project.actualAfter ?? "—"} | ${project.delta > 0 ? "+" : ""}${project.delta} |`);
+    lines.push(`| ${project.name}${project.isNew ? t("result.new") : ""} | ${project.before ?? "—"} | ${project.actualAfter ?? "—"} | ${project.delta > 0 ? "+" : ""}${project.delta} |`);
   }
-  if (report.mismatches.length) lines.push("", `⚠ 예상과 실제가 다른 프로젝트: ${report.mismatches.join(", ")}`);
+  if (report.mismatches.length) lines.push("", t("report.mismatch", { projects: report.mismatches.join(", ") }));
   if (report.renameOrder?.renamed) {
     lines.push("", report.renameOrder.preserved
-      ? `제목을 바꾼 ${report.renameOrder.renamed}건은 ChatGPT 목록에서 원래의 상대 순서를 유지했습니다(바꾸지 않은 대화보다는 위로 올라옵니다).`
-      : `⚠ 제목을 바꾼 ${report.renameOrder.renamed}건 중 ${report.renameOrder.outOfOrder.length}건의 목록 순서가 원래와 달라졌습니다.`);
+      ? t("report.ordered", { count: report.renameOrder.renamed })
+      : t("report.unordered", { count: report.renameOrder.renamed, changed: report.renameOrder.outOfOrder.length }));
   }
   const details = report.details || {};
-  if (details.renames?.length) lines.push("", "## 바뀐 제목", "", ...details.renames.map((item) => `- ${item.from} → ${item.to}`));
-  if (details.moves?.length) lines.push("", "## 옮긴 대화", "", ...details.moves.map((item) => `- ${item.title}: ${item.from || "프로젝트 없음"} → ${item.to}`));
-  if (details.trashed?.length) lines.push("", "## 삭제후보로 보낸 대화", "", ...details.trashed.map((item) => `- ${item.title}${item.project ? ` (원래: ${item.project})` : ""}${item.why ? ` — ${item.why}` : ""}`));
-  lines.push("", "## 직접 하실 일");
-  if (!report.todo.deleteEmptyProjects.length && !report.todo.removeFromProject.length && !report.todo.deleteYourself.length) lines.push("", "없습니다.");
+  if (details.renames?.length) lines.push("", `## ${t("report.renames")}`, "", ...details.renames.map((item) => `- ${item.from} → ${item.to}`));
+  if (details.moves?.length) lines.push("", `## ${t("report.moves")}`, "", ...details.moves.map((item) => `- ${item.title}: ${item.from || t("result.no.project")} → ${item.to}`));
+  if (details.trashed?.length) lines.push("", `## ${t("report.trashed")}`, "", ...details.trashed.map((item) => `- ${item.title}${item.project ? t("report.previousProject", { project: item.project }) : ""}${item.why ? ` — ${item.why}` : ""}`));
+  lines.push("", `## ${t("result.actions.for.you")}`);
+  if (!report.todo.deleteEmptyProjects.length && !report.todo.removeFromProject.length && !report.todo.deleteYourself.length) lines.push("", t("result.none"));
   if (report.todo.deleteYourself.length) {
-    lines.push("", "삭제후보로 표시만 한 대화(ChatGPT에서 직접 지우세요):",
-      ...report.todo.deleteYourself.map((item) => `- ${item.title}${item.project ? ` (프로젝트: ${item.project})` : ""}`));
+    lines.push("", t("report.manualDelete"),
+      ...report.todo.deleteYourself.map((item) => `- ${item.title}${item.project ? t("report.project", { project: item.project }) : ""}`));
   }
   if (report.todo.deleteEmptyProjects.length) {
-    lines.push("", "비어 있는 프로젝트(필요 없으면 ChatGPT에서 삭제):", ...report.todo.deleteEmptyProjects.map((name) => `- ${name}`));
+    lines.push("", t("report.emptyProjects"), ...report.todo.deleteEmptyProjects.map((name) => `- ${name}`));
   }
   if (report.todo.removeFromProject.length) {
-    lines.push("", "프로젝트에서 직접 빼야 하는 대화(API로 뺄 수 없음):",
-      ...report.todo.removeFromProject.map((item) => `- ${item.title} (현재: ${item.project})`));
+    lines.push("", t("report.manualRemove"),
+      ...report.todo.removeFromProject.map((item) => `- ${item.title}${t("report.currentProject", { project: item.project })}`));
   }
   return `${lines.join("\n")}\n`;
 }

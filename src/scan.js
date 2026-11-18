@@ -193,7 +193,7 @@ export async function scanMaintenanceRun({ runDir, api, scope, skipFailed = fals
   const candidates = [];
   const skipped = [];
   for (const [index, candidate] of selected.entries()) {
-    onProgress({ phase: "downloads", index, total: selected.length, item: `본문 받는 중  ${candidate.title}` });
+    onProgress({ phase: "downloads", index, total: selected.length, title: candidate.title });
     const record = await downloadConversation(api, candidate, join(root, "json"), { resume: true, reuseDirs, skipFailed, onReuse, onBody, onSkip: (item) => { skipped.push(item); onSkip(item); } });
     if (record) candidates.push({ ...record, reasons: candidate.reasons });
   }

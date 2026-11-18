@@ -1,4 +1,5 @@
 // 진행 중 작업의 진행률·로그 블록과 적용 단계 표시.
+import { displayMessage, eventText, progressLabel, t } from "/assets/language.js";
 import { S } from "/assets/state.js";
 import { ask, clock, duration, fill, h } from "/assets/dom.js";
 import { api, fail, post } from "/assets/net.js";
@@ -6,23 +7,23 @@ import { api, fail, post } from "/assets/net.js";
 // 기본은 대화 단위 줄만 보여 주고, detail 이면 서버가 ChatGPT에 보낸 요청 줄까지 보여 준다.
 const LOG_CLASS = { "rate-limit": "rl", "relay-down": "rl", retry: "rl", error: "er", "item-fail": "er", "item-skip": "rl" };
 export const logLines = (events, detail = false) => events.filter((e) => detail || e.stage !== "request")
-  .map((e) => h("div", { class: LOG_CLASS[e.stage] || "" }, `${clock(e.at)}  ${e.message}`));
+  .map((e) => h("div", { class: LOG_CLASS[e.stage] || "" }, `${clock(e.at)}  ${eventText(e)}`));
 
 // 종류별 누계 한 줄: 제목 변경 31건 · 프로젝트 이동 41건 · … / 본문 받음 20건 · 재활용 25건 · 건너뜀 1건
-const COUNT_LABELS = [["rename", "제목 변경"], ["move", "프로젝트 이동"], ["trash", "삭제후보로 이동"], ["delete", "삭제"], ["fetch", "본문 받음"], ["reuse", "재활용"], ["skip", "건너뜀"], ["failed", "실패"]];
-const countsText = (counts) => COUNT_LABELS.filter(([key]) => counts?.[key] > 0).map(([key, label]) => `${label} ${counts[key]}건`).join(" · ");
+const COUNT_LABELS = [["rename", t("progress.renamed")], ["move", t("progress.moved")], ["trash", t("progress.moved.for.deletion.review")], ["delete", t("progress.deleted")], ["fetch", t("progress.downloaded")], ["reuse", t("progress.reused")], ["skip", t("progress.skipped")], ["failed", t("progress.failed")]];
+const countsText = (counts) => COUNT_LABELS.filter(([key]) => counts?.[key] > 0).map(([key, label]) => t("progress.count", { label: label, count: counts[key] })).join(" · ");
 
 // 진행바 위 두 줄: 단계·전체 진행·남은 시간 / 지금 처리 중인 대화·경과 시간.
 function statusLines(job) {
   const p = job.progress;
-  if (job.waiting) return [`${job.waiting.stage === "relay-down" ? "연결 끊김" : "⏳ 대기 중"} — ${job.waiting.message}`, `경과 ${duration(job.elapsedSeconds)}`];
-  if (!p) return ["준비 중", `경과 ${duration(job.elapsedSeconds)}`];
-  const unit = p.phase === "projects" ? "개" : "건";
+  if (job.waiting) return [`${job.waiting.stage === "relay-down" ? t("progress.disconnected") : t("progress.waiting")} — ${eventText(job.waiting)}`, t("progress.elapsed", { elapsed: duration(job.elapsedSeconds) })];
+  if (!p) return [t("progress.preparing"), t("progress.elapsed", { elapsed: duration(job.elapsedSeconds) })];
+  const unit = p.phase === "projects" ? t("progress.projects") : t("progress.conversations");
   const finishing = p.overallTotal > 0 && p.overallIndex >= p.overallTotal;
-  const phase = finishing ? "변경 완료 · 검증·보고서 작성 중" : `${p.label}${p.total ? ` (${p.index}/${p.total}${unit})` : ""}`;
-  const overall = !finishing && p.overallTotal > 0 ? `전체 ${Math.round(p.overallIndex / p.overallTotal * 100)}% (${p.overallIndex}/${p.overallTotal}건)` : "";
-  return [[phase, overall, p.etaSeconds ? `남은 시간 약 ${duration(p.etaSeconds)}` : ""].filter(Boolean).join(" · "),
-    [job.currentItem ? `지금: ${job.currentItem}` : "", `경과 ${duration(job.elapsedSeconds)}`].filter(Boolean).join(" · ")];
+  const phase = finishing ? t("progress.changes.applied.verifying.and.writing.report") : `${progressLabel(p)}${p.total ? ` (${p.index}/${p.total}${unit})` : ""}`;
+  const overall = !finishing && p.overallTotal > 0 ? t("progress.overall", { percent: Math.round(p.overallIndex / p.overallTotal * 100), completed: p.overallIndex, total: p.overallTotal }) : "";
+  return [[phase, overall, p.etaSeconds ? t("progress.about.left", { remaining: duration(p.etaSeconds) }) : ""].filter(Boolean).join(" · "),
+    [job.currentItem ? t("progress.current", { item: displayMessage(job.currentItem) }) : "", t("progress.elapsed", { elapsed: duration(job.elapsedSeconds) })].filter(Boolean).join(" · ")];
 }
 
 export function progressBlock(kind) {
@@ -30,16 +31,16 @@ export function progressBlock(kind) {
   const label = h("p", { class: "small" }); const sub = h("p", { class: "muted small" }); const counts = h("p", { class: "small" });
   const log = h("pre", { class: "log" });
   const cancel = h("button", { class: "btn ghost", type: "button", onclick: async () => {
-    if (!await ask({ title: "작업을 중단할까요?", lines: ["이미 끝난 부분은 유지되고, 같은 버튼으로 이어서 진행할 수 있습니다."], ok: "중단" })) return;
+    if (!await ask({ title: t("progress.stop.this.job"), lines: [t("progress.completed.work.is.saved.use.the.same")], ok: t("progress.stop") })) return;
     try { await post("/maintenance/cancel", { jobId: S.session.job.id }); } catch (e) { fail(e); }
-  } }, "중단");
+  } }, t("progress.stop"));
   let full = false;
-  const hint = h("span", { class: "muted small", text: "최근 200줄만 보입니다." });
+  const hint = h("span", { class: "muted small", text: t("progress.shows.the.latest.200.lines") });
   const fullBtn = h("button", { class: "btn link", type: "button", onclick: async () => {
-    full = !full; fullBtn.textContent = full ? "간단히 보기" : "상세 기록 보기"; hint.textContent = full ? "작업 시작부터 서버 요청 줄까지 모두 보입니다(자동 갱신 안 함)." : "최근 200줄만 보입니다.";
+    full = !full; fullBtn.textContent = full ? t("progress.show.summary") : t("progress.view.detailed.log"); hint.textContent = full ? t("progress.shows.all.lines.from.the.start.including") : t("progress.shows.the.latest.200.lines");
     if (!full) return;
-    try { const r = await api(`/maintenance/job-log?id=${encodeURIComponent(S.session.job.id)}`); fill(log, ...logLines(r.events, true)); log.scrollTop = log.scrollHeight; } catch (e) { fail(e); full = false; fullBtn.textContent = "상세 기록 보기"; hint.textContent = "최근 200줄만 보입니다."; }
-  } }, "상세 기록 보기");
+    try { const r = await api(`/maintenance/job-log?id=${encodeURIComponent(S.session.job.id)}`); fill(log, ...logLines(r.events, true)); log.scrollTop = log.scrollHeight; } catch (e) { fail(e); full = false; fullBtn.textContent = t("progress.view.detailed.log"); hint.textContent = t("progress.shows.the.latest.200.lines"); }
+  } }, t("progress.view.detailed.log"));
   const box = h("div", {}, barWrap, label, sub, counts, h("div", { class: "row" }, cancel), log, h("div", { class: "row" }, hint, fullBtn));
   S.live.push(() => {
     const job = S.session?.job;
@@ -62,7 +63,7 @@ export function progressBlock(kind) {
   return box;
 }
 
-const APPLY_STAGES = [["apply", "제목 변경·삭제"], ["routing", "프로젝트 이동"], ["verify", "변경 검증"], ["report", "보고서 작성"]];
+const APPLY_STAGES = [["apply", t("progress.rename.and.delete")], ["routing", t("progress.move.between.projects")], ["verify", t("progress.verify.changes")], ["report", t("progress.write.report")]];
 
 export function applyStages() {
   const list = h("p", { class: "substeps" });
@@ -75,7 +76,7 @@ export function applyStages() {
   return list;
 }
 
-const SCAN_STAGES = [["projects", "프로젝트 목록"], ["lists", "대화 목록"], ["downloads", "본문 받기"], ["review", "분류 입력 준비"]];
+const SCAN_STAGES = [["projects", t("progress.project.list")], ["lists", t("progress.conversation.lists")], ["downloads", t("progress.download.content")], ["review", t("progress.prepare.classification.input")]];
 const SCAN_PHASE_STAGE = { projects: 0, active: 1, archived: 1, downloads: 2 };
 
 // 수집 단계 표시. 범위에 따라 프로젝트 목록을 읽지 않으면 그 단계는 숨긴다.
@@ -85,7 +86,7 @@ export function scanStages() {
     const job = S.session?.job;
     const events = job?.events || [];
     const idx = events.some((e) => e.stage === "review" || e.stage === "ready") ? 3 : SCAN_PHASE_STAGE[job?.progress?.phase] ?? -1;
-    const readsProjects = idx <= 0 || events.some((e) => e.stage === "item" && e.message.includes("프로젝트 읽음"));
+    const readsProjects = job?.readProjects === true;
     fill(list, ...SCAN_STAGES.map(([id, label], i) => (i === 0 && !readsProjects ? null
       : h("span", { class: i < idx ? "done" : i === idx ? "current" : "" }, label))).filter(Boolean));
   });

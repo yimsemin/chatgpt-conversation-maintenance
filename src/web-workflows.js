@@ -1,5 +1,6 @@
 // 원격에 닿는 워크플로: 스캔, 적용, 삭제후보 다시 확인, 프로젝트 목록 읽기. 잠금·영수증을 다룬다.
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { message } from "./i18n.js";
 import { PHASE } from "./phases.js";
 import { join } from "node:path";
 import { assert } from "./assert.js";
@@ -9,22 +10,29 @@ import { runsDir } from "./data-dir.js";
 import { acquireLock, releaseLock } from "./maintenance-lock.js";
 import { applyPlanSet, preparePlanSet } from "./plan-set.js";
 import { finalizeMaintenanceRun } from "./finalize.js";
-import { RESUME_MAX_AGE_MS, describeScope, findPartialScan, finishPartialScan, keptTitleMap, reusableBodyDirs, scanMaintenanceRun, validateScope } from "./scan.js";
+import { RESUME_MAX_AGE_MS, findPartialScan, finishPartialScan, keptTitleMap, reusableBodyDirs, scanMaintenanceRun, validateScope } from "./scan.js";
 import { prepareProjectRouting, projectRoutingStatus, runProjectRouting, validateProjectRouting } from "./project-routing.js";
 import { compileProjectRouting, compileReviewedDecisions } from "./decision-compile.js";
 import { writeClassificationReview } from "./classification-review.js";
-import { addTrashed, readTrash, removeTrashed } from "./trash.js";
+import { addTrashed, assertTrashProject, readTrash, removeTrashed } from "./trash.js";
 import { collectScopedCatalog, listProjectsWithRecency } from "./catalog.js";
 import { readKnownProjects, rememberProjects, writeKnownProjects } from "./known-projects.js";
 import { buildResultReport, reportMarkdown, rowsFromDecisions } from "./summary.js";
 import { publicPointer, readPointer, runId, writePointer } from "./web-common.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
-import { jobEvent, jobItem, reportProgress, untilDone } from "./web-jobs.js";
+import { currentJobItem, jobEvent, jobItem, reportProgress, untilDone } from "./web-jobs.js";
 import { proposalData } from "./web-views.js";
 import { buildReviewedDecisions } from "./web-decisions.js";
 
 // 수집은 도중에 끊겨도(취소·창 닫힘·재시작) 이어받도록, 같은 범위로 시작했고 인벤토리가 없는(=끝나지 않은)
 // 실행 폴더를 재사용한다. 받아 둔 본문이 낡지 않도록 마지막 수정이 RESUME_MAX_AGE_MS 안인 폴더만 쓴다.
+function scopeDescription(scope) {
+  if (scope.kind === "project") return message("workflow.scope.project", { projects: scope.projectNames.join(", ") });
+  if (scope.kind === "recent") return message("workflow.scope.recent", { days: scope.days });
+  if (scope.kind === "unassigned" && scope.days) return message("workflow.scope.unassignedRecent", { days: scope.days });
+  return message(`workflow.scope.${scope.kind}`);
+}
+
 export function resumableRunDir(dataDir, scope, { now = Date.now() } = {}) {
   const root = runsDir(dataDir);
   const prefix = scope.kind === "all" ? "overhaul-" : `scan-${sha256(Buffer.from(JSON.stringify(scope))).slice(0, 8)}-`;
@@ -64,15 +72,15 @@ function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
     result: { counts, warnings: scanResult.inventory.warnings || [], scope, ...(partial ? { partial } : {}), ...(skipped.length ? { skipped } : {}), ...(standardTitlesExcluded ? { standardTitlesExcluded } : {}) },
   };
   if (candidateCount > 0) {
-    jobEvent(job, "review", "AI가 읽을 최소 분류 입력을 만듭니다.");
+    jobEvent(job, "review", message("workflow.prepareReview"));
     writeClassificationReview(inventoryPath, reviewPath);
     writePointer(workspace, pointer);
     job.result = { phase: PHASE.AWAITING_PROPOSAL, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
-    jobEvent(job, "ready", `후보 ${candidateCount}건의 분류 요청 준비가 끝났습니다.`);
+    jobEvent(job, "ready", message("workflow.ready", { count: candidateCount }));
     return;
   }
   writePointer(workspace, pointer);
-  jobEvent(job, "complete", "이 범위에는 정리할 대화가 없습니다.");
+  jobEvent(job, "complete", message("workflow.noCandidates"));
   job.result = { phase: PHASE.COMPLETE, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
 }
 
@@ -80,12 +88,12 @@ function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
 export async function partialScanWorkflow(workspace, dataDir, job) {
   let lockHeld = false;
   try {
-    jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+    jobEvent(job, "lock", message("workflow.lock"));
     acquireLock({ dataDir });
     lockHeld = true;
     const partial = findPartialScan(dataDir);
-    assert(partial, "지금까지 받은 대화로 마무리할 수 있는 끊긴 수집이 없습니다");
-    jobEvent(job, "scan", `끊긴 수집(${describeScope(partial.scope)})을 받아 둔 ${partial.downloaded}/${partial.total}건으로 마무리합니다.`);
+    assert(partial, message("error.noPartialScan"));
+    jobEvent(job, "scan", message("workflow.partial", { scope: scopeDescription(partial.scope), downloaded: partial.downloaded, total: partial.total }));
     const scanResult = finishPartialScan({ runDir: partial.runDir });
     publishScan({ workspace, dataDir, job, runDir: partial.runDir, scanResult, scope: partial.scope });
   } finally {
@@ -97,21 +105,21 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFa
   const validScope = validateScope(scope);
   let lockHeld = false;
   try {
-    jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+    jobEvent(job, "lock", message("workflow.lock"));
     acquireLock({ dataDir });
     lockHeld = true;
     const runDir = resumableRunDir(dataDir, validScope);
-    jobEvent(job, "scan", `${validScope.kind === "all" ? "전체 수집: 모든 대화" : `수집: ${describeScope(validScope)}`}의 본문을 받습니다. 이전에 받아 둔 본문은 그 뒤 수정되지 않았으면 다시 받지 않습니다(읽기 전용).`);
+    jobEvent(job, "scan", message("workflow.scan", { scope: scopeDescription(validScope) }));
     // 연결이 잠시 끊기거나 429 가 나도 같은 실행 폴더에서 이어 간다(받은 본문은 다시 받지 않는다).
-    const scanResult = await untilDone(job, "수집", () => scanMaintenanceRun({
+    const scanResult = await untilDone(job, message("workflow.operation.scan"), () => scanMaintenanceRun({
       runDir, api, scope: validScope, skipFailed, skipStandardTitles, keptTitles: keptTitleMap(dataDir), reuseDirs: reusableBodyDirs(dataDir, runDir),
       // 이 실행에 이미 받아 둔 본문(자동 재개로 다시 도는 경우)은 줄을 다시 찍지 않는다.
       onBody: (item, source) => { if (source !== "own") jobItem(job, source, { title: item.title }); },
-      onSkip: (item) => jobItem(job, "skip", { title: item.title, reason: item.status ? `ChatGPT 응답 오류(HTTP ${item.status})` : "응답 없음" }),
+      onSkip: (item) => jobItem(job, "skip", { title: item.title, reason: item.status ? message("workflow.skipHttp", { status: item.status }) : message("workflow.skipTimeout") }),
       knownProjects: readKnownProjects(dataDir).projects.map((project) => project.name), onProgress: (info) => reportProgress(job, info),
     }));
     const c = job.counts || {};
-    jobEvent(job, "scan", `본문 준비 끝: 새로 받음 ${c.fetch || 0}건 · 재활용 ${c.reuse || 0}건${c.skip ? ` · 건너뜀 ${c.skip}건` : ""}.`);
+    jobEvent(job, "scan", message("workflow.bodiesReady", { downloaded: c.fetch || 0, reused: c.reuse || 0, skipped: c.skip || 0 }));
     publishScan({ workspace, dataDir, job, runDir, scanResult, scope: validScope });
   } finally {
     if (lockHeld) releaseLock({ dataDir });
@@ -134,7 +142,7 @@ function settleTrash(pointer, dataDir, afterCatalog) {
   }
 }
 
-function writeResultReport(pointer, afterCatalog, renameOrder) {
+function writeResultReport(pointer, afterCatalog, renameOrder, locale) {
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const catalogBefore = readJson(inventory.catalogFile, "카탈로그");
   const decisions = readJson(runFiles(pointer.runDir).decisions, "검토된 결정");
@@ -145,16 +153,13 @@ function writeResultReport(pointer, afterCatalog, renameOrder) {
     renameOrder,
   });
   writeJsonAtomic(runFiles(pointer.runDir).report, report);
-  writeFileSync(runFiles(pointer.runDir).reportMarkdown, reportMarkdown(report), { mode: 0o600 });
+  writeFileSync(runFiles(pointer.runDir).reportMarkdown, reportMarkdown(report, locale), { mode: 0o600 });
   return report;
 }
 
 const PLAN_HALT_MESSAGES = {
-  "changed-after-apply": "이미 적용한 결과(영수증)가 있는데 결정이 바뀌었습니다. "
-    + "이 실행의 계획은 안전하게 다시 만들 수 없으므로 여기서 멈춥니다. "
-    + "같은 범위의 ‘대화 수집’으로 현재 ChatGPT 상태를 다시 읽은 뒤 새 실행에서 결정하세요.",
-  "unknown-source-after-apply": "이 실행의 계획이 어떤 결정에서 나왔는지 확인할 수 없고 적용 결과(영수증)도 있습니다. "
-    + "안전을 위해 멈춥니다. 같은 범위의 ‘대화 수집’을 다시 한 뒤 새 실행에서 결정하세요.",
+  "changed-after-apply": message("error.planChanged"),
+  "unknown-source-after-apply": message("error.planSourceUnknown"),
 };
 
 // 이미 컴파일된 plans/·routing.json 을 지금의 승인(reviewed-decisions.json)에 그대로 써도 되는지 판정한다.
@@ -172,7 +177,7 @@ export function planReuseDecision({ hasCompiledArtifacts, stampDigest, decisions
 // 로 남으므로 정상적인 재시도는 그대로 통과한다.
 export function assertApplyablePhase(phase) {
   assert(phase !== PHASE.COMPLETE,
-    "이 실행은 이미 적용을 마쳤습니다. 새 변경은 같은 범위의 ‘대화 수집’을 다시 한 뒤 결정하세요.");
+    message("error.alreadyApplied"));
   return true;
 }
 
@@ -187,7 +192,7 @@ function receiptFileCount(receiptDir) {
 
 // 적용 전 점검: 현재 실행이 적용 가능하고, 삭제가 있으면 사용자 확인이 있는지. 삭제 수와 결정 수를 돌려준다.
 function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDeletes }) {
-  assert(pointer, "적용할 현재 실행이 없습니다");
+  assert(pointer, message("error.noRun"));
   assertApplyablePhase(pointer.phase);
   let deletes;
   let decisionCount;
@@ -200,12 +205,12 @@ function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDe
     decisionCount = reviewed.decisions.length;
   } else {
     const proposal = proposalData(workspace, dataDir);
-    assert(proposal.ready, "화면에서 결정을 저장하거나 proposal.json을 붙여넣으세요");
-    assert(proposal.blockers.undecided === 0, "undecided 항목은 승인 전에 해결해야 합니다");
+    assert(proposal.ready, message("error.saveProposal"));
+    assert(proposal.blockers.undecided === 0, message("error.resolveUndecided"));
     deletes = proposal.items.filter((item) => item.suggestedDecision === "delete").length;
     decisionCount = proposal.items.length;
   }
-  assert(deletes === 0 || confirmDeletes === true, `삭제후보 ${deletes}건에 대한 별도 확인이 필요합니다`);
+  assert(deletes === 0 || confirmDeletes === true, message("error.confirmDeletion", { count: deletes }));
   return { deletes, decisionCount };
 }
 
@@ -229,12 +234,12 @@ function compilePlans({ pointer, files, job }) {
   });
   assert(reuse.action !== "halt", PLAN_HALT_MESSAGES[reuse.reason]);
   if (reuse.action === "recompile") {
-    jobEvent(job, "compile", "결정이 바뀌어 아직 적용되지 않은 이전 계획을 버리고 다시 만듭니다.");
+    jobEvent(job, "compile", message("workflow.recompile"));
     rmSync(files.plans, { recursive: true, force: true });
     rmSync(files.routing, { force: true });
   }
 
-  jobEvent(job, "compile", "승인된 제목·삭제·프로젝트 계획을 컴파일합니다.");
+  jobEvent(job, "compile", message("workflow.compile"));
   if (!existsSync(files.plans)) compileReviewedDecisions(pointer.inventoryPath, files.decisions, files.plans);
   const routingRequired = existsSync(files.routing)
     ? true
@@ -249,11 +254,11 @@ function compilePlans({ pointer, files, job }) {
 
 // 적용 줄에 쓰는 동작 종류와 실패 이유(영어 내부 문구를 사용자 말로).
 const actionVerb = (event) => (event.decision === "delete" ? "delete" : event.newTitle ? "rename" : "keep");
-function friendlyReason(message) {
-  const text = String(message || "").trim();
-  if (/title does not match|Rename verification failed/i.test(text)) return "ChatGPT의 현재 제목이 계획과 달라 건너뜁니다";
-  if (/429|rate.?limit/i.test(text)) return "요청 제한(429)";
-  return text.slice(0, 120) || "원인을 알 수 없습니다";
+function friendlyReason(reason) {
+  const text = String(reason || "").trim();
+  if (/title does not match|Rename verification failed/i.test(text)) return message("workflow.staleTitle");
+  if (/429|rate.?limit/i.test(text)) return message("workflow.rateLimit");
+  return text.slice(0, 120) || message("workflow.unknownReason");
 }
 
 // 제목 변경·삭제 배치를 적용한다(25건 단위, 영수증으로 이어받기).
@@ -261,16 +266,16 @@ async function applyManagementPlans({ files, api, accountId, job }) {
   const prepare = preparePlanSet(files.plans);
   if (!(prepare.summary?.remainingActions > 0)) return;
   const planTotal = prepare.summary.remainingActions;
-  jobEvent(job, "apply", `제목 변경·삭제 ${planTotal}건을 적용합니다.`);
+  jobEvent(job, "apply", message("workflow.apply", { count: planTotal }));
   reportProgress(job, { phase: "apply-plan", index: 0, total: planTotal });
-  await untilDone(job, "제목 변경·삭제", async () => {
+  await untilDone(job, message("workflow.operation.apply"), async () => {
     const remaining = preparePlanSet(files.plans).summary;
     if (remaining.remainingActions === 0) return;
     const base = planTotal - remaining.remainingActions;
     let done = 0;
     const applied = await applyPlanSet({ plansDir: files.plans, confirmation: remaining.expectedConfirmation, accountId, api,
       onProgress: (event) => {
-        if (event.type === "action-start") job.currentItem = `${actionVerb(event) === "delete" ? "삭제" : event.newTitle ? "제목 변경" : "유지"}  ${event.title}${event.newTitle ? ` → ${event.newTitle}` : ""}`;
+        if (event.type === "action-start") job.currentItem = currentJobItem(actionVerb(event), event.title, event.newTitle);
         if (event.type === "action-finish") {
           done += 1;
           const kind = actionVerb(event);
@@ -280,8 +285,8 @@ async function applyManagementPlans({ files, api, accountId, job }) {
         }
         if (event.type === "batch-start" || event.type === "batch-finish") {
           jobEvent(job, "apply", event.type === "batch-start"
-            ? `묶음 ${event.batch}: ${event.actions}건 시작`
-            : `묶음 완료: ${event.actions}건${event.ok ? "" : " (실패)"}`);
+            ? message("workflow.batchStart", { batch: event.batch, count: event.actions })
+            : message(event.ok ? "workflow.batchFinish" : "workflow.batchFail", { count: event.actions }));
         }
       } });
     assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
@@ -295,12 +300,12 @@ async function routingStage({ files, api, accountId, job }) {
   const routingPrepare = prepareProjectRouting(routing);
   const routingStatus = projectRoutingStatus(routing);
   if (routingStatus.pendingTargets > 0) {
-    jobEvent(job, "routing", `대화 ${routingPrepare.conversationCount}건을 승인된 프로젝트로 이동합니다.`);
+    jobEvent(job, "routing", message("workflow.routing", { count: routingPrepare.conversationCount }));
     reportProgress(job, { phase: "routing", index: routingStatus.completedConversations, total: routingStatus.totalConversations });
     let targetBase = 0; let targetName = ""; let movingTitle = "";
     const trashProject = existsSync(files.trashMeta) ? readJson(files.trashMeta, "삭제후보 정보").project : null;
     const moveKind = () => (trashProject && targetName === trashProject ? "trash" : "move");
-    await untilDone(job, "프로젝트 이동", async () => {
+    await untilDone(job, message("workflow.operation.routing"), async () => {
       if (projectRoutingStatus(routing).pendingTargets === 0) return;
       const routed = await runProjectRouting({ routing, confirmation: routingPrepare.expectedConfirmation,
         accountId, api, pendingOnly: true,
@@ -309,7 +314,7 @@ async function routingStage({ files, api, accountId, job }) {
             targetBase = projectRoutingStatus(routing).completedConversations;
             targetName = event.projectName;
           }
-          if (event.type === "move-start") { movingTitle = event.title; job.currentItem = `${moveKind() === "trash" ? "삭제후보로 이동" : "프로젝트 이동"}  ${event.title} → ${targetName}`; }
+          if (event.type === "move-start") { movingTitle = event.title; job.currentItem = currentJobItem(moveKind(), event.title, targetName); }
           if (event.type === "move-finish") {
             jobItem(job, moveKind(), { title: event.title, to: targetName });
             reportProgress(job, { phase: "routing", index: targetBase + event.done, total: routingStatus.totalConversations, item: job.currentItem });
@@ -320,8 +325,8 @@ async function routingStage({ files, api, accountId, job }) {
           }
           if (event.type === "move-start" || event.type === "move-finish" || event.type === "action-start") return;
           jobEvent(job, "routing", event.type === "target-start"
-            ? `프로젝트 ${event.index}/${event.targets}: ${event.projectName} (${event.conversations}건)`
-            : `이동 완료: ${event.projectName}`);
+            ? message("workflow.projectStart", { index: event.index, total: event.targets, project: event.projectName, count: event.conversations })
+            : message("workflow.projectFinish", { project: event.projectName }));
         } });
       const failed = routed.results?.find((item) => !item.ok);
       if (failed) jobItem(job, moveKind(), { ok: false, title: movingTitle, reason: friendlyReason(failed.error) });
@@ -329,26 +334,26 @@ async function routingStage({ files, api, accountId, job }) {
     });
     job.currentItem = null;
   } else {
-    jobEvent(job, "routing", "기존 영수증으로 프로젝트 이동 완료를 확인했습니다.");
+    jobEvent(job, "routing", message("workflow.routingVerified"));
   }
 }
 
 // 삭제후보 목록·결과 보고서·포인터를 마무리한다. 보고서 실패는 적용 자체를 실패로 만들지 않는다.
 function finishRun({ workspace, dataDir, pointer, job, afterCatalog, renameOrder, deletes, decisionCount }) {
   try { settleTrash(pointer, dataDir, afterCatalog); }
-  catch (error) { jobEvent(job, "report", `삭제후보 목록을 갱신하지 못했습니다: ${error.message}`); }
+  catch (error) { jobEvent(job, "report", message("workflow.trashReportFailed", { reason: error.message })); }
   let report = null;
-  try { report = writeResultReport(pointer, afterCatalog, renameOrder); }
-  catch (error) { jobEvent(job, "report", `결과 보고서를 만들지 못했습니다: ${error.message}`); }
+  try { report = writeResultReport(pointer, afterCatalog, renameOrder, job.locale); }
+  catch (error) { jobEvent(job, "report", message("workflow.reportFailed", { reason: error.message })); }
   if (report) {
-    jobEvent(job, "report", `결과: ${report.headline}`);
+    jobEvent(job, "report", message("workflow.result"));
     // 대화를 넣은 프로젝트는 다음 분류에서 옮길 후보로 쓰도록 기억한다(프로젝트 목록을 다시 읽지 않아도 된다).
     try { rememberProjects(dataDir, report.projects.filter((project) => project.delta > 0).map((project) => project.name)); } catch {}
   }
   const result = { counts: afterCatalog.counts, deletes, proposalCount: decisionCount, headline: report?.headline || null,
     scope: pointer.result?.scope };
   writePointer(workspace, { ...pointer, phase: PHASE.COMPLETE, result });
-  jobEvent(job, "complete", "원격 적용을 완료했습니다. 대화별 재조회로 검증한 결과가 영수증에 남았습니다.");
+  jobEvent(job, "complete", message("workflow.applied"));
   job.result = { phase: PHASE.COMPLETE, ...result };
 }
 
@@ -358,9 +363,13 @@ export async function applyWorkflow(workspace, dataDir, api, accountId, confirmD
   const { deletes, decisionCount } = checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDeletes });
   let lockHeld = false;
   try {
-    jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+    jobEvent(job, "lock", message("workflow.lock"));
     acquireLock({ dataDir });
     lockHeld = true;
+    if (existsSync(files.trashMeta)) {
+      const meta = readJson(files.trashMeta, "삭제후보 이동 정보");
+      if (meta.items.length) assertTrashProject(readTrash(dataDir), meta.project);
+    }
     const { routingRequired, hasManagementPlans } = compilePlans({ pointer, files, job });
     job.overall = {
       planTotal: hasManagementPlans ? preparePlanSet(files.plans).summary?.remainingActions || 0 : 0,
@@ -369,7 +378,7 @@ export async function applyWorkflow(workspace, dataDir, api, accountId, confirmD
     job.overall.total = job.overall.planTotal + (routingRequired ? projectRoutingStatus(validateProjectRouting(readJson(files.routing, "프로젝트 배치 계획"))).totalConversations : 0);
     if (hasManagementPlans) await applyManagementPlans({ files, api, accountId, job });
     if (routingRequired) await routingStage({ files, api, accountId, job });
-    jobEvent(job, "verify", "승인된 결정과 완료된 계획·영수증이 서로 맞는지 확인합니다.");
+    jobEvent(job, "verify", message("workflow.verify"));
     const { afterCatalog, renameOrder } = finalizeMaintenanceRun({ inventoryPath: pointer.inventoryPath, decisionsPath: files.decisions,
       plansDir: hasManagementPlans ? files.plans : "", routingPath: routingRequired ? files.routing : "" });
     finishRun({ workspace, dataDir, pointer, job, afterCatalog, renameOrder, deletes, decisionCount });
@@ -381,16 +390,16 @@ export async function applyWorkflow(workspace, dataDir, api, accountId, confirmD
 // 삭제후보 프로젝트 다시 확인(읽기 전용): 그 프로젝트의 지금 대화를 읽어, 사용자가 ChatGPT에서 직접 지우거나 옮긴 대화를 목록에서 뺀다.
 export async function trashSyncWorkflow(workspace, dataDir, api, job) {
   const trash = readTrash(dataDir);
-  assert(trash.items.length && trash.project, "확인할 삭제후보 대화가 없습니다");
+  assert(trash.items.length && trash.project, message("error.emptyTrash"));
   let lockHeld = false;
   try {
-    jobEvent(job, "lock", "로컬 유지관리 잠금을 획득합니다.");
+    jobEvent(job, "lock", message("workflow.lock"));
     acquireLock({ dataDir });
     lockHeld = true;
-    jobEvent(job, "scan", `삭제후보 프로젝트 「${trash.project}」의 지금 대화를 읽습니다(읽기 전용).`);
+    jobEvent(job, "scan", message("workflow.trashScan", { project: trash.project }));
     let present = new Set();
     try {
-      const catalog = await untilDone(job, "삭제후보 확인", () => collectScopedCatalog(api, { kind: "project", projectNames: [trash.project] },
+      const catalog = await untilDone(job, message("workflow.operation.trash"), () => collectScopedCatalog(api, { kind: "project", projectNames: [trash.project] },
         () => new Date(), (info) => reportProgress(job, info)));
       present = new Set(catalog.conversations.map((item) => item.conversationId));
     } catch (error) {
@@ -400,7 +409,7 @@ export async function trashSyncWorkflow(workspace, dataDir, api, job) {
     const gone = trash.items.filter((item) => !present.has(item.conversationId)).map((item) => item.conversationId);
     if (gone.length) removeTrashed(dataDir, gone);
     const summary = { released: gone.length, remaining: trash.items.length - gone.length };
-    jobEvent(job, "complete", `삭제후보 ${trash.items.length}건 중 ${gone.length}건은 이미 지웠거나 옮기셔서 목록에서 뺐습니다. 남은 것 ${summary.remaining}건.`);
+    jobEvent(job, "complete", message("workflow.trashSync", { total: trash.items.length, ...summary }));
     job.result = { trashSync: summary };
   } finally {
     if (lockHeld) releaseLock({ dataDir });
@@ -409,9 +418,9 @@ export async function trashSyncWorkflow(workspace, dataDir, api, job) {
 
 // 프로젝트 이름 목록 읽기(읽기 전용, 요청 1~2회): 범위 선택의 프로젝트 목록을 채운다.
 export async function projectListWorkflow(dataDir, api, job) {
-  jobEvent(job, "scan", "ChatGPT 프로젝트 이름 목록을 읽습니다(읽기 전용).");
-  const projects = await untilDone(job, "프로젝트 목록", () => listProjectsWithRecency(api));
+  jobEvent(job, "scan", message("workflow.projectList"));
+  const projects = await untilDone(job, message("workflow.operation.projects"), () => listProjectsWithRecency(api));
   writeKnownProjects(dataDir, projects);
-  jobEvent(job, "complete", `프로젝트 ${projects.length}개를 읽었습니다.`);
+  jobEvent(job, "complete", message("workflow.projectListDone", { count: projects.length }));
   job.result = { projects: projects.length };
 }

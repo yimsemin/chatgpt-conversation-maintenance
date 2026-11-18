@@ -1,3 +1,4 @@
+import { translator } from "./i18n.js";
 // 화면이 "지금 어느 단계이고 다음에 무엇을 하면 되는가"를 판단하는 순수 함수들.
 import { PHASE } from "./phases.js";
 
@@ -15,18 +16,16 @@ export function deriveStep({ activeJobKind = null, phase = "", hasProposal = fal
 }
 
 // 연결 상태를 사용자가 바로 이해할 문장으로 바꾼다.
-export function describeRelay(status = {}) {
+export function describeRelay(status = {}, locale) {
+  const t = translator(locale);
   if (!status.connected) {
-    return { level: "bad", label: "ChatGPT 연결 끊김",
-      hint: "chatgpt.com 탭에서 북마클릿(ChatGPT → 유지관리)을 실행하세요." };
+    return { level: "bad", label: t("relay.disconnected.label"), hint: t("relay.disconnected.hint") };
   }
   if ((status.consecutiveFailures || 0) >= 3) {
-    return { level: "warn", label: "연결됨 · 응답 불안정",
-      hint: "chatgpt.com 탭을 앞으로 가져오고 잠시 기다리세요. 백그라운드 탭은 응답이 느려집니다." };
+    return { level: "warn", label: t("relay.unstable.label"), hint: t("relay.unstable.hint") };
   }
   if (status.lastResultAgoMs != null && status.pending > 0 && status.lastResultAgoMs > 45000) {
-    return { level: "warn", label: "연결됨 · 응답 대기 중",
-      hint: "ChatGPT 페이지가 응답하지 않고 있습니다. chatgpt.com 탭을 앞으로 가져오세요." };
+    return { level: "warn", label: t("relay.waiting.label"), hint: t("relay.waiting.hint") };
   }
-  return { level: "ok", label: "ChatGPT 연결됨", hint: "" };
+  return { level: "ok", label: t("relay.connected"), hint: "" };
 }

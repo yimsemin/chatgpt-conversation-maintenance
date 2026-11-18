@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 
 import { handleMaintenanceWebRequest } from "./maintenance-web.js";
 import { CONFIG } from "./config.js";
-import { DEFAULT_TRASH_PROJECT, configuredTrash } from "./data-dir.js";
+import { configuredTrash } from "./data-dir.js";
+import { fallbackLocale, locales, translate } from "./i18n.js";
+import { requestLocale } from "./request-language.js";
+import { readTrash } from "./trash.js";
 import { handleRemoteRelayRequest } from "./remote-relay.js";
 import { APP_VERSION, RELAY_VERSION, REPO_URL } from "./app-version.js";
 import { changelogForScreen, readChangelog } from "./release-notes.js";
@@ -38,7 +41,7 @@ const STRICT_CSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:
 
 // 화면이 쓰는 정적 자원. 파일 이름은 고정 목록/패턴만 허용하고 경로 이동은 받지 않는다.
 const ASSET_TYPES = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
-const SHARED_MODULES = new Set(["summary.js", "title-rules.js", "project-link.js"]);
+const SHARED_MODULES = new Set(["summary.js", "title-rules.js", "project-link.js", "i18n.js", ...Object.keys(locales).map((locale) => `messages-${locale}.js`)]);
 
 function serveAsset(res, pathname) {
   const match = pathname.match(/^\/assets\/(shared\/)?([a-z0-9-]+\.(?:js|css))$/);
@@ -56,7 +59,7 @@ function serveAsset(res, pathname) {
   }
 }
 
-function serveLocalHtml(res, filename, { strict = false } = {}) {
+function serveLocalHtml(res, filename, { strict = false, locale = fallbackLocale } = {}) {
   let html = null;
   try { html = readFileSync(join(APP_DIR, "public", filename), "utf8"); } catch {}
   if (!html) {
@@ -72,7 +75,15 @@ function serveLocalHtml(res, filename, { strict = false } = {}) {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
   });
+  const languageOptions = Object.entries(locales).map(([value, label]) =>
+    `<option value="${value}"${locale === value ? " selected" : ""}>${label}</option>`).join("");
   res.end(html
+    .replaceAll("__LOCALE__", locale)
+    .replaceAll("__LANGUAGE_OPTIONS__", languageOptions)
+    .replaceAll("__BOOKMARKLET_MESSAGES__", () => JSON.stringify(
+      ["bookmarklet.wrongPage", "bookmarklet.popup"].map((key) => translate(locale, key)),
+    ).replaceAll("<", "\\u003c"))
+    .replace(/__MSG_([\w.]+)__/g, (_, key) => translate(locale, key))
     .replaceAll("__APP_VERSION__", APP_VERSION)
     .replaceAll("__RELAY_VERSION__", RELAY_VERSION)
     .replaceAll("__REPO_URL__", REPO_URL));
@@ -99,7 +110,7 @@ const server = createServer(async (req, res) => {
 
   // 유지관리 화면
   if (req.method === "GET" && (req.url === "/" || req.url === "")) {
-    serveLocalHtml(res, "app.html", { strict: true });
+    serveLocalHtml(res, "app.html", { strict: true, locale: requestLocale(req.headers) });
 
   } else if (req.method === "GET" && req.url.startsWith("/assets/")) {
     serveAsset(res, req.url.split("?")[0]);
@@ -119,7 +130,7 @@ const server = createServer(async (req, res) => {
     try { force = (await readJsonBody(req))?.force === true; } catch {}
     const running = [...jobs.values()].filter((job) => !job.done).length;
     if (running && !force) {
-      jsonResponse(res, 409, { error: { message: "진행 중인 작업이 있어 종료하지 않았습니다. 작업이 끝나거나 중단된 뒤 다시 종료하세요." } });
+      jsonResponse(res, 409, { error: { message: translate(requestLocale(req.headers), "app.shutdownBusy") } });
     } else {
       jsonResponse(res, 200, { stopping: true, pid: process.pid });
       setTimeout(() => process.exit(0), 200);
@@ -127,11 +138,13 @@ const server = createServer(async (req, res) => {
 
   // 화면이 쓰는 최소 설정: 삭제후보 처리 방식의 기본값
   } else if (req.method === "GET" && req.url === "/config") {
-    jsonResponse(res, 200, { trash: { ...configuredTrash(appFolders().workspace), defaultName: DEFAULT_TRASH_PROJECT } });
+    const { workspace, dataDir } = appFolders();
+    const defaultName = readTrash(dataDir).project || translate(requestLocale(req.headers), "common.trashProject");
+    jsonResponse(res, 200, { trash: { ...configuredTrash(workspace, defaultName), defaultName } });
 
   // 북마클릿 설치 안내 페이지
   } else if (req.method === "GET" && req.url === "/auth/bookmarklet") {
-    serveLocalHtml(res, "bookmarklet.html");
+    serveLocalHtml(res, "bookmarklet.html", { locale: requestLocale(req.headers) });
 
   // 유지관리 화면과 chatgpt.com 실행기 사이의 로컬 대기열. 원시 URL과 세션은 받지 않는다.
   } else if (req.url.startsWith("/relay/")) {

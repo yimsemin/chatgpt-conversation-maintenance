@@ -6,7 +6,8 @@ import { CONFIG } from "./config.js";
 import { ACCOUNT_ID } from "./ids.js";
 import { createRelayApi } from "./relay-api.js";
 import { relayBroker } from "./remote-relay.js";
-import { computeEta, createJobLog, trackProgress, formatDuration } from "./jobs.js";
+import { fallbackLocale, message, messageText } from "./i18n.js";
+import { computeEta, createJobLog, trackProgress } from "./jobs.js";
 import { createPacer } from "./relay-api.js";
 import { createSafeDiagnostic } from "./web-common.js";
 
@@ -47,17 +48,19 @@ export function createJob(kind, workspace, dataDir = null) {
 
 const TRANSIENT_STAGES = new Set(["rate-limit", "retry"]);
 
-export function jobEvent(job, stage, message) {
+export function jobEvent(job, stage, content) {
+  const event = typeof content === "string" ? { message: content } : { content, message: messageText(fallbackLocale, content) };
   // 대기·재시도 알림은 같은 자리에 덮어쓴다. 나머지 이벤트는 모두 줄을 더한다.
   const last = job.events[job.events.length - 1];
   if (TRANSIENT_STAGES.has(stage) && TRANSIENT_STAGES.has(last?.stage)) {
     last.at = new Date().toISOString();
     last.stage = stage;
-    last.message = message;
+    delete last.content;
+    Object.assign(last, event);
     persistTransient(job, last);
     return;
   }
-  const entry = { at: new Date().toISOString(), stage, message };
+  const entry = { at: new Date().toISOString(), stage, ...event };
   job.events.push(entry);
   job.log?.event(job, entry);
 }
@@ -72,31 +75,31 @@ function persistTransient(job, entry) {
 
 // 사용자가 읽는 로그 줄: 대상(대화·프로젝트·목록)마다 무슨 일이 있었는지 한 줄로 남긴다. 요청 단위 줄과 다르다.
 // COUNTED 종류는 화면의 종류별 누계(job.counts)에 센다.
-export const ITEM_VERBS = {
-  rename: "제목 변경", move: "프로젝트 이동", trash: "삭제후보로 이동", delete: "삭제", keep: "유지",
-  fetch: "본문 받음", reuse: "본문 재활용", skip: "건너뜀",
-  project: "프로젝트 읽음", listActive: "활성 대화 목록 읽음", listArchived: "보관 대화 목록 읽음",
-};
 const COUNTED = new Set(["rename", "move", "trash", "delete", "fetch", "reuse", "skip"]);
+
+export function currentJobItem(kind, title, to) {
+  return message("log.item.current", {
+    verb: message(`log.verb.${kind}`), title,
+    destination: to ? message("log.item.destination", { project: to }) : "",
+  });
+}
 
 export function jobItem(job, kind, { ok = true, title, to = "", detail = "", reason = "" }) {
   job.counts ||= {};
   const key = ok ? kind : "failed";
   if (!ok || COUNTED.has(kind)) job.counts[key] = (job.counts[key] || 0) + 1;
-  const verb = ITEM_VERBS[kind];
-  const tail = `${to ? ` → ${to}` : ""}${detail ? ` — ${detail}` : ""}`;
-  if (kind === "skip") return jobEvent(job, "item-skip", `⚠ ${verb}  ${title}${reason ? ` — ${reason}` : ""}`);
-  return jobEvent(job, ok ? "item" : "item-fail", ok ? `✓ ${verb}  ${title}${tail}` : `✗ ${verb} 실패  ${title}${reason ? ` — ${reason}` : ""}`);
+  if (kind === "project") job.readProjects = true;
+  const values = currentJobItem(kind, title, to).values;
+  if (kind === "skip" || !ok) {
+    return jobEvent(job, kind === "skip" ? "item-skip" : "item-fail",
+      message(kind === "skip" ? "log.item.skip" : "log.item.fail", {
+        verb: values.verb, title, reason: reason ? message("log.item.detail", { detail: reason }) : "",
+      }));
+  }
+  return jobEvent(job, "item", message("log.item.ok", {
+    ...values, detail: detail ? message("log.item.detail", { detail }) : "",
+  }));
 }
-
-const SCAN_PROGRESS_LABELS = {
-  projects: "프로젝트 목록 읽는 중",
-  active: "활성 대화 목록 읽는 중",
-  archived: "보관 대화 목록 읽는 중",
-  downloads: "후보 대화 본문 받는 중",
-  "apply-plan": "제목 변경·삭제 적용 중",
-  routing: "프로젝트 이동 중",
-};
 
 // 적용은 제목 변경·삭제 뒤에 프로젝트 이동이 이어진다. 단계마다 바가 0으로 돌아가지 않도록 전체 기준 진행도를 함께 낸다.
 // job.overall = { planTotal, total } 은 적용 시작 때 정해진다. 남은 시간은 전체 기준으로 다시 계산한다.
@@ -117,14 +120,16 @@ function trackOverall(job, progress, info) {
 // 진행 정보를 job.progress(단계·건수·남은 시간)와 job.currentItem(지금 처리 중인 대상)에 기록한다.
 export function reportProgress(job, info) {
   // 수집 중 "프로젝트·목록 하나를 다 읽었다"는 알림은 진행률이 아니라 로그 줄이다.
-  if (info.type === "project-read") return jobItem(job, "project", { title: info.projectName, detail: `대화 ${info.count}건` });
-  if (info.type === "list-read") return jobItem(job, info.archived ? "listArchived" : "listActive", { title: `${info.count}건` });
-  const progress = trackProgress(job, { phase: info.phase, label: SCAN_PROGRESS_LABELS[info.phase] || info.phase,
+  if (info.type === "project-read") return jobItem(job, "project", { title: info.projectName, detail: message("log.projectReadCount", { count: info.count }) });
+  if (info.type === "list-read") return jobItem(job, info.archived ? "listArchived" : "listActive", { title: message("log.listReadCount", { count: info.count }) });
+  if (info.phase === "projects") job.readProjects = true;
+  const progress = trackProgress(job, { phase: info.phase,
     index: info.index, total: info.total });
   trackOverall(job, progress, info);
   // 진행률·남은 시간·지금 처리 중인 대상은 화면의 진행바가 보여 주므로 로그에는 줄을 쌓지 않는다.
   // 로그에는 대상 하나가 끝날 때마다 jobItem 줄이 남는다.
-  job.currentItem = info.item || (info.projectName ? `프로젝트 읽는 중  ${info.projectName}` : null);
+  job.currentItem = info.item || (info.projectName ? message("log.readProject", { project: info.projectName })
+    : info.title ? message("log.downloadTitle", { title: info.title }) : null);
 }
 
 const WAIT_STAGES = new Set(["rate-limit", "relay-down", "retry"]);
@@ -139,8 +144,9 @@ export function publicJob(job) {
     events: job.events.filter((event) => event.stage !== "request").slice(-300),
     currentItem: job.currentItem || null,
     counts: job.counts || null,
+    readProjects: job.readProjects === true,
     // 마지막 이벤트가 대기·재시도면 사용자 눈에는 멈춘 것처럼 보이므로 진행바가 이유를 알려 준다.
-    waiting: !job.done && WAIT_STAGES.has(job.events.at(-1)?.stage) ? { stage: job.events.at(-1).stage, message: job.events.at(-1).message } : null,
+    waiting: !job.done && WAIT_STAGES.has(job.events.at(-1)?.stage) ? job.events.at(-1) : null,
     result: job.result,
     error: job.error,
     cancelled: job.cancelled === true,
@@ -174,14 +180,14 @@ export async function untilDone(job, label, step) {
     try {
       return await step();
     } catch (error) {
-      const message = String(error?.message || error);
-      if (job.cancelled || attempt >= AUTO_RESUME_ATTEMPTS || !TRANSIENT_FAILURE.test(message)) throw error;
+      const reason = String(error?.message || error);
+      if (job.cancelled || attempt >= AUTO_RESUME_ATTEMPTS || !TRANSIENT_FAILURE.test(reason)) throw error;
       // 기본 5분에서 시작해 시도마다 늘어 최대 30분. 개발·시험에서는 환경 변수로 줄일 수 있다.
       const baseSeconds = CONFIG.resumeWaitSeconds;
       const waitSeconds = Math.min(baseSeconds * attempt, Math.max(baseSeconds, 1800));
-      jobEvent(job, "rate-limit", `${label}: 일시적 실패(${message.slice(0, 80)}). ${formatDuration(waitSeconds)} 뒤 자동으로 이어서 진행합니다 (${attempt}/${AUTO_RESUME_ATTEMPTS}). 중단하려면 중단 버튼을 누르세요.`);
+      jobEvent(job, "rate-limit", message("log.resume", { operation: label, reason: reason.slice(0, 80), delay: waitSeconds, attempt, limit: AUTO_RESUME_ATTEMPTS }));
       await cancellableSleep(job, waitSeconds * 1000);
-      jobEvent(job, "apply", `${label}: 다시 시도합니다.`);
+      jobEvent(job, "apply", message("log.resumeNow", { operation: label }));
     }
   }
 }
@@ -192,21 +198,21 @@ export function relayApi(job, requestDelayMs = 1000) {
   return createRelayApi({ broker: relayBroker, requestDelayMs: CONFIG.requestDelayMs === undefined ? requestDelayMs : CONFIG.requestDelayMs,
     pacer: CONFIG.requestDelayMs === undefined ? readPacer : null,
     backoffBaseMs: CONFIG.relayBackoffMs, backoffCapMs: Math.max(CONFIG.relayBackoffMs, 300000), sleep: (ms) => cancellableSleep(job, ms),
-    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", `ChatGPT 요청 #${count}: ${op}${job.currentItem ? ` — ${job.currentItem}` : ""}`); },
-    onRelayDown: () => jobEvent(job, "relay-down", "ChatGPT 연결이 끊겼습니다. chatgpt.com 탭에서 북마클릿을 눌러 주세요. 연결되면 자동으로 이어서 진행합니다."),
-    onRelayUp: ({ waitedMs }) => jobEvent(job, "relay-up", `ChatGPT 연결이 돌아왔습니다(${formatDuration(Math.round(waitedMs / 1000))} 기다림). 이어서 진행합니다.`),
+    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", message("log.chatgptRequest", { count, op, item: job.currentItem ? message("log.item.detail", { detail: job.currentItem }) : "" })); },
+    onRelayDown: () => jobEvent(job, "relay-down", message("log.relayDown")),
+    onRelayUp: ({ waitedMs }) => jobEvent(job, "relay-up", message("log.relayUp", { seconds: Math.round(waitedMs / 1000) })),
     onRetry: (retry) => {
     const stage = retry.type === "http" && retry.status === 429 ? "rate-limit" : "retry";
-    jobEvent(job, stage, retryMessage(retry));
+    jobEvent(job, stage, retryNotice(retry));
   } });
 }
 
 // 재시도 안내 문구. 429 는 ChatGPT의 속도 제한에 맞춰 자동으로 조절하는 정상 동작임을 알린다.
-export function retryMessage(retry) {
-  const seconds = Math.round(retry.waitMs / 1000);
-  if (retry.type === "http" && retry.status === 429) return `ChatGPT가 요청 속도를 제한했습니다(429). 자동으로 속도를 조절하는 중이라 정상입니다 — ${seconds}초 뒤 다시 시도합니다.`;
-  if (retry.type === "http") return `ChatGPT 응답이 일시적으로 실패했습니다(HTTP ${retry.status}). ${seconds}초 뒤 다시 시도합니다(${retry.attempt}번째 재시도).`;
-  return `연결이 잠시 끊겼습니다. ${seconds}초 뒤 다시 시도합니다(${retry.attempt}번째 재시도).`;
+function retryNotice({ type, status, waitMs, attempt }) {
+  const seconds = Math.round(waitMs / 1000);
+  if (type === "http" && status === 429) return message("log.retryLimited", { seconds });
+  if (type === "http") return message("log.retryHttp", { status, seconds, attempt });
+  return message("log.retryConnection", { seconds, attempt });
 }
 
 export async function relayAccountId(api) {
@@ -225,7 +231,7 @@ export function startAsyncJob(job, stage, task) {
     } catch (error) {
       job.ok = false;
       job.error = createSafeDiagnostic(stage, error, job.workspace, job.result?.run?.runId || null);
-      jobEvent(job, "error", job.error.explain?.title || job.error.message);
+      jobEvent(job, "error", job.error.explain?.titleContent || job.error.explain?.title || job.error.message);
     } finally {
       job.done = true;
       job.finishedAt = Date.now();

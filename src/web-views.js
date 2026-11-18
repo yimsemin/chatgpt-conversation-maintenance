@@ -1,3 +1,4 @@
+import { summaryHeadline } from "./summary.js";
 // 화면이 읽는 데이터(세션·요약·보고서·분류안·카탈로그). 읽기 전용이다.
 import { existsSync } from "node:fs";
 import { runFiles } from "./run-files.js";
@@ -5,7 +6,8 @@ import { basename, join } from "node:path";
 import { lockStatus } from "./maintenance-lock.js";
 import { relayBroker } from "./remote-relay.js";
 import { buildClaudePrompt } from "./classification-review.js";
-import { CLASSIFICATION_CRITERIA } from "./classification-criteria.js";
+import { translate, translator } from "./i18n.js";
+import { classificationCriteria } from "./classification-criteria.js";
 import { validateClassificationProposals } from "./proposal-validation.js";
 import { readTrash } from "./trash.js";
 import { findPartialScan } from "./scan.js";
@@ -27,7 +29,7 @@ function trashSummary(dataDir, nowMs = Date.now()) {
 }
 
 // 화면 첫 진입에 필요한 모든 상태를 한 번에 준다: 연결, 알려진 프로젝트, 삭제후보 현황, 현재 실행, 작업, 단계.
-export function sessionData(workspace, dataDir) {
+export function sessionData(workspace, dataDir, locale) {
   const pointer = readPointer(workspace, dataDir);
   const relay = relayBroker.status();
   const active = [...jobs.values()].filter((job) => job.workspace === workspace && !job.done);
@@ -49,14 +51,14 @@ export function sessionData(workspace, dataDir) {
   }
   let report = null;
   if (run?.hasReport) {
-    try { const data = readJson(runFiles(pointer.runDir).report, "결과"); report = { headline: data.headline, finishedAt: data.finishedAt }; } catch {}
+    try { const data = readJson(runFiles(pointer.runDir).report, "결과"); report = { headline: data.totals && data.changes ? summaryHeadline(data, locale) : data.headline, finishedAt: data.finishedAt }; } catch {}
   }
   // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·삭제후보 다시 확인)이 있으면 결과 화면으로 되돌리지 않는다.
   const reportAt = Date.parse(report?.finishedAt || "") || 0;
   const resultSuperseded = jobLogFor(dataDir).recent(10).some((job) => job.kind === "scan" && job.ok && Date.parse(job.finishedAt || "") > reportAt);
   const lock = lockStatus({ dataDir });
   return {
-    relay: { ...relay, ...describeRelay(relay) },
+    relay: { ...relay, ...describeRelay(relay, locale) },
     app: appStatus(APP_ROOT),
     knownProjects: readKnownProjects(dataDir),
     trash: trashSummary(dataDir),
@@ -75,14 +77,16 @@ export function sessionData(workspace, dataDir) {
   };
 }
 
-export function reportData(workspace, dataDir) {
+export function reportData(workspace, dataDir, locale) {
   const pointer = readPointer(workspace, dataDir);
   const path = pointer ? runFiles(pointer.runDir).report : null;
   if (!path || !existsSync(path)) return { ready: false };
-  return { ready: true, report: readJson(path, "결과 보고서") };
+  const report = readJson(path, "결과 보고서");
+  return { ready: true, report: { ...report, note: translate(locale, "summary.note"),
+    headline: report.totals && report.changes ? summaryHeadline(report, locale) : report.headline } };
 }
 
-export function proposalData(workspace, dataDir) {
+export function proposalData(workspace, dataDir, locale) {
   const pointer = readPointer(workspace, dataDir);
   if (!pointer) return { ready: false, run: null };
   const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
@@ -90,8 +94,8 @@ export function proposalData(workspace, dataDir) {
     return {
       ready: false,
       run: publicPointer(pointer),
-      prompt: classificationPrompt(pointer),
-      claudePrompt: claudePrompt(pointer),
+      prompt: classificationPrompt(pointer, locale),
+      claudePrompt: claudePrompt(pointer, locale),
     };
   }
   const validation = validateClassificationProposals(pointer.inventoryPath, proposalPath);
@@ -102,8 +106,8 @@ export function proposalData(workspace, dataDir) {
     run: publicPointer(pointer),
     validation,
     items: proposal.items,
-    prompt: classificationPrompt(pointer),
-    claudePrompt: claudePrompt(pointer),
+    prompt: classificationPrompt(pointer, locale),
+    claudePrompt: claudePrompt(pointer, locale),
     blockers: {
       undecided: validation.decisionCounts.undecided,
       manualMoves,
@@ -113,31 +117,29 @@ export function proposalData(workspace, dataDir) {
 
 // 파일 접근이 가능한 에이전트(같은 저장소의 Codex/Claude Code)용. 규칙 문서를
 // 통째로 읽게 하지 않고 압축 기준을 프롬프트에 바로 넣는다.
-function classificationPrompt(pointer) {
+function classificationPrompt(pointer, locale) {
+  const t = translator(locale);
   const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   return [
-    "이 작업공간에서 ChatGPT 대화 유지관리의 '분류' 단계를 수행해줘. 분류만 하고 승인 파일·실행 계획·원격 변경은 만들거나 실행하지 마.",
-    "판단 기준은 아래에 모두 있으니 저장소 문서를 따로 읽지 않아도 돼.",
-    "",
-    `인벤토리: ${pointer.inventoryPath}`,
-    `분류용 최소 입력(발췌): ${pointer.reviewPath}`,
-    `결과 파일: ${proposalPath}`,
-    "",
-    "## 판단 기준",
-    ...CLASSIFICATION_CRITERIA.map((line) => `- ${line}`),
-    "",
-    "review.json의 후보 전체만 분류하고, 첨부·비텍스트 때문에 불분명한 항목만 원본 JSON을 추가 확인해.",
-    "모든 후보에 보존·삭제·미결정, 표준 제목(null 가능), 최종 프로젝트, 프로젝트 조치, 확신도, 근거를 제안해 proposal.json으로 저장해.",
-    `저장 후 node src/workflow.js validate-proposal "${pointer.inventoryPath}" "${proposalPath}" 로 검증하고(경고가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증), 결과 JSON 전문을 답변에도 붙여줘 — 유지관리 앱의 '분류 결과 JSON 붙여넣기' 칸에 넣을 수 있게.`,
+    t("prompt.agentIntro"), "",
+    t("prompt.inventory", { path: pointer.inventoryPath }),
+    t("prompt.review", { path: pointer.reviewPath }),
+    t("prompt.proposal", { path: proposalPath }), "",
+    `## ${t("prompt.criteria")}`,
+    ...classificationCriteria(locale).map((line) => `- ${line}`), "",
+    t("prompt.candidateScope"),
+    t("prompt.proposalFields"),
+    t("prompt.validateFile", { inventory: pointer.inventoryPath, proposal: proposalPath }),
+    t("prompt.paste"),
   ].join("\n");
 }
 
 // claude.ai 등 파일 접근이 없는 곳에 그대로 붙여넣을 자립형 요청문.
-function claudePrompt(pointer) {
+function claudePrompt(pointer, locale) {
   if (!pointer.reviewPath || !existsSync(pointer.reviewPath)) return null;
   try {
     return buildClaudePrompt(readJson(pointer.reviewPath, "분류용 입력"), {
-      inventoryPath: pointer.inventoryPath,
+      locale, inventoryPath: pointer.inventoryPath,
       proposalPath: pointer.proposalPath || runFiles(pointer.runDir).proposal,
     });
   } catch { return null; }

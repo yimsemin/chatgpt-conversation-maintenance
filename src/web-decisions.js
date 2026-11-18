@@ -1,4 +1,5 @@
 // 사용자의 결정을 검증·저장하고, 삭제후보 이동과 후속 실행을 준비한다.
+import { message, localizedError } from "./i18n.js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { PHASE } from "./phases.js";
 import { basename, join } from "node:path";
@@ -8,7 +9,7 @@ import { sha256 } from "./content-hash.js";
 import { runsDir } from "./data-dir.js";
 import { compileReviewedDecisions } from "./decision-compile.js";
 import { isNormalizedTitle } from "./title-rules.js";
-import { readTrash } from "./trash.js";
+import { assertTrashProject, readTrash } from "./trash.js";
 import { readPointer, runId, writePointer } from "./web-common.js";
 import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { proposalData } from "./web-views.js";
@@ -20,7 +21,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
     "유지관리 인벤토리가 아닙니다");
   assert(Array.isArray(inventory.warnings) && inventory.warnings.length === 0,
     `인벤토리에 경고가 있어 결정을 만들 수 없습니다: ${(inventory.warnings || ["warnings 필드 없음"]).join("; ")}`);
-  assert(Array.isArray(inputs) && inputs.length > 0, "결정이 비어 있습니다");
+  assert(Array.isArray(inputs) && inputs.length > 0, message("error.noDecisions"));
   const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
   const seen = new Set();
   const decisions = inputs.map((input, index) => {
@@ -55,7 +56,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
       reviewed: true,
     };
   });
-  assert(seen.size === inventoryById.size, "모든 후보에 정확히 하나의 결정이 필요합니다");
+  assert(seen.size === inventoryById.size, message("error.missingDecisions"));
   return {
     version: 1,
     kind: "reviewed-decisions",
@@ -67,10 +68,11 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
 
 export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null) {
   const pointer = readPointer(workspace, dataDir);
-  assert(pointer, "먼저 대화 수집(수집 범위 선택)을 실행하세요");
-  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 결정을 받을 단계가 아닙니다");
+  assert(pointer, message("error.collectFirst"));
+  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, message("error.cannotSaveDecisions"));
   const inventory = readJson(pointer.inventoryPath, "인벤토리");
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
+  if (trash?.entries?.length) assertTrashProject(readTrash(dataDir), trash.project);
   writeJsonAtomic(runFiles(pointer.runDir).decisions, decisions);
   writeTrashMeta(pointer, inventory, decisions, trash);
   return { saved: decisions.decisions.length };
@@ -119,14 +121,14 @@ function backupWithCurrentTitle(record, currentTitle, runDir) {
 // 적용할 때 각 대화의 실제 제목이 기록과 다르면(사용자가 그 사이 바꿨다면) 적용이 그 대화에서 안전하게 멈춘다.
 export function prepareTrashFollowUp(workspace, dataDir, inputs) {
   const trash = readTrash(dataDir);
-  assert(trash.items.length, "삭제후보 프로젝트에 옮겨 둔 대화가 없습니다");
-  assert(Array.isArray(inputs) && inputs.length, "결정이 비어 있습니다");
+  assert(trash.items.length, message("error.emptyTrash"));
+  assert(Array.isArray(inputs) && inputs.length, message("error.noDecisions"));
   const trashedById = new Map(trash.items.map((item) => [item.conversationId, item]));
   const runDir = join(runsDir(dataDir), `trash-${runId()}`);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const conversations = inputs.map((input) => {
     const trashed = trashedById.get(input.conversationId);
-    assert(trashed, "삭제후보 목록에 없는 대화입니다");
+    assert(trashed, message("error.trashItemMissing"));
     const backup = backupWithCurrentTitle(trashed.record, trashed.title, runDir);
     return { ...trashed.record, title: trashed.title, projectName: trash.project, isArchived: false, reasons: ["trash-review"],
       backupFile: backup.backupFile, backupSha256: backup.backupSha256,
@@ -170,14 +172,14 @@ export function prepareTrashFollowUp(workspace, dataDir, inputs) {
 
 export function savePastedProposal(workspace, dataDir, proposalJson) {
   const pointer = readPointer(workspace, dataDir);
-  assert(pointer, "먼저 대화 수집(수집 범위 선택)을 실행하세요");
-  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, "지금은 분류안을 받을 단계가 아닙니다");
-  assert(pointer.reviewPath, "이 실행에는 분류할 후보가 없습니다");
+  assert(pointer, message("error.collectFirst"));
+  assert(pointer.phase === PHASE.AWAITING_PROPOSAL, message("error.noProposalExpected"));
+  assert(pointer.reviewPath, message("error.noCandidates"));
   let parsed;
   try { parsed = JSON.parse(typeof proposalJson === "string" ? proposalJson : ""); }
-  catch { throw new Error("붙여넣은 분류안이 올바른 JSON이 아닙니다"); }
+  catch { throw localizedError(message("error.invalidProposalJson")); }
   assert(parsed && typeof parsed === "object" && !Array.isArray(parsed),
-    "붙여넣은 분류안 형식이 올바르지 않습니다");
+    message("error.invalidProposal"));
   const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
   writeJsonAtomic(proposalPath, parsed);
   return proposalData(workspace, dataDir);
@@ -190,7 +192,7 @@ export function buildReviewedDecisions(pointer, proposal) {
     inventoryDigest: proposal.inventoryDigest,
     receiptDir: runFiles(pointer.runDir).receipts,
     decisions: proposal.items.map((item) => {
-      assert(item.suggestedDecision !== "undecided", "undecided 항목은 승인 전에 해결해야 합니다");
+      assert(item.suggestedDecision !== "undecided", message("error.resolveUndecided"));
       if (item.suggestedDecision === "delete") {
         return {
           conversationId: item.conversationId,

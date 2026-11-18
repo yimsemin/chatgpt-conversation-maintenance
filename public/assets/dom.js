@@ -1,3 +1,4 @@
+import { locale, t } from "/assets/language.js";
 // DOM 조립과 표시 형식 도우미(의존 없음).
 
 
@@ -27,19 +28,19 @@ export function fill(el, ...children) {
 
 export function duration(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}초`;
+  if (seconds < 60) return t("dom.seconds", { seconds: Math.max(1, Math.round(seconds)) });
   const m = Math.round(seconds / 60);
-  return m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간 ${m % 60}분`;
+  return m < 60 ? t("dom.min", { minutes: m }) : t("dom.h.min", { hours: Math.floor(m / 60), minutes: m % 60 });
 }
 
 export function ago(iso) {
-  if (!iso) return "기록 없음";
+  if (!iso) return t("dom.no.history");
   const s = (Date.now() - Date.parse(iso)) / 1000;
   if (!Number.isFinite(s)) return "";
-  if (s < 90) return "방금 전";
-  const m = s / 60; if (m < 90) return `${Math.round(m)}분 전`;
-  const hr = m / 60; if (hr < 36) return `${Math.round(hr)}시간 전`;
-  return `${Math.round(hr / 24)}일 전`;
+  if (s < 90) return t("dom.just.now");
+  const m = s / 60; if (m < 90) return t("dom.min.ago", { minutes: Math.round(m) });
+  const hr = m / 60; if (hr < 36) return t("dom.h.ago", { hours: Math.round(hr) });
+  return t("dom.d.ago", { days: Math.round(hr / 24) });
 }
 
 export function clock(iso) {
@@ -50,7 +51,7 @@ export function clock(iso) {
 export const $ = (id) => document.getElementById(id);
 
 // 확인 창 하나(app.html 의 #confirm)로 모든 확인을 묻는다. ack 가 있으면 그 문구에 체크해야 진행 버튼이 켜진다. 진행하면 true.
-export function ask({ title, lines = [], ok = "계속", ack = null }) {
+export function ask({ title, lines = [], ok = t("dom.continue"), ack = null }) {
   const dialog = $("confirm");
   return new Promise((resolve) => {
     const box = ack ? h("input", { type: "checkbox" }) : null;
@@ -58,7 +59,7 @@ export function ask({ title, lines = [], ok = "계속", ack = null }) {
     if (box) box.addEventListener("change", () => { go.disabled = !box.checked; });
     fill($("confirm-form"), h("h2", { text: title }), ...lines.map((line) => h("p", { class: "small", text: line })),
       ack ? h("label", { class: "check" }, box, ack) : null,
-      h("div", { class: "row" }, go, h("button", { class: "btn ghost", value: "cancel" }, "취소")));
+      h("div", { class: "row" }, go, h("button", { class: "btn ghost", value: "cancel" }, t("dom.cancel"))));
     dialog.returnValue = "";
     dialog.onclose = () => resolve(dialog.returnValue === "go");
     dialog.showModal();
@@ -68,9 +69,10 @@ export function ask({ title, lines = [], ok = "계속", ack = null }) {
 // 시각을 "10/1(수) 01:23"으로(올해가 아니면 연도도). 어느 시점의 일인지 헷갈리지 않게 상대 표현 옆에 붙인다.
 export function stamp(iso) {
   const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
-  const day = "일월화수목금토"[d.getDay()];
-  const year = d.getFullYear() === new Date().getFullYear() ? "" : `${d.getFullYear()}/`;
-  return `${year}${d.getMonth() + 1}/${d.getDate()}(${day}) ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat(locale, {
+    month: "numeric", day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit",
+    ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+  }).format(d);
 }
 
 // "5분 전 · 10/1(수) 01:23"

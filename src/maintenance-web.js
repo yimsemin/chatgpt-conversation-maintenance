@@ -1,6 +1,8 @@
 // /maintenance/* 요청을 처리하는 라우터. 실제 일은 web-*.js 모듈이 한다.
+import { message, localizedError, translate } from "./i18n.js";
 import { resolve } from "node:path";
 
+import { requestLocale } from "./request-language.js";
 import { assert } from "./assert.js";
 import { relayBroker } from "./remote-relay.js";
 import { readTrash } from "./trash.js";
@@ -10,8 +12,6 @@ import { catalogData, proposalData, reportData, sessionData } from "./web-views.
 import { prepareTrashFollowUp, savePastedProposal, writeReviewedDecisions } from "./web-decisions.js";
 import { applyWorkflow, partialScanWorkflow, trashSyncWorkflow, projectListWorkflow, scanWorkflow } from "./web-workflows.js";
 import { validateScope } from "./scan.js";
-
-const RELAY_REQUIRED = "ChatGPT 릴레이가 연결되지 않았습니다 — chatgpt.com에서 북마클릿을 실행하세요";
 
 // ---- 라우트 정의 ----
 // 각 라우트는 (ctx) => 값 을 돌려준다. ctx 에는 앱 폴더(workspace, dataDir)와 요청 본문·쿼리가 있다.
@@ -23,16 +23,17 @@ const post = (path, handler) => ROUTES.set(`POST ${path}`, handler);
 
 // 릴레이 연결을 확인하고 작업을 만들어 백그라운드로 시작한다. 응답은 작업 ID 하나다.
 function startJob(ctx, { kind = "scan", stage = kind, requestDelayMs, run }) {
-  assert(relayBroker.status().connected, RELAY_REQUIRED);
+  assert(relayBroker.status().connected, message("error.relayDown.title"));
   const job = createJob(kind, ctx.workspace, ctx.dataDir);
+  job.locale = ctx.locale;
   const api = relayApi(job, requestDelayMs);
   startAsyncJob(job, stage, () => run(api, job));
   return { status: 202, value: { jobId: job.id } };
 }
 
-get("/maintenance/session", (ctx) => sessionData(ctx.workspace, ctx.dataDir));
-get("/maintenance/proposal", (ctx) => proposalData(ctx.workspace, ctx.dataDir));
-get("/maintenance/report", (ctx) => reportData(ctx.workspace, ctx.dataDir));
+get("/maintenance/session", (ctx) => sessionData(ctx.workspace, ctx.dataDir, ctx.locale));
+get("/maintenance/proposal", (ctx) => proposalData(ctx.workspace, ctx.dataDir, ctx.locale));
+get("/maintenance/report", (ctx) => reportData(ctx.workspace, ctx.dataDir, ctx.locale));
 get("/maintenance/catalog", (ctx) => catalogData(ctx.workspace, ctx.dataDir));
 
 get("/maintenance/trash", (ctx) => {
@@ -65,7 +66,7 @@ post("/maintenance/jobs/clear", (ctx) => {
 });
 post("/maintenance/cancel", (ctx) => {
   const job = jobs.get(ctx.body.jobId);
-  if (!job || job.done) return { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: "진행 중인 작업이 없습니다" } } };
+  if (!job || job.done) return { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: translate(ctx.locale, "error.noActiveJob") } } };
   job.cancelled = true;
   return { cancelling: true };
 });
@@ -92,10 +93,10 @@ post("/maintenance/apply", (ctx) => startJob(ctx, {
     ctx.body.confirmDeletes === true, job),
 }));
 
-function jobStatus(jobId) {
+function jobStatus(jobId, locale) {
   const job = jobs.get(jobId);
   return job ? { value: publicJob(job) }
-    : { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: "작업 상태를 찾을 수 없습니다" } } };
+    : { status: 404, value: { error: { code: "JOB_NOT_FOUND", message: translate(locale, "error.noSuchJob") } } };
 }
 
 export async function handleMaintenanceWebRequest(req, res) {
@@ -103,21 +104,21 @@ export async function handleMaintenanceWebRequest(req, res) {
   if (!url.pathname.startsWith("/maintenance/")) return false;
   try {
     if (req.method === "GET" && url.pathname.startsWith("/maintenance/job/")) {
-      const { status = 200, value } = jobStatus(url.pathname.slice("/maintenance/job/".length));
+      const { status = 200, value } = jobStatus(url.pathname.slice("/maintenance/job/".length), requestLocale(req.headers));
       jsonResponse(res, status, value);
       return true;
     }
     const handler = ROUTES.get(`${req.method} ${url.pathname}`);
     if (!handler) {
-      jsonResponse(res, 404, { error: { code: "NOT_FOUND", message: "지원하지 않는 유지관리 요청입니다" } });
+      jsonResponse(res, 404, { error: { code: "NOT_FOUND", message: translate(requestLocale(req.headers), "error.unknownRoute") } });
       return true;
     }
     const body = req.method === "POST" ? await readRequestJson(req) : {};
-    const ctx = { url, body, ...appFolders() };
+    const ctx = { url, body, locale: requestLocale(req.headers), ...appFolders() };
     // 작업 폴더는 앱 폴더로 고정이다. 다른 폴더를 가리키는 요청은 받지 않는다.
     const asked = req.method === "POST" ? body.workspace : url.searchParams.get("workspace");
     if (asked !== undefined && asked !== null && resolve(String(asked)) !== ctx.workspace) {
-      throw new Error("작업 폴더는 앱 폴더로 고정되어 있어 다른 폴더를 쓸 수 없습니다");
+      throw localizedError(message("error.fixedWorkspace"));
     }
     const result = handler(ctx);
     const { status = 200, value } = result && typeof result === "object" && "value" in result && "status" in result

@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { assert } from "./assert.js";
 import { readJson, writeJsonAtomic, writeTextAtomic } from "./fs-json.js";
 import { attachmentReferenceCount, sha256 } from "./content-hash.js";
-import { CLASSIFICATION_CRITERIA, CLASSIFICATION_PROPOSAL_SCHEMA } from "./classification-criteria.js";
+import { translator, fallbackLocale } from "./i18n.js";
+import { classificationCriteria, CLASSIFICATION_CRITERIA, CLASSIFICATION_PROPOSAL_SCHEMA } from "./classification-criteria.js";
 
 // review.json 절감: 후보 대화 본문은 앞/뒤 발췌만 담는다. 짧은 메시지는 전문,
 // 긴 메시지는 head+tail+chars, 메시지가 많은 대화는 앞뒤 몇 개만 두고 나머지는 개수로.
@@ -188,49 +189,37 @@ export function writeClassificationReview(inventoryPath, outputPath, now = () =>
 
 // Claude 전용 요청문: 규칙·프로젝트 문맥·후보 발췌를 한 덩어리에 담아 저장소
 // 문서 접근 없이도(예: claude.ai) 그대로 붙여넣어 분류할 수 있게 한다.
-export function buildClaudePrompt(review, { inventoryPath = null, proposalPath = null } = {}) {
+export function buildClaudePrompt(review, { inventoryPath = null, proposalPath = null, locale = fallbackLocale } = {}) {
   assert(review?.version === 1 && review.kind === "classification-review",
     "Claude prompt requires a classification review");
-  const digest = review.inventoryDigest;
+  const t = translator(locale);
   const count = review.counts?.candidates ?? review.conversations.length;
-  const criteria = Array.isArray(review.criteria) && review.criteria.length
-    ? review.criteria
-    : CLASSIFICATION_CRITERIA;
+  const template = CLASSIFICATION_PROPOSAL_SCHEMA;
+  const example = {
+    ...template,
+    inventoryDigest: review.inventoryDigest,
+    scope: { candidateCount: count },
+    items: [{
+      ...template.items[0],
+      conversationId: t("prompt.schemaId"), currentTitle: t("prompt.schemaTitle"),
+      suggestedNewTitle: t("prompt.schemaNewTitle"), suggestedProjectName: t("prompt.schemaTarget"),
+      rationale: t("prompt.schemaRationale"), projectRationale: t("prompt.schemaProjectRationale"),
+    }],
+  };
+  const criteria = locale === fallbackLocale && Array.isArray(review.criteria) && review.criteria.length
+    ? [...new Set([...review.criteria, t("criteria.language")])]
+    : classificationCriteria(locale);
   return [
-    "이 요청은 ChatGPT 대화 유지관리의 '분류' 단계다. 아래 후보를 분류만 하고,",
-    "승인 파일·실행 계획·실제 제목 변경·삭제·프로젝트 배치는 만들지도 실행하지도 않는다.",
-    "판단에 필요한 기준은 이 메시지에 모두 있으니 저장소 문서를 따로 읽지 않아도 된다.",
-    "",
-    "## 판단 기준",
-    ...criteria.map((line) => `- ${line}`),
-    "",
-    "## 프로젝트 문맥",
-    "sampleTitles가 있는 항목은 후보와 관련된 프로젝트, 나머지는 이름·대화 수만 제공된다.",
-    "```json",
-    JSON.stringify(review.projects ?? [], null, 2),
-    "```",
-    "",
-    `## 후보 대화 ${count}개`,
-    "messages는 발췌다. head·tail·chars가 있으면 중간이 잘린 것이고, omittedMessages는 앞뒤 창 밖으로 생략된 메시지 수다.",
-    "첨부·비텍스트(nonTextPartCount)나 분기 때문에 판단이 불분명하면 undecided로 둔다.",
-    "```json",
-    JSON.stringify(review.conversations ?? [], null, 2),
-    "```",
-    "",
-    "## 출력",
-    `아래 형식의 JSON 하나만 만든다. items는 후보 전체(정확히 ${count}개)이고 conversationId·currentTitle·projectName·reasons는 위 후보 데이터의 값을 그대로 복사한다.`,
-    "```json",
-    JSON.stringify(CLASSIFICATION_PROPOSAL_SCHEMA, null, 2),
-    "```",
-    `- inventoryDigest: "${digest}"`,
-    `- scope.candidateCount: ${count}`,
-    "- keep/undecided: suggestedNewTitle(null 가능), suggestedProjectAction 필수. 프로젝트를 정하면 suggestedProjectName·projectRationale 필수, 프로젝트 없음이면 suggestedProjectName null(현재 프로젝트 없음 → none, 있음 → manual-remove).",
-    "- delete: suggestedProjectName·projectRationale 생략, suggestedProjectAction \"none\". 현재 제목이 표준 형식이 아니면 suggestedNewTitle에 표준 제목을 반드시 넣는다(삭제후보도 표준 제목이 원칙), 표준이면 null.",
-    "",
-    "결과 JSON 전문을 답변에 그대로 붙여 유지관리 앱의 '분류 결과 JSON 붙여넣기'에 넣을 수 있게 한다.",
-    ...(inventoryPath && proposalPath
-      ? [`파일 접근이 가능하면 ${proposalPath} 로 저장하고 \`node src/workflow.js validate-proposal "${inventoryPath}" "${proposalPath}"\` 로 검증한다. 검증 경고(제목 길이 등)가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증한 뒤 제시한다.`]
-      : ["파일 접근이 가능하면 proposal.json으로 저장하고 `node src/workflow.js validate-proposal <inventory.json> <proposal.json>` 로 검증한다. 검증 경고(제목 길이 등)가 나오면 사용자에게 알리지 말고 직접 고쳐 경고 없이 다시 검증한 뒤 제시한다."]),
+    t("prompt.standaloneIntro"), "",
+    `## ${t("prompt.criteria")}`, ...criteria.map((line) => `- ${line}`), "",
+    `## ${t("prompt.projectContext")}`, t("prompt.samples"),
+    "```json", JSON.stringify(review.projects ?? [], null, 2), "```", "",
+    `## ${t("prompt.candidates", { count })}`, t("prompt.excerpts"),
+    "```json", JSON.stringify(review.conversations ?? [], null, 2), "```", "",
+    `## ${t("prompt.output")}`, t("prompt.outputFormat", { count }),
+    "```json", JSON.stringify(example, null, 2), "```", "",
+    t("prompt.validateFile", { inventory: inventoryPath || "inventory.json", proposal: proposalPath || "proposal.json" }),
+    t("prompt.paste"),
   ].join("\n");
 }
 
