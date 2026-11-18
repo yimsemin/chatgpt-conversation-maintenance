@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { withTemp } from "./support/tmp.js";
@@ -10,6 +10,7 @@ import { CLASSIFICATION_CRITERIA } from "../src/classification-criteria.js";
 import { compileProjectRouting, compileReviewedDecisions } from "../src/decision-compile.js";
 import { validateClassificationProposals } from "../src/proposal-validation.js";
 import { buildInventory } from "./support/export-inventory.js";
+import { fakeConversationId } from "./support/fake-chatgpt.js";
 import { managementManifestDigest } from "../src/management.js";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
@@ -261,22 +262,49 @@ function validateProposal(root, source, item, { projects = [], catalogConversati
   return validateClassificationProposals(inventory.path, proposalPath);
 }
 
-test("reviewed decisions compile to small, source-bound management manifests", () => withFixture((root) => {
-  const inventory = writeInventory(root, buildInventory(root));
+test("reviewed changes split into source-bound batches of at most 25 in oldest-first order", () => withFixture((root) => {
+  const base = buildInventory(root);
+  const withoutTimestamp = { ...base.conversations.find((item) => item.conversationId === ID2), updateTime: null };
+  const oldest = { ...base.conversations.find((item) => item.conversationId === ID1), updateTime: "1970-01-01T00:00:02Z" };
+  const extra = Array.from({ length: 24 }, (_, index) => {
+    const conversationId = fakeConversationId(index + 3);
+    const title = `대화 ${index + 3}`;
+    const backupFile = join(root, `conversation-${index + 3}.json`);
+    writeConversation(backupFile, conversationId, title);
+    return { conversationId, title, backupFile, backupSha256: sha(backupFile), updateTime: Math.max(5, index + 4) };
+  });
+  // 시각이 없으면 맨 앞, 시각이 같은 첫 두 추가 대화는 ID 순서다. 입력은 이 순서의 역순으로 넣는다.
+  const ordered = [withoutTimestamp, oldest, ...extra];
+  const inventory = writeInventory(root, { ...base, conversations: [...ordered].reverse() });
   const decisionsPath = writeDecisions(root, inventory.digest, [
+    ...[...extra].reverse().map(({ conversationId, title }) =>
+      ({ conversationId, decision: "keep", newTitle: `${title} — 정리`, reviewed: true })),
     { conversationId: ID1, decision: "keep", trashed: true, newTitle: "삭제후보 — 표준 제목", reviewed: true },
     { conversationId: ID2, decision: "delete", reviewed: true, rationale: "cleanup" },
   ]);
-  const result = compileReviewedDecisions(inventory.path, decisionsPath, join(root, "plans"));
-  assert.equal(result.manifests.length, 1);
+  const output = join(root, "plans");
+  const approvedInventory = readFileSync(inventory.path, "utf8");
+  const changedInventory = JSON.parse(approvedInventory);
+  changedInventory.conversations[0].title = "승인 뒤 바뀐 제목";
+  writeFileSync(inventory.path, JSON.stringify(changedInventory));
+  assert.throws(() => compileReviewedDecisions(inventory.path, decisionsPath, output), /do not match the inventory digest/);
+  assert.equal(existsSync(output), false, "an inventory change must block plan creation");
+  writeFileSync(inventory.path, approvedInventory);
+
+  const result = compileReviewedDecisions(inventory.path, decisionsPath, output);
   assert.equal(result.skippedKeep, 0);
-  const manifest = JSON.parse(readFileSync(result.manifests[0].path, "utf8"));
-  // 삭제후보으로 옮기는 ID1은 표준 제목으로 바꾸는 제목 변경이 함께 계획된다.
-  assert.equal(manifest.actions.length, 2);
-  assert.ok(manifest.actions.some((action) => action.conversationId === ID2 && action.decision === "delete"));
-  assert.match(manifest.actions[0].backupSha256, /^[0-9a-f]{64}$/);
-  assert.equal(manifest.source.inventoryDigest, inventory.digest);
-  assert.equal(result.manifests[0].digest, managementManifestDigest(manifest));
+  const manifests = result.manifests.map(({ path, digest }) => {
+    const manifest = JSON.parse(readFileSync(path, "utf8"));
+    assert.deepEqual(manifest.source, { inventoryDigest: inventory.digest, decisionsDigest: sha(decisionsPath) });
+    assert.equal(digest, managementManifestDigest(manifest));
+    return manifest;
+  });
+  assert.deepEqual(manifests.map(({ actions }) => actions.length), [25, 1]);
+  const actions = manifests.flatMap((manifest) => manifest.actions);
+  assert.deepEqual(actions.map((action) => action.conversationId), ordered.map((item) => item.conversationId));
+  assert.equal(actions.find((action) => action.conversationId === ID1).newTitle, "삭제후보 — 표준 제목");
+  assert.equal(actions.find((action) => action.conversationId === ID2).decision, "delete");
+  assert.deepEqual(actions.map((action) => action.backupSha256), ordered.map((item) => item.backupSha256));
 }));
 
 test("moving a conversation already in a project compiles a named-source routing target", () => withFixture((root) => {

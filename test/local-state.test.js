@@ -3,8 +3,9 @@ import test from "node:test";
 import { withTemp } from "./support/tmp.js";
 
 import { projectIdFromLink } from "../src/project-link.js";
-import { readKnownProjects, sortByRecency, writeKnownProjects } from "../src/known-projects.js";
+import { readKnownProjects, writeKnownProjects } from "../src/known-projects.js";
 import { addTrashed, readTrash, removeTrashed } from "../src/trash.js";
+import { fakeProjectId } from "./support/fake-chatgpt.js";
 
 test("trashed conversations are remembered with their reason and can be released", async () => {
   await withTemp("trash-", async (dir) => {
@@ -24,14 +25,22 @@ test("trashed conversations are remembered with their reason and can be released
   });
 });
 
-test("known projects are listed most recently used first and keep the order ChatGPT gave when no time is known", async () => {
-  const sorted = sortByRecency([{ name: "B" }, { name: "A", updatedAt: "2026-09-01T00:00:00Z" }, { name: "C", updatedAt: "2026-09-20T00:00:00Z" }, { name: "D" }]);
-  assert.deepEqual(sorted.map((p) => p.name), ["C", "A", "B", "D"]);
-  await withTemp("known-projects-", async (root) => {
-    writeKnownProjects(root, [{ name: "X", updatedAt: "2026-09-20T00:00:00Z" }, { name: "Y" }]);
-    writeKnownProjects(root, [{ name: "Y", updatedAt: "2026-09-25T00:00:00Z" }, { name: "X" }]);
-    const known = readKnownProjects(root);
-    assert.deepEqual(known.projects, [{ name: "Y", updatedAt: "2026-09-25T00:00:00Z" }, { name: "X", updatedAt: "2026-09-20T00:00:00Z" }]);
+test("refreshing known projects keeps earlier IDs and timestamps and sorts by the latest use", async () => {
+  await withTemp("known-projects-", (root) => {
+    const earlier = { name: "A", id: fakeProjectId(1), updatedAt: "2026-09-20T00:00:00Z" };
+    writeKnownProjects(root, [earlier, { name: "B" }]);
+    writeKnownProjects(root, [
+      { name: "D" },
+      { name: "A" },
+      { name: "B", updatedAt: "2026-09-25T00:00:00Z" },
+      { name: "C" },
+    ]);
+    assert.deepEqual(readKnownProjects(root).projects, [
+      { name: "B", updatedAt: "2026-09-25T00:00:00Z" },
+      earlier,
+      { name: "D" },
+      { name: "C" },
+    ]);
   });
 });
 
@@ -43,12 +52,4 @@ test("a project link yields the project id and anything else yields nothing", ()
   assert.equal(projectIdFromLink("https://chatgpt.com/c/77777777-7777-4777-8777-777777777777"), null);
   assert.equal(projectIdFromLink("g-p-short"), null);
   assert.equal(projectIdFromLink(""), null);
-});
-
-test("the known project list keeps the project id across later writes that do not carry it", async () => {
-  await withTemp("known-projects-id-", async (root) => {
-    writeKnownProjects(root, [{ name: "P", id: `g-p-${"a".repeat(32)}` }]);
-    writeKnownProjects(root, [{ name: "P", updatedAt: "2026-09-20T00:00:00Z" }]);
-    assert.equal(readKnownProjects(root).projects[0].id, `g-p-${"a".repeat(32)}`);
-  });
 });

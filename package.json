@@ -15,7 +15,7 @@
     "dev:fake": "node dev/fake-server.js",
     "brief": "node src/brief.js",
     "lock": "node src/maintenance-lock.js",
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.js\"",
     "repo:check": "node src/repo-check.js",
     "stop": "node src/launcher.js stop",
     "status": "node src/launcher.js status",

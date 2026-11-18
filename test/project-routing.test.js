@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { withTemp } from "./support/tmp.js";
+import { fakeProjectId } from "./support/fake-chatgpt.js";
 
 import {
   prepareProjectRouting,
@@ -16,7 +14,11 @@ const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const IDS = [
   "55555555-5555-4555-8555-555555555501",
   "55555555-5555-4555-8555-555555555502",
+  "55555555-5555-4555-8555-555555555503",
 ];
+const EXISTING = fakeProjectId(1);
+const NEW = fakeProjectId(2);
+const SOURCE = fakeProjectId(3);
 
 function routingFixture(receiptDir) {
   return {
@@ -29,16 +31,15 @@ function routingFixture(receiptDir) {
         project: {
           name: "Existing",
           instructions: "",
-          projectId: `g-p-${"1".repeat(32)}`,
+          projectId: EXISTING,
           createIfMissing: false,
           approved: true,
         },
-        actions: [{
-          conversationId: IDS[0],
-          expectedTitle: "First",
-          expectedSourceProjectId: null,
-          approved: true,
-        }],
+        actions: [
+          { conversationId: IDS[0], expectedTitle: "First", expectedSourceProjectId: null, approved: true },
+          { conversationId: IDS[2], expectedTitle: "Third", expectedSourceProjectId: null, approved: true },
+        ],
+        sourceProjectNames: { [IDS[0]]: "Old bucket" },
       },
       {
         project: {
@@ -64,58 +65,43 @@ test("routing plans bind every target and conversation to one confirmation", asy
     const prepared = prepareProjectRouting(routing);
     assert.equal(prepared.targetCount, 2);
     assert.equal(prepared.createUpTo, 1);
-    assert.equal(prepared.conversationCount, 2);
+    assert.equal(prepared.conversationCount, 3);
     assert.match(prepared.expectedConfirmation,
-      /^APPLY PROJECT ROUTING; CREATE UP TO 1 PROJECTS; MOVE 2 CONVERSATIONS; PLAN [0-9a-f]{12}$/);
+      /^APPLY PROJECT ROUTING; CREATE UP TO 1 PROJECTS; MOVE 3 CONVERSATIONS; PLAN [0-9a-f]{12}$/);
 
     routing.targets[1].actions[0].conversationId = IDS[0];
     assert.throws(() => validateProjectRouting(routing), /more than one routing target/);
   });
 });
 
-test("routing reuses one project catalog and applies existing and new targets", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-routing-apply-test-"));
-  const projects = [{ projectId: `g-p-${"1".repeat(32)}`, projectName: "Existing" }];
-  const conversations = new Map([
-    [IDS[0], { title: "First", gizmoId: null }],
-    [IDS[1], { title: "Second", gizmoId: null }],
-  ]);
-  let listCalls = 0;
-  const api = {
-    listProjectSidebar: async () => {
-      listCalls++;
-      return {
-        ok: true,
-        status: 200,
-        data: { items: projects.map((project) => ({
-          id: project.projectId,
-          display: { name: project.projectName },
-        })) },
-      };
-    },
-    getConversation: async (id) => {
-      const conversation = conversations.get(id);
-      return {
-        ok: true,
-        status: 200,
-        data: {
-          conversation_id: id,
-          title: conversation.title,
-          gizmo_id: conversation.gizmoId,
-          conversation_template_id: conversation.gizmoId,
-        },
-      };
-    },
-    createProject: async ({ name }) => {
-      projects.push({ projectId: `g-p-${"2".repeat(32)}`, projectName: name });
-      return { ok: true, status: 200, data: {} };
-    },
-    moveConversation: async (id, projectId) => {
-      conversations.get(id).gizmoId = projectId;
-      return { ok: true, status: 200, data: { success: true } };
-    },
-  };
-  try {
+test("routing resolves a named source and reuses the catalog when moving to existing and new targets", async () => {
+  await withTemp("chatgpt-routing-apply-test-", async (root) => {
+    const projects = [{ id: EXISTING, display: { name: "Existing" } }, { id: SOURCE, display: { name: "Old bucket" } }];
+    const conversations = new Map([
+      [IDS[0], { conversation_id: IDS[0], title: "First", gizmo_id: SOURCE }],
+      [IDS[1], { conversation_id: IDS[1], title: "Second", gizmo_id: null }],
+      [IDS[2], { conversation_id: IDS[2], title: "Third", gizmo_id: null }],
+    ]);
+    const moves = [];
+    const created = [];
+    let listCalls = 0;
+    const api = {
+      listProjectSidebar: async () => {
+        listCalls++;
+        return { ok: true, status: 200, data: { items: projects } };
+      },
+      getConversation: async (id) => ({ ok: true, status: 200, data: { ...conversations.get(id) } }),
+      createProject: async ({ name }) => {
+        created.push(name);
+        projects.push({ id: NEW, display: { name } });
+        return { ok: true, status: 200, data: {} };
+      },
+      moveConversation: async (id, projectId) => {
+        moves.push([id, projectId]);
+        conversations.get(id).gizmo_id = projectId;
+        return { ok: true, status: 200, data: { success: true } };
+      },
+    };
     const routing = routingFixture(root);
     const result = await runProjectRouting({
       routing,
@@ -125,65 +111,12 @@ test("routing reuses one project catalog and applies existing and new targets", 
     });
     assert.equal(result.ok, true);
     assert.equal(result.completedTargets, 2);
-    assert.equal(conversations.get(IDS[0]).gizmoId, `g-p-${"1".repeat(32)}`);
-    assert.equal(conversations.get(IDS[1]).gizmoId, `g-p-${"2".repeat(32)}`);
+    assert.deepEqual(created, ["New"]);
+    assert.deepEqual(moves.sort(([left], [right]) => left.localeCompare(right)), [
+      [IDS[0], EXISTING], [IDS[1], NEW], [IDS[2], EXISTING],
+    ]);
+    assert.deepEqual(IDS.map((id) => conversations.get(id).gizmo_id), [EXISTING, NEW, EXISTING]);
     assert.equal(listCalls, 2);
-    assert.equal(result.results.every((item) => item.ok), true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("routing resolves a named source project and moves a conversation already in it", async () => {
-  const root = mkdtempSync(join(tmpdir(), "chatgpt-routing-move-test-"));
-  const oldProjectId = `g-p-${"3".repeat(32)}`;
-  const newProjectId = `g-p-${"4".repeat(32)}`;
-  const projects = [
-    { projectId: oldProjectId, projectName: "Old bucket" },
-    { projectId: newProjectId, projectName: "New home" },
-  ];
-  let currentGizmoId = oldProjectId;
-  let moveCalls = 0;
-  const api = {
-    listProjectSidebar: async () => ({
-      ok: true,
-      status: 200,
-      data: { items: projects.map((project) => ({ id: project.projectId, display: { name: project.projectName } })) },
-    }),
-    getConversation: async () => ({
-      ok: true,
-      status: 200,
-      data: { conversation_id: IDS[0], title: "Misfiled", gizmo_id: currentGizmoId },
-    }),
-    createProject: async () => { throw new Error("should not create a project"); },
-    moveConversation: async (id, projectId) => {
-      moveCalls++;
-      currentGizmoId = projectId;
-      return { ok: true, status: 200, data: {} };
-    },
-  };
-  const routing = validateProjectRouting({
-    version: 1,
-    kind: "chatgpt-project-routing",
-    workspace: "business",
-    receiptDir: root,
-    targets: [{
-      project: { name: "New home", instructions: "", projectId: newProjectId, createIfMissing: false, approved: true },
-      actions: [{ conversationId: IDS[0], expectedTitle: "Misfiled", expectedSourceProjectId: null, approved: true }],
-      sourceProjectNames: { [IDS[0]]: "Old bucket" },
-    }],
+    assert.deepEqual(result.results.map(({ projectName, ok }) => [projectName, ok]), [["Existing", true], ["New", true]]);
   });
-  try {
-    const result = await runProjectRouting({
-      routing,
-      confirmation: projectRoutingConfirmation(routing),
-      accountId: ACCOUNT_ID,
-      api,
-    });
-    assert.equal(result.ok, true);
-    assert.equal(moveCalls, 1);
-    assert.equal(currentGizmoId, newProjectId);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });

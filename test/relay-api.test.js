@@ -29,18 +29,41 @@ test("getConversation tries can cap the read retries (599 is retried up to that 
 
 test("writes keep the fixed delay but follow the pacer once a 429 raised it; reads follow the pacer alone", async () => {
   const slept = [];
-  let status = 200;
-  const broker = { request: async () => ({ ok: status === 200, status, data: { success: true }, contentType: "application/json" }) };
-  const pacer = createPacer({ min: 300, start: 600, max: 4000 });
-  const api = createRelayApi({ broker, requestDelayMs: 1000, pacer, maxRetries: 0, sleep: async (ms) => { slept.push(ms); } });
+  const requests = [];
+  let clock = 0;
+  let throttle = false;
+  const now = () => clock;
+  const sleep = async (ms) => { slept.push(ms); clock += ms; };
+  const broker = { request: async ({ op }) => {
+    requests.push({ op, at: clock });
+    if (throttle) { throttle = false; return { ok: false, status: 429 }; }
+    return { ok: true, status: 200, data: { success: true }, contentType: "application/json" };
+  } };
+  const pacer = createPacer({ min: 300, start: 600, max: 1600, now });
+  const api = createRelayApi({ broker, requestDelayMs: 1000, pacer, now, sleep });
   await api.moveConversation("11111111-1111-4111-8111-111111111111", `g-p-${"a".repeat(32)}`);
-  await api.getConversation("11111111-1111-4111-8111-111111111111");
-  assert.deepEqual(slept.map((ms) => Math.round(ms / 10) * 10), [1000, 510], "a write waits at least the fixed delay; a read waits the pacer's delay");
-  slept.length = 0;
-  status = 429;
-  pacer.throttled(); pacer.throttled(); pacer.throttled(); // 600 → … → 4000 상한
-  await api.moveConversation("11111111-1111-4111-8111-111111111111", `g-p-${"a".repeat(32)}`);
-  assert.equal(slept.at(-1), 4000, "after throttling the write delay grows with the pacer");
+  await api.listConversations();
+  assert.equal(slept[0], 1000, "a write waits at least the fixed delay");
+  assert.ok(slept[1] > 0 && slept[1] < 1000, "a read only waits the pacing delay");
+
+  throttle = true;
+  const start = clock;
+  await api.listConversations();
+  assert.deepEqual(requests.slice(-2), [
+    { op: "listConversations", at: start },
+    { op: "listConversations", at: start + 5000 },
+  ], "a 429 retries the read after backoff");
+
+  throttle = true;
+  const cancelled = new Error("job cancelled during cooldown");
+  const interrupted = createRelayApi({ broker, pacer, now, sleep: async () => { throw cancelled; } });
+  await assert.rejects(() => interrupted.listConversations(), { message: cancelled.message });
+  assert.equal(pacer.current(), 1600, "the pacing delay stays within its cap");
+  const limitedAt = clock;
+  const nextJob = createRelayApi({ broker, requestDelayMs: 1000, pacer, now, sleep });
+  await nextJob.moveConversation("11111111-1111-4111-8111-111111111111", `g-p-${"a".repeat(32)}`);
+  assert.deepEqual(requests.at(-1), { op: "moveConversation", at: limitedAt + 5000 }, "the next job inherits the actual 429 cooldown");
+  assert.ok(slept.at(-1) > 1000, "after throttling pacing can exceed the write delay");
 });
 
 test("a disconnected relay is waited for without using up retries, and the wait is reported once", async () => {

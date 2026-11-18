@@ -1,44 +1,31 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { withTemp } from "./support/tmp.js";
 
 import { DEFAULT_TRASH_PROJECT, configuredDataDir, configuredTrash, lockFilePath, resolveDataDir, runsDir } from "../src/data-dir.js";
 
-function appRootFixture() {
-  return mkdtempSync(join(tmpdir(), "data-dir-"));
-}
-
-test("resolveDataDir defaults to <appRoot>/data and creates it", () => {
-  const root = appRootFixture();
-  try {
+test("the data directory follows the default, config, then explicit override", async () => {
+  await withTemp("data-dir-", (root) => {
     const dataDir = resolveDataDir({ appRoot: root });
     assert.equal(dataDir, join(root, "data"));
+    assert.equal(existsSync(dataDir), true);
     assert.equal(lockFilePath(dataDir), join(root, "data", ".maintenance.lock"));
     assert.equal(runsDir(dataDir), join(root, "data", "runs"));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
-test("an explicit --data-dir value wins over the config file", () => {
-  const root = appRootFixture();
-  const custom = mkdtempSync(join(tmpdir(), "data-dir-custom-"));
-  try {
-    mkdirSync(join(root, ".local"), { recursive: true });
-    writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: join(root, "from-config") }));
-    assert.equal(configuredDataDir(root), join(root, "from-config"));
+    const configured = join(root, "from-config");
+    const custom = join(root, "explicit");
+    mkdirSync(join(root, ".local"));
+    writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ dataDir: configured }));
+    assert.equal(configuredDataDir(root), configured);
+    assert.equal(resolveDataDir({ appRoot: root }), configured);
     assert.equal(resolveDataDir({ dataDir: custom, appRoot: root }), custom);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(custom, { recursive: true, force: true });
-  }
+  });
 });
 
-test("the trash project defaults to an automatic project and can be fixed by name or turned off", () => {
-  const root = appRootFixture();
-  try {
+test("the trash project defaults to an automatic project and can be fixed by name or turned off", async () => {
+  await withTemp("data-dir-", (root) => {
     assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
     mkdirSync(join(root, ".local"));
     const write = (trash) => writeFileSync(join(root, ".local", "config.json"), JSON.stringify({ trash }));
@@ -55,7 +42,5 @@ test("the trash project defaults to an automatic project and can be fixed by nam
     }
     write({ mode: "bogus" });
     assert.deepEqual(configuredTrash(root), { mode: "auto", name: DEFAULT_TRASH_PROJECT });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });

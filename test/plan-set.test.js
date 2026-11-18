@@ -16,6 +16,7 @@ const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
 const IDS = [
   "55555555-5555-4555-8555-555555555501",
   "55555555-5555-4555-8555-555555555502",
+  "55555555-5555-4555-8555-555555555503",
 ];
 const SOURCE = {
   inventoryDigest: "a".repeat(64),
@@ -41,11 +42,11 @@ function planSetFixture() {
     return {
       conversationId,
       expectedTitle: title,
-      decision: index === 0 ? "keep" : "delete",
+      decision: index === 1 ? "delete" : "keep",
       approved: true,
       backupFile,
       backupSha256: createHash("sha256").update(backup).digest("hex"),
-      ...(index === 0 ? { newTitle: "Renamed conversation" } : {}),
+      ...(index !== 1 ? { newTitle: `Renamed conversation ${index + 1}` } : {}),
     };
   });
   const manifests = actions.map((action) => ({
@@ -74,56 +75,49 @@ function planSetFixture() {
     }],
   };
   writeFileSync(join(receiptDir, "completed.json"), JSON.stringify(completedReceipt));
-  return { root, plansDir, receiptDir, manifests };
+  return { root, plansDir, actions };
 }
 
-test("plan-set status skips actions already proven successful by receipts", () => {
-  const fixture = planSetFixture();
-  try {
-    const planSet = loadPlanSet(fixture.plansDir);
-    assert.equal(planSet.summary.plans, 2);
-    assert.equal(planSet.summary.completedPlans, 1);
-    assert.equal(planSet.summary.remainingActions, 1);
-    assert.equal(planSet.summary.remainingDeletes, 1);
-    assert.equal(planSet.summary.remainingRenames, 0);
-    assert.match(planSet.summary.expectedConfirmation,
-      /^APPLY 1 BATCHES; 1 ACTIONS; DELETE 1 CONVERSATIONS; SET [0-9a-f]{12}$/);
-  } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("apply runs pending batches serially and a new receipt makes the plan set complete", async () => {
-  const fixture = planSetFixture();
-  let visible = true;
+test("receipts skip a completed batch and pending batches are applied and verified in order", async () => {
+  const { root, plansDir, actions } = planSetFixture();
+  const operations = [];
+  const remote = new Map(actions.slice(1).map(({ conversationId, expectedTitle }) =>
+    [conversationId, { conversation_id: conversationId, title: expectedTitle, is_visible: true }]));
   const api = {
-    getConversation: async (id) => ({
-      ok: true,
-      status: 200,
-      data: {
-        conversation_id: id,
-        title: fixture.manifests[1].actions[0].expectedTitle,
-        is_visible: visible,
-      },
-    }),
-    patchConversation: async (_id, body) => {
-      if (body.is_visible === false) visible = false;
+    async getConversation(id) {
+      operations.push(["read", id]);
+      return { ok: true, status: 200, data: { ...remote.get(id) } };
+    },
+    async patchConversation(id, body) {
+      operations.push(["write", id]);
+      Object.assign(remote.get(id), body);
       return { success: true };
     },
   };
   try {
-    const prepared = preparePlanSet(fixture.plansDir);
+    const { summary } = preparePlanSet(plansDir);
+    assert.equal(summary.plans, 3);
+    assert.equal(summary.completedPlans, 1);
+    assert.equal(summary.remainingActions, 2);
+    assert.equal(summary.remainingDeletes, 1);
+    assert.equal(summary.remainingRenames, 1);
+    assert.match(summary.expectedConfirmation,
+      /^APPLY 2 BATCHES; 2 ACTIONS; DELETE 1 CONVERSATIONS; SET [0-9a-f]{12}$/);
     const result = await applyPlanSet({
-      plansDir: fixture.plansDir,
-      confirmation: prepared.summary.expectedConfirmation,
+      plansDir,
+      confirmation: summary.expectedConfirmation,
       accountId: ACCOUNT_ID,
       api,
     });
     assert.equal(result.ok, true);
-    assert.equal(result.appliedBatches, 1);
-    assert.equal(result.summary.remainingActions, 0);
-    assert.equal(result.summary.completedActions, 2);
+    assert.equal(result.appliedBatches, 2);
+    assert.deepEqual(operations, IDS.slice(1).flatMap((id) => [["read", id], ["write", id], ["read", id]]));
+    assert.equal(remote.get(IDS[1]).is_visible, false);
+    assert.equal(remote.get(IDS[2]).title, actions[2].newTitle);
+    const reloaded = loadPlanSet(plansDir).summary;
+    assert.equal(reloaded.remainingActions, 0);
+    assert.equal(reloaded.completedActions, 3);
   } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,26 +10,20 @@ import { buildReviewedDecisions, buildReviewedDecisionsFromInputs } from "../src
 import { jobEvent } from "../src/web-jobs.js";
 import { planReuseDecision, resumableRunDir } from "../src/web-workflows.js";
 
-function inventoryFixture(overrides = {}) {
-  const root = mkdtempSync(join(tmpdir(), "maintenance-web-inv-"));
+function inventoryFixture(root, warnings = []) {
   const inventoryPath = join(root, "inventory.json");
-  writeFileSync(inventoryPath, JSON.stringify({
+  const inventory = {
     version: 1,
     kind: "conversation-maintenance-inventory",
-    warnings: [],
+    warnings,
     projects: [{ projectName: "조사" }],
     conversations: [
       { conversationId: "c-new", title: "임시 제목", projectName: null },
       { conversationId: "c-proj", title: "기존 — 제목", projectName: "조사" },
     ],
-    ...overrides,
-  }));
-  return {
-    root,
-    inventoryPath,
-    pointer: { runDir: root, inventoryPath },
-    inventory: JSON.parse(readFileSync(inventoryPath, "utf8")),
   };
+  writeFileSync(inventoryPath, JSON.stringify(inventory));
+  return { pointer: { runDir: root, inventoryPath }, inventory };
 }
 
 test("approved proposals become complete reviewed decisions without extra fields", () => {
@@ -85,10 +79,11 @@ test("jobEvent updates a retry notice in place instead of piling up", () => {
   assert.equal(job.events[2].stage, "ready");
 });
 
-test("GUI decisions validate against every maintenance candidate", () => {
-  const { root, pointer, inventory } = inventoryFixture();
-  try {
-    const result = buildReviewedDecisionsFromInputs(pointer, inventory, [
+test("GUI decisions cover every candidate and validate titles, deletions, and project changes", async () => {
+  await withTemp("maintenance-web-inv-", (root) => {
+    const { pointer, inventory } = inventoryFixture(root);
+    const review = (decisions) => buildReviewedDecisionsFromInputs(pointer, inventory, decisions);
+    const result = review([
       { conversationId: "c-new", decision: "keep", newTitle: "새 주제 — 정리 결과", projectName: "신규 조사" },
       { conversationId: "c-proj", decision: "delete" },
     ]);
@@ -99,59 +94,47 @@ test("GUI decisions validate against every maintenance candidate", () => {
       conversationId: "c-new", decision: "keep", newTitle: "새 주제 — 정리 결과", projectName: "신규 조사", reviewed: true,
     });
     assert.deepEqual(result.decisions[1], { conversationId: "c-proj", decision: "delete", reviewed: true });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("GUI decisions reject partial coverage and bad titles (unless the rename was unchecked), and allow cross-project moves", () => {
-  const { root, pointer, inventory } = inventoryFixture();
-  try {
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    assert.throws(() => review([
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "조사" },
     ]), /하나의 결정/);
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    assert.throws(() => review([
       { conversationId: "c-new", decision: "keep", newTitle: "형식없는제목", projectName: "조사" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /주제 — 작업\/결과/);
-    const moved = buildReviewedDecisionsFromInputs(pointer, inventory, [
+    const moved = review([
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "조사" },
       { conversationId: "c-proj", decision: "keep", projectName: "다른 프로젝트" },
     ]);
     assert.equal(moved.decisions[1].projectName, "다른 프로젝트");
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    assert.throws(() => review([
       { conversationId: "c-new", decision: "delete", newTitle: "주제 — 결과" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /제목은 바꿀 수 없습니다/);
-    const kept = buildReviewedDecisionsFromInputs(pointer, inventory, [
+    const kept = review([
       { conversationId: "c-new", decision: "keep", newTitle: "임시 제목", keepTitle: true, projectName: "" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]);
     assert.equal(kept.decisions[0].keepTitle, true);
     assert.equal(kept.decisions[0].newTitle, undefined);
-    assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
+    assert.throws(() => review([
       { conversationId: "c-new", decision: "keep", projectName: "" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]), /주제 — 작업\/결과/);
-    const projectless = buildReviewedDecisionsFromInputs(pointer, inventory, [
+    const projectless = review([
       { conversationId: "c-new", decision: "keep", newTitle: "주제 — 결과", projectName: "" },
       { conversationId: "c-proj", decision: "keep", projectName: "조사" },
     ]);
     assert.equal(projectless.decisions[0].projectName, null);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
-test("GUI decisions refuse an inventory that still carries warnings", () => {
-  const { root, pointer, inventory } = inventoryFixture({ warnings: ["불완전한 내보내기"] });
-  try {
+test("GUI decisions refuse an inventory that still carries warnings", async () => {
+  await withTemp("maintenance-web-inv-", (root) => {
+    const { pointer, inventory } = inventoryFixture(root, ["불완전한 내보내기"]);
     assert.throws(() => buildReviewedDecisionsFromInputs(pointer, inventory, [
       { conversationId: "c-new", decision: "delete" },
     ]), /경고가 있어/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("copyable diagnostics redact tokens and the private workspace path", () => {

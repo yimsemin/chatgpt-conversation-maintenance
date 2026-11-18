@@ -10,18 +10,14 @@ const DOCS = ["README.md", "AGENTS.md",
   ...readdirSync(join(ROOT, "docs")).map((name) => `docs/${name}`), ...readdirSync(join(ROOT, "templates")).map((name) => `templates/${name}`)]
   .filter((file) => file.endsWith(".md"));
 
-test("relative links in the documents point to existing files", () => {
+test("relative links and file references in the documents point to existing files", () => {
   for (const file of DOCS) {
-    for (const match of readFileSync(join(ROOT, file), "utf8").matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
+    const source = readFileSync(join(ROOT, file), "utf8");
+    for (const match of source.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
       if (/^[a-z]+:/.test(match[1])) continue;
       assert.ok(existsSync(normalize(join(ROOT, dirname(file), match[1]))), `${file} links to missing ${match[1]}`);
     }
-  }
-});
-
-test("source, screen and test files named in the documents exist", () => {
-  for (const file of DOCS) {
-    for (const match of readFileSync(join(ROOT, file), "utf8").matchAll(/`((?:src|public\/assets|test|dev)\/[A-Za-z0-9_./-]+\.(?:js|html))`/g)) {
+    for (const match of source.matchAll(/`((?:src|public\/assets|test|dev)\/[A-Za-z0-9_./-]+\.(?:js|html))`/g)) {
       assert.ok(existsSync(join(ROOT, match[1])), `${file} names missing ${match[1]}`);
     }
   }

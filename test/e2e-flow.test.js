@@ -42,7 +42,7 @@ async function startDev(port, extraArgs = [], env = {}) {
     }
     throw new Error("job timed out");
   };
-  return { child, call, get, waitJob, stop: async () => { child.kill("SIGTERM"); await once(child, "exit").catch(() => {}); } };
+  return { base, call, get, waitJob, stop: async () => { child.kill("SIGTERM"); await once(child, "exit").catch(() => {}); } };
 }
 
 // 서버를 띄워 fn(dev)에 주고, 끝나면(실패해도) 끈다.
@@ -66,12 +66,13 @@ const isStandard = (title) => { const parts = String(title).split(" — "); retu
 
 // 시험마다 서버와 포트가 따로라 서로 닿지 않는다. 나란히 돌려 전체 시간을 가장 느린 시험 하나로 줄인다.
 describe("end to end against the fake ChatGPT", { concurrency: true }, () => {
-test("scan, review and apply run end to end against the fake ChatGPT", async () => {
-  await withDev(18601, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
+test("unassigned conversations can be reviewed and applied through an automatic 429 recovery", async () => {
+  await withDev(18601, ["--inject=patchConversation:429:12"], {
+    MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10",
+  }, async (dev) => {
     let session = await dev.get("/maintenance/session");
     assert.equal(session.relay.connected, true);
     assert.equal(session.step, "scan");
-    assert.equal("baseline" in session, false, "there is no baseline concept any more");
 
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
@@ -82,11 +83,13 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
 
     const proposal = await dev.get("/maintenance/proposal");
     assert.equal(proposal.ready, true);
-    const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 90000);
+    const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 180000);
     assert.equal(applied.ok, true, JSON.stringify(applied.error));
+    assert.ok(applied.events.some(({ stage, message }) => stage === "rate-limit" && message.includes("자동으로 이어서 진행합니다")),
+      "the apply job must reach workflow recovery after request retries are exhausted");
 
     // 요청이 다른 작업 폴더를 가리킬 수 없다.
-    const base = "http://127.0.0.1:18601";
+    const { base } = dev;
     assert.equal((await fetch(`${base}/maintenance/session?workspace=/tmp`)).status, 400);
     assert.equal((await fetch(`${base}/maintenance/scan`, { method: "POST", headers: { "Content-Type": "application/json", Origin: base },
       body: JSON.stringify({ ...UNASSIGNED, workspace: "/tmp" }) })).status, 400);
@@ -107,43 +110,25 @@ test("scan, review and apply run end to end against the fake ChatGPT", async () 
     const cleared = await dev.call("/maintenance/jobs/clear", {});
     assert.ok(cleared.removed >= 2);
     assert.deepEqual((await dev.get("/maintenance/jobs")).recent, []);
-    assert.equal((await dev.get("/maintenance/session")).step, "result", "the finished run is untouched");
-
-    // 적용한 범위를 다시 읽으면 남은 대화는 정리를 마친 것(표준 제목)뿐이다.
-    const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
-    assert.equal(again.ok, true, JSON.stringify(again.error));
+    assert.deepEqual((await dev.get("/maintenance/report")).report, report, "clearing jobs preserves the report");
   });
 });
 
-test("a project scope scans only that project and applies without a baseline", async () => {
+test("the project picker and scoped scan expose the selected project and its exact candidate count", async () => {
   await withDev(18608, [], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const listed = await dev.waitJob((await dev.call("/maintenance/projects", {})).jobId);
     assert.equal(listed.ok, true, JSON.stringify(listed.error));
-    const name = (await dev.get("/maintenance/session")).knownProjects.projects[0].name;
+    const name = "업무 프로젝트";
+    assert.ok((await dev.get("/maintenance/session")).knownProjects.projects.some((project) => project.name === name));
     const project = await dev.waitJob((await dev.call("/maintenance/scan", { scope: { kind: "project", projectNames: [name] } })).jobId);
     assert.equal(project.ok, true, JSON.stringify(project.error));
-    assert.ok(project.events.some((event) => /프로젝트 「/.test(event.message)));
     const session = await untilProposal(dev);
-    assert.ok(session.run.candidates > 0 && session.run.candidates < 14 + 60);
-    const applied = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 90000);
-    assert.equal(applied.ok, true, JSON.stringify(applied.error));
-    const report = (await dev.get("/maintenance/report")).report;
-    assert.deepEqual(report.mismatches, []);
-    // 읽지 않은 프로젝트의 대화 수를 지어내지 않는다.
-    assert.ok(report.projects.some((item) => item.before === null || item.actualAfter === null) || report.projects.every((item) => item.before !== null));
-  });
-});
-
-test("a burst of 429 during apply is waited out and the run still finishes on its own", async () => {
-  await withDev(18602, ["--inject=patchConversation:429:12"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0", MAINTENANCE_RELAY_BACKOFF_MS: "10" }, async (dev) => {
-    const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId);
-    assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
-    await untilProposal(dev);
-    const apply = await dev.call("/maintenance/apply", { confirmDeletes: true });
-    const applied = await dev.waitJob(apply.jobId, 180000);
-    assert.equal(applied.ok, true, JSON.stringify(applied.error));
-    assert.ok(applied.events.some((event) => event.stage === "rate-limit" || event.stage === "retry"),
-      "the 429 wait should be visible in the log");
+    assert.equal(session.run.candidates, 11);
+    const catalog = await dev.get("/maintenance/catalog");
+    assert.equal(catalog.conversations.length, 11);
+    assert.ok(catalog.conversations.every((item) => item.projectName === name));
+    const knownCounts = catalog.projects.filter((item) => item.conversationCount !== null);
+    assert.deepEqual(knownCounts, [{ projectName: name, conversationCount: 11 }]);
   });
 });
 
@@ -151,6 +136,8 @@ test("a relay window that is replaced mid-scan is recovered from automatically",
   await withDev(18606, ["--drop-relay-after=5"], { MAINTENANCE_RESUME_WAIT_SECONDS: "1", MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const scanned = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId, 120000);
     assert.equal(scanned.ok, true, JSON.stringify(scanned.error));
+    assert.ok(scanned.events.some(({ stage }) => stage === "retry" || stage === "relay-down"),
+      "the scan must encounter a connection interruption before completing");
     await untilProposal(dev);
   });
 });
@@ -158,10 +145,11 @@ test("a relay window that is replaced mid-scan is recovered from automatically",
 test("a second job is refused while one runs, and a cancelled scan can be started again", async () => {
   await withDev(18607, ["--slow"], { MAINTENANCE_REQUEST_DELAY_MS: "0" }, async (dev) => {
     const first = await dev.call("/maintenance/scan", UNASSIGNED);
-    await assert.rejects(() => dev.call("/maintenance/scan", UNASSIGNED));
+    await assert.rejects(() => dev.call("/maintenance/scan", UNASSIGNED), /이미 다른 작업이 진행 중/);
     await dev.call("/maintenance/cancel", { jobId: first.jobId });
     const cancelled = await dev.waitJob(first.jobId, 60000);
     assert.equal(cancelled.ok, false);
+    assert.equal(cancelled.cancelled, true);
     const again = await dev.waitJob((await dev.call("/maintenance/scan", UNASSIGNED)).jobId, 120000);
     assert.equal(again.ok, true, JSON.stringify(again.error));
   });
@@ -209,6 +197,10 @@ test("delete candidates move to the trash project with standard titles and are l
     assert.equal(prepared.deletes, 1);
     session = await dev.get("/maintenance/session");
     assert.equal(session.step, "apply");
+    const unconfirmed = await dev.waitJob((await dev.call("/maintenance/apply", {})).jobId);
+    assert.equal(unconfirmed.ok, false);
+    assert.match(unconfirmed.error.message, /별도 확인이 필요합니다/);
+    assert.deepEqual(await dev.get("/maintenance/trash"), listing);
     const second = await dev.waitJob((await dev.call("/maintenance/apply", { confirmDeletes: true })).jobId, 90000);
     assert.equal(second.ok, true, JSON.stringify(second.error));
     session = await dev.get("/maintenance/session");
