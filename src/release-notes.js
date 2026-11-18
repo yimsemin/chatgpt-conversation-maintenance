@@ -1,4 +1,4 @@
-// CHANGELOG.md 검증·릴리스 승격·릴리스 노트 출력. 작성 기준은 docs/RELEASE_NOTES.md, 절차는 docs/GIT.md.
+// CHANGELOG.md 검증·릴리스 승격·릴리스 노트 출력. 작성 기준과 절차는 docs/GIT.md.
 //
 //   node src/release-notes.js check                       형식과 버전 일치 검사
 //   node src/release-notes.js release <X.Y.Z> [--date D]  [Unreleased]를 릴리스로 승격하고 package.json 버전을 올림

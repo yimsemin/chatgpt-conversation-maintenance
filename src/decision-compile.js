@@ -68,7 +68,7 @@ export function reviewedPairs(inventory, decisionsFile) {
   return pairs;
 }
 
-// 제목 변경은 그 대화의 수정 시각을 변경 시각으로 올려 목록 순서를 바꾼다(2026-09-26 실측, docs/GOALS.md).
+// 제목 변경은 그 대화의 수정 시각을 변경 시각으로 올려 목록 순서를 바꾼다(2026-09-26 실측, docs/API_COMPATIBILITY.md).
 // 오래된 대화부터 바꾸면 바꾼 대화끼리는 원래의 상대 순서가 유지되므로 계획을 수정 시각 오름차순으로 만든다.
 // 수정 시각을 모르는 대화는 가장 앞에 두고, 같은 시각이면 대화 ID 순이라 계획이 항상 같다.
 export function orderOldestFirst(actions, inventoryById) {

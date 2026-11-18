@@ -1,131 +1,56 @@
-# ChatGPT 대화 유지관리
+# ChatGPT 대화 정리
 
-**English summary.** A personal tool that tidies your logged-in ChatGPT conversations: it normalizes titles, files conversations into projects, and moves low-value ones to a trash-candidate project. Every change is reviewed and approved by you in a local web UI; AI classification only happens in your own agent chat, never in this code. It drives ChatGPT's undocumented web API through a bookmarklet, so it may break at any time and is not affiliated with or endorsed by OpenAI. Requires Node.js 24+. Documentation is in Korean.
+**English summary.** Organize your ChatGPT conversations with help from an AI agent. Standardize titles, group related chats into projects, and set aside candidates for deletion. Review and approve changes in a local web dashboard.
 
-**Disclaimer.** This software is provided "AS IS", without warranty of any kind, express or implied. Use it at your own risk: the authors are not liable for any claim, damages (including data loss or account restrictions) or other liability arising from its use. See [LICENSE](LICENSE).
+**Disclaimer.** This unofficial tool uses ChatGPT’s undocumented web API. It is provided “as is,” without warranty. Use it at your own risk. [MIT License](LICENSE)
 
-> **처음이신가요?** 설치부터 첫 정리까지 단계별로 → [시작하기 가이드](docs/GETTING_STARTED.md)
->
-> **에이전트에게 설치를 맡기려면** → 같은 가이드의 [13절](docs/GETTING_STARTED.md#13-에이전트에게-설치운영을-맡길-때)
+## 소개
 
-## 이 도구는 무엇인가
+AI의 도움을 받아 쌓여 있는 ChatGPT 대화의 제목을 정리하고, 관련 대화를 프로젝트로 묶고, 다시 참고할 일이 적은 대화를 골라낼 수 있습니다. 에이전트가 정리안을 만들면 사용자가 웹 대시보드에서 검토하고 적용합니다.
 
-ChatGPT를 오래 쓰면 대화가 수백 개 쌓인다. 일회성 질문이나 잡담이 다른 대화의 답변에 예시처럼 섞이기도 하고, 프로젝트에 넣지 않은 대화가 흩어져 있기도 하다. 이 도구는 **로그인한 내 ChatGPT 대화를 프로젝트별로 정돈하고, 제목을 표준 형식으로 맞추고, 재사용 가치가 없는 대화를 가려내는 개인용 정리 도구**다.
+## 기능
 
-- 프로젝트에 넣지 않은 대화를 알맞은 프로젝트로 옮긴다. 맞는 프로젝트가 없으면 프로젝트 없음이 정상이다.
-- 재사용 가치가 없는 대화는 바로 지우지 않고 **삭제후보 프로젝트**로 옮긴다. 실제 삭제는 사용자가 삭제후보 확인 화면에서 대화마다 확정한다.
-- 제목을 `핵심 주제 — 실제 작업 또는 결과` 형식으로 통일한다. 목록을 탐색할 때 무슨 대화인지 알아보기 위해서다.
-
-왜 이렇게 정리하는지(원본·프로젝트·대화 기록의 역할)는 [docs/GOALS.md](docs/GOALS.md)에 있다. 공식 제품이 아니며 ChatGPT 웹 앱의 비공식 내부 API를 쓴다(아래 "중요한 전제").
-
-## 핵심 원칙
-
-1. **모든 변경은 사용자가 화면에서 승인한다.** 자동으로 옮기거나 지우지 않는다.
-2. **AI는 제안만 한다.** 분류 제안은 코딩 에이전트(Claude Code, Codex 등)와의 대화창에서 만든다. 코드가 AI를 호출하지 않는다.
-3. **삭제는 기본이 아니다.** 삭제후보는 삭제후보 프로젝트로 옮긴다. 영구 삭제는 고급 옵션이다.
-4. **범위를 골라 조사한다.** 매번 전체를 조사하지 않는다.
-5. **한 컴퓨터에서만 정리한다.** 로그인 세션은 ChatGPT 페이지 밖으로 나가지 않고, 대화 원문은 이 컴퓨터의 데이터 폴더에만 있다.
-
-## 사용 흐름
-
-화면은 **수집 → 제안 → 검토 → 적용 → 결과** 다섯 단계이며 맨 위가 지금 할 일과 진행 상태를 알려 준다. 화면을 닫아도 작업은 서버에서 계속되고 다시 열면 복원된다(`data/jobs/`).
-
-1. **수집** — 수집 범위를 고르고 누른다. 그 범위의 대화가 모두 후보가 된다. ChatGPT는 읽기만 한다. 범위는 프로젝트에 넣지 않은 대화(기본) · 특정 프로젝트 · 최근 며칠 · 아직 정돈되지 않은 대화 · 모든 대화이며, 언제 무엇을 쓰는지는 [docs/GOALS.md](docs/GOALS.md)의 "조사 방식 결정"에 있다.
-2. **제안** — 화면이 알려 주는 한 문장을 이 저장소를 연 AI 에이전트에게 전달하면 `proposal.json`이 만들어진다. 대화마다 보존/삭제, 표준 제목, 알맞은 프로젝트를 제안한다. 일상·가십처럼 업무와 무관한 일회성 대화는 삭제 쪽으로 제안한다. 결과 JSON을 붙여넣어도 된다.
-3. **검토** — "삭제후보로 이동 N · 프로젝트 이동 N · 제목 변경 N" 요약과 프로젝트별 증감을 보고 필요한 것만 고친다.
-4. **적용** — 버튼 한 번. 제목 변경은 오래된 대화부터 하고, 25건 단위로 제목 변경·프로젝트 이동을 하며, 건마다 다시 읽어 검증한다. 429·무응답은 기다렸다가 자동으로 이어 간다. 진행 화면은 대화마다 한 줄(무엇이 어떻게 바뀌었는지)과 전체 진행률을 보여 준다.
-5. **결과** — 바뀐 내용과 **직접 하실 일**(비게 된 프로젝트, 프로젝트에서 직접 빼야 하는 대화, 삭제 표시만 한 대화)을 보여 주고 `runs/<id>/report.md`로 남긴다.
-
-## 삭제후보를 어떻게 다루나
-
-재사용 가치가 없는 대화는 바로 지우지 않고 **삭제후보 프로젝트**로 옮긴다(표준 제목은 그대로 붙인다). 처리 방식은 검토 화면에서 고르고 기본값은 `.local/config.json`의 `trash`로 정한다: 자동(기본 이름 `삭제후보`, 없으면 생성) · 정해 둔 프로젝트 · 이동 없이 표시만. 설정 예는 [시작하기 가이드](docs/GETTING_STARTED.md) 5단계에 있다. **영구 삭제**는 검토 화면의 고급 접힘에서 켠다(되돌릴 수 없음).
-
-옮겨 둔 대화는 첫 화면의 **삭제후보 확인**에서 대화마다 삭제하거나 복원(원래 자리로 이동)한다. 이동 없이 표시만 한 대화는 ChatGPT에서 직접 지운다. ChatGPT에서 직접 지우거나 옮긴 대화는 "ChatGPT에서 다시 확인"으로 목록에서 뺀다.
-
-## 제목 규칙과 목록 순서
-
-- 형식: `핵심 주제 — 실제 작업 또는 결과`(가운데 ` — `는 정확히 한 번). 표준이 아니면 검토 화면에서 적용이 막힌다(제목 변경을 직접 해제한 대화만 예외). 검토 화면의 "바뀌는 대화" 목록에서 대화마다 목적지(삭제후보·프로젝트 없음·각 프로젝트)·새 제목·적용 여부를 한 줄에서 고른다.
-- 제목을 바꾸면 그 대화의 수정 시각이 갱신되어 ChatGPT 목록에서 위로 올라오고 프로젝트 이동은 그렇지 않다([API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) 실측). 그래서 여러 건을 바꿀 때는 **오래된 대화부터** 한 번에 하나씩 처리해 바꾼 대화끼리의 원래 순서를 유지하고, 결과 화면이 그 순서를 확인해 알려 준다. 바꾼 대화가 바꾸지 않은 대화보다 위로 올라오는 것은 피할 수 없다.
+- **제목 변경** — 대화 제목을 `핵심 주제 — 실제 작업 또는 결과` 형식으로 맞춥니다.
+- **프로젝트 배치** — 주제에 맞는 프로젝트로 대화를 옮깁니다. 적합한 기존 프로젝트가 없고 계속 쓸 주제라면 새 프로젝트를 제안합니다.
+- **삭제후보 골라내기** — 재사용 가치가 낮은 대화는 기본적으로 삭제후보 프로젝트에 모읍니다. 나중에 사용자가 **삭제후보 확인**에서 삭제하거나 복원합니다.
+- **웹 대시보드** — 처음 쓰는 사람도 화면 안내를 따라 수집 범위를 고르고, 제안을 검토하고, 적용 결과를 확인할 수 있습니다.
 
 ## 빠른 시작
 
-Node.js 24 이상과, 세션에 계정 ID(`chatgpt_account_id`)가 있는 ChatGPT 워크스페이스 계정이 필요하다.
+macOS 또는 Windows에서 Node.js 24 이상과 ChatGPT에 로그인할 브라우저가 필요합니다.
 
-```text
-git clone https://github.com/yimsemin/chatgpt-conversation-maintenance.git
-cd chatgpt-conversation-maintenance
-npm test           # 자체 점검 (fail 0)
-npm run repo:check # 민감 파일 점검
-npm run app        # 앱 켜기(127.0.0.1:8523). 이 터미널 창이 앱이다(닫거나 Ctrl+C 로 종료). 하나만 켜진다
-npm run stop       # 터미널 창을 잃었을 때 앱 끄기 (npm run status 로 실행 여부·프로세스 확인)
-```
+### 에이전트에게 설치 요청하기
 
-`main`은 릴리스된 안정 버전이다. 업데이트는 `git pull --ff-only`이며 절차는 [시작하기 가이드](docs/GETTING_STARTED.md#14-업데이트)에 있다.
+저장소의 **Code → Download ZIP**으로 받아 압축을 풀거나 Git으로 내려받습니다. 프로젝트 폴더를 Claude Code 또는 Codex에서 열고 아래 요청문을 보냅니다.
 
-북마클릿을 북마크바에 등록하고 chatgpt.com에서 누르면 **정리 창**이 열리고 오른쪽 위가 "ChatGPT 연결됨"이 된다(정리 화면과 ChatGPT 연결을 이 창 하나가 맡는다). 그 창에서 수집 범위를 골라 "이 범위 수집"을 누른다. 확인은 ChatGPT를 바꾸지 않는다. 각 단계와 문제 해결은 **[시작하기 가이드](docs/GETTING_STARTED.md)** 에 있다.
+> 이 프로젝트를 기본 설정으로 쓸 수 있게 준비해줘. AGENTS.md를 읽고 Node.js 버전과 설치 상태를 확인한 뒤, 점검을 마치면 내가 직접 할 일만 알려줘.
 
-## 중요한 전제: 비공식 API
+### 첫 정리하기
 
-이 도구는 로그인한 ChatGPT 웹 앱의 `https://chatgpt.com/backend-api`를 쓴다. 문서화된 공식 API가 아니어서 예고 없이 바뀔 수 있고, 공식 OpenAI API 키로 ChatGPT 사이드바 대화나 프로젝트를 관리할 수 있다는 뜻도 아니다. 자신의 데이터에만 쓰고 계정 약관을 확인할 책임은 사용자에게 있으며, 과도한 요청은 속도 제한을 일으킨다. 공식 제품이 아니다.
+에이전트에게 현재 단계부터 안내받으려면 아래 요청문을 보냅니다.
 
-Node에서 `/backend-api`를 직접 호출하면 TLS 핑거프린트 때문에 403이 나오므로 HTTP 수행만 chatgpt.com 페이지(북마클릿)로 옮겼다. 앱은 허용된 `{op, params}`만 보내고 세션 토큰은 페이지 밖으로 나오지 않는다. TLS 위조, 브라우저 프로필·쿠키 직접 읽기, UI 대량 자동 조작으로 우회하지 않는다. 장애 시에는 [API 호환성 기록](docs/API_COMPATIBILITY.md)의 대조 순서를 따르고 대량 재시도하지 않는다(프로젝트 생성은 실패 응답이어도 만들어졌을 수 있어 목록을 먼저 확인한다).
+> 이 프로젝트에서 처음으로 ChatGPT 대화를 정리하려고 해. 앱 실행과 ChatGPT 연결부터 수집, 분류 요청, 검토와 적용까지 내가 직접 할 일을 순서대로 알려줘.
 
-## 안전 장치
+직접 따라 하려면 다음 순서로 진행합니다.
 
-| 장치 | 내용 |
-| --- | --- |
-| 승인 | 화면에서 승인한 변경만 실행한다. 승인 파일의 해시, 확인 문구, 로컬 잠금이 함께 걸린다. |
-| 되돌릴 수 있는 삭제 | 삭제후보는 삭제후보 프로젝트로 옮긴다. 영구 삭제는 고급 옵션이다. |
-| 재조회 검증 | 제목 변경·삭제·프로젝트 이동은 적용하면서 대화마다 다시 읽어 확인하고 영수증(`runs/<id>/receipts/`)에 남긴다. 결과 화면의 프로젝트별 변화는 이 기록으로 예상과 대조한다. |
-| 작업 기록 | 어떤 작업을 했는지는 실행 폴더(`runs/<id>/`: 결정, 계획, 영수증, `report.md`)와 작업 로그(`jobs/`)에 남는다. |
-| 한 번에 하나 | 한 컴퓨터에서 한 작업만 돌린다(잠금). |
-| 데이터 분리 | 대화 본문·실행 결과는 `data/`에만 있고 Git에 올라가지 않는다. |
+1. 프로젝트 폴더에서 Windows는 `start-local.cmd`, macOS는 `start-local.command`를 엽니다. 터미널에서는 `npm run app`으로 켜고 `Ctrl+C`로 끕니다. 정리가 끝날 때까지 실행 창을 열어 둡니다.
+2. 브라우저에서 ChatGPT에 로그인합니다. 처음 연결할 때는 앱의 연결 안내 화면에서 **ChatGPT → 유지관리** 버튼을 북마크바로 끌어다 놓습니다. [연결 안내 화면](http://127.0.0.1:8523/auth/bookmarklet)
+3. 로그인한 ChatGPT 탭에서 방금 등록한 북마크를 누릅니다. 새 **대화 정리** 창에 **ChatGPT 연결됨**이 표시되면 준비가 끝난 것입니다.
+4. 대시보드에서 범위를 골라 **이 범위 수집**을 누릅니다. 화면에 나온 요청문을 에이전트에게 보내고, 제안이 나오면 검토한 뒤 **적용 → 적용 시작**을 누릅니다. 완료 후 **직접 하실 일**을 확인합니다.
 
-아카이브와 ChatGPT Memory는 다루지 않는다.
+막히면 화면의 **오류 복사**로 내용을 에이전트에게 전달하세요. 연결이 끊겼다면 ChatGPT 탭에서 북마크를 다시 누릅니다. 중단된 수집은 같은 범위에서 이어받을 수 있습니다.
 
-## 데이터와 백업
+## 주의사항
 
-Git에는 코드·테스트·운영 문서만 둔다. 실행 산출물(`runs/`), 작업 로그(`jobs/`), 삭제후보 목록(`trash.json`), 알려진 프로젝트 이름(`known-projects.json`), 잠금, 분류체계(`classification-taxonomy.md`, 형식은 [templates/](templates/classification-taxonomy.example.md))는 데이터 폴더(기본 `<repo>/data/`, `--data-dir` 또는 `.local/config.json`의 `dataDir`)에만 두며 `.gitignore`와 `npm run repo:check`가 막는다. 세션·쿠키·환경 파일은 어디에도 저장하지 않는다.
+- **비공식 API** — ChatGPT 웹 서비스가 바뀌면 연결이나 정리 기능이 작동하지 않을 수 있습니다.
+- **첫 전체 수집** — 대화가 많으면 몇 시간 걸릴 수 있습니다. 처음에는 **프로젝트에 넣지 않은 대화 · 최근 14일**처럼 작은 범위로 시작할 수 있습니다. [수집 범위와 옵션](docs/ARCHITECTURE.md#수집-범위와-옵션)
+- **작업 중 연결** — 수집과 적용이 끝날 때까지 ChatGPT 탭과 정리 창을 열어 두고 최소화하지 않습니다.
+- **관리 범위** — 대화 보관·보관 해제와 ChatGPT Memory 설정은 ChatGPT에서 직접 관리합니다. **모든 대화** 범위에는 보관된 대화도 포함됩니다.
+- **영구 삭제** — 삭제후보 프로젝트로 이동한 대화는 복원할 수 있지만, 영구 삭제를 확정한 대화는 되돌릴 수 없습니다.
+- **대화 사본** — 정리 과정에서 대화 사본이 기본적으로 프로젝트 폴더의 `data/`에 저장됩니다. 다른 AI 서비스에 분류 입력을 붙여넣으면 대화 발췌본이 해당 서비스로 전달됩니다. [데이터와 로컬 설정](docs/ARCHITECTURE.md#데이터와-코드의-분리)
 
-정리는 **한 컴퓨터에서만** 한다. 백업·동기화는 사용자의 백업 프로그램이 하고 GitHub는 그 경로에 쓰지 않는다. 공개 전 점검은 [docs/GIT.md](docs/GIT.md).
+업데이트는 에이전트에게 맡기거나 앱을 끈 뒤 Git으로 내려받은 폴더에서 `git pull --ff-only`를 실행합니다. ZIP을 썼다면 새 ZIP의 파일을 같은 폴더에 풉니다. `data/`와 `.local/`은 보관하고, 업데이트 후 앱을 다시 켭니다.
 
-**한 가지 예외:** 선택 경로인 외부 AI 분류를 쓰면 후보 대화의 **발췌본**(요청문에 넣는 `review.json` — 제목, 프로젝트명, 사용자 요청과 최종 응답의 앞뒤 일부)이 사용자가 직접 복사해 그 AI 서비스로 나간다([CLASSIFICATION_WORKFLOW.md](docs/CLASSIFICATION_WORKFLOW.md)). 쓰지 않으면 대화 내용은 이 컴퓨터를 벗어나지 않는다.
+## 라이선스
 
-## 직접 쓰는 로컬 명령
-
-원격을 건드리지 않는 점검·진단용이다.
-
-```text
-npm run brief                                        # 최근 실행·삭제후보 현황과 다음 행동(사용자/에이전트) 요약
-npm run runs:prune                                   # data/runs 의 중복 본문 사본 미리보기(--apply 를 붙이면 지움)
-node src/maintenance-lock.js status|release              # 잠금 확인·해제(비정상 종료 뒤에만)
-node src/workflow.js validate-proposal <inventory.json> <proposal.json>
-curl -s http://127.0.0.1:8523/relay/trace            # 릴레이 경계 진단
-node dev/fake-server.js                              # 모의 ChatGPT로 흐름 시험(실제 데이터 미사용)
-node src/overhaul.js slice|validate-cards|assemble ...   # 대량 재분류용 카드 도구
-```
-
-## 문서 안내
-
-| 문서 | 내용 |
-| --- | --- |
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | 비개발자용 설치·사용 가이드, 문제 해결 |
-| [AGENTS.md](AGENTS.md) | 에이전트의 시작 순서와 안전 경계 |
-| [docs/GOALS.md](docs/GOALS.md) | 왜 이렇게 정리하는가 |
-| [CLASSIFICATION_WORKFLOW.md](docs/CLASSIFICATION_WORKFLOW.md) | 삭제·제목·프로젝트 판단 기준, 제안·승인 파일 형식 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/PITFALLS.md](docs/PITFALLS.md) | 구조·화면 설계와 용어·파일 계약, 반복된 함정 |
-| [API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) | 확인된 비공식 API 계약과 장애 대응 |
-| [docs/OVERHAUL.md](docs/OVERHAUL.md) | 전체 재정비 절차 |
-| [CHANGELOG.md](CHANGELOG.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) | 버전별 변경 이력(앱의 업데이트 내역과 같음), 작성 기준 |
-| [docs/GIT.md](docs/GIT.md) | 브랜치·커밋·릴리스 규칙, 공개 전 점검 |
-
-분류 규칙이나 API 계약을 다른 문서에 복사하지 않는다. 문서와 구현이 다르면 코드·테스트·원격 상태를 대조해 해당 문서를 함께 고친다.
-
-## 현재 한계
-
-- 북마클릿 릴레이는 완전 무인이 아니다. 로그인 만료, MFA, 내부 API 변경에는 사람이 개입해야 한다.
-- 소유 프로젝트만 조회한다. 프로젝트 파일·지침·Library·Memory·연결 앱의 영향은 대화 정리로 없앨 수 없다.
-- "프로젝트에 넣지 않은 대화"와 "최근 며칠" 범위는 ChatGPT의 대화 목록을 기준으로 하는데 이 목록은 프로젝트 안 대화를 일부 빠뜨린다([API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md)). 프로젝트 안 대화를 빠짐없이 보려면 "특정 프로젝트" 범위를 쓴다. 프로젝트 없는 대화가 빠지는지는 표본이 1건뿐이었으므로, 처음 쓸 때 ChatGPT 화면의 목록과 대조하는 것이 좋다.
-- 이미 프로젝트 안에 있는 대화를 프로젝트 없음으로 만들 수 없다(API가 지원하지 않는다). 사용자가 ChatGPT에서 직접 뺀다.
-- 실계정에서 돌려 본 것: 프로젝트 범위와 프로젝트 없는 대화 한 바퀴(2026-09-26), 최근 7일 범위 186건의 수집·적용(2026-09-28), 미정돈 범위 13건(2026-09-30). 아직 모의 ChatGPT로만 시험한 것: 여러 프로젝트 선택, 삭제후보 확인(삭제·복원 확정), 수집 옵션(4회 실패 건너뛰기·표준 제목 제외), 이전 실행 본문 재활용.
-- macOS·Windows 단위·저장소 검사는 CI에서 자동화되지만 실계정 인증은 각 컴퓨터에서 따로 확인해야 한다.
+[MIT License](LICENSE)
