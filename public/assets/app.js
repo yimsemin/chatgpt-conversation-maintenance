@@ -25,7 +25,10 @@ function render() {
   const outdated = S.relayLocal?.needsUpdate === true;
   // 북마클릿으로 막 연 창은 ChatGPT와 연결하는 데 몇 초 걸린다. 그동안은 "끊김"이 아니라 "연결 중"으로 보인다.
   const connecting = isRelayOwnerWindow() && s && !s.relay?.connected && Date.now() - BOOTED_AT < 20000;
+  // 겉모습만 바뀐 새 북마클릿이 있으면 연결은 유지하되 선택적 갱신을 안내한다.
+  const softUpdate = S.relayLocal?.updateAvailable === true && s?.relay?.connected === true;
   const relay = connecting ? { level: "warn", label: t("app.connectingChatgpt"), hint: "" } : outdated ? { level: "bad", label: t("app.bookmarkletOutdated"), hint: t("app.bookmarkletOutdatedHint") }
+    : softUpdate ? { ...s.relay, hint: t("app.bookmarkletUpdateAvailable") }
     : s?.relay || (reachable ? { level: "warn", label: t("app.serverError"), hint: "" }
       : { level: "bad", label: t("app.noServerResponse"), hint: t("app.checkServerRunning") });
   $("relay-pill").className = `pill ${relay.level}`;
@@ -33,7 +36,7 @@ function render() {
   const hint = $("relay-hint");
   // 분류 제안을 기다리는 단계는 ChatGPT 연결이 필요 없으므로 연결 안내를 숨긴다.
   hint.hidden = !relay.hint || currentStep() === "proposal"; hint.textContent = relay.hint || "";
-  if (relay.hint && s && !s.relay?.connected) {
+  if (relay.hint && s && (!s.relay?.connected || softUpdate)) {
     hint.append(" ", h("a", { href: "/auth/bookmarklet", target: "_blank", rel: "noopener", text: t("app.installBookmarklet") }));
   }
   // 정리 창 하나로 통합했다: 북마클릿이 여는 창이 정리 화면이면서 ChatGPT 연결도 맡는다.

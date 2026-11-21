@@ -11,8 +11,12 @@ const CLIENT_STAGES = new Set([
   "peer-ignored", "version-mismatch", "loop-error",
 ]);
 
+// "relay-MAJOR.MINOR.PATCH" 에서 연결 호환을 정하는 MAJOR.MINOR 만 본다. PATCH 는 겉모습 변경이라 달라도 연결된다.
+const compat = (version) => /^relay-(\d+\.\d+)\.\d+$/.exec(String(version))?.[1];
+
 export function validateRelayVersion(relayVersion) {
-  if (relayVersion !== RELAY_VERSION) {
+  const key = compat(relayVersion);
+  if (!key || key !== compat(RELAY_VERSION)) {
     throw new Error(`Relay version mismatch: app=${RELAY_VERSION}`);
   }
 }

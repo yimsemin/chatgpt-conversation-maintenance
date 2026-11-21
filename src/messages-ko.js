@@ -6,6 +6,7 @@ export const messages = Object.freeze({
   "app.applying.changes": "적용 중입니다",
   "app.back": "돌아가기",
   "app.bookmarkletOutdated": "북마클릿 업데이트 필요",
+  "app.bookmarkletUpdateAvailable": "북마클릿의 새 버전이 있습니다. 지금 연결은 그대로 쓸 수 있고, 원하면 다시 설치하세요.",
   "app.bookmarkletOutdatedHint": "chatgpt.com의 북마클릿이 이 앱보다 오래됐습니다. 북마클릿을 다시 설치한 뒤 눌러 주세요.",
   "app.candidates.collected": "{scope} · 대화 {count}건 · {when} 수집",
   "app.checkServerRunning": "앱 서버가 실행 중인지 확인하세요.",

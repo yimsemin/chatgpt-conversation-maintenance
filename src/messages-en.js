@@ -6,6 +6,7 @@ export const messages = Object.freeze({
   "app.applying.changes": "Applying changes",
   "app.back": "Back",
   "app.bookmarkletOutdated": "Update your bookmarklet",
+  "app.bookmarkletUpdateAvailable": "A newer bookmarklet is available. Your current connection keeps working; reinstall it whenever you like.",
   "app.bookmarkletOutdatedHint": "Replace your saved bookmarklet using the installation guide, then click it again in ChatGPT.",
   "app.candidates.collected": "{scope} · Conversations: {count} · Collected {when}",
   "app.checkServerRunning": "Check that the app server is running.",

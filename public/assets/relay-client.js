@@ -3,16 +3,23 @@
 const CHATGPT = "https://chatgpt.com";
 const PAGE_TIMEOUT_MS = 60000;
 
+// "relay-MAJOR.MINOR.PATCH": MAJOR.MINOR 가 같아야 연결되고, PATCH 만 다르면 연결은 되며 갱신 안내만 한다.
+function parseRelayVersion(version) {
+  const match = /^relay-(\d+\.\d+)\.(\d+)$/.exec(String(version));
+  return match ? { key: match[1], patch: Number(match[2]) } : null;
+}
+
 export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutMs = PAGE_TIMEOUT_MS }) {
   const clientId = crypto.randomUUID();
   let running = false;
   let connected = false;
   let peer = null;
   let needsUpdate = false;
+  let updateAvailable = false;
   let ownedElsewhere = false;
   let stopped = false;
 
-  const emit = () => onState({ connected, needsUpdate, ownedElsewhere, hasPeer: Boolean(peer && !peer.closed) });
+  const emit = () => onState({ connected, needsUpdate, updateAvailable, ownedElsewhere, hasPeer: Boolean(peer && !peer.closed) });
 
   function trace(stage, fields) {
     try {
@@ -83,7 +90,9 @@ export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutM
 
   window.addEventListener("message", (event) => {
     if (stopped || event.origin !== CHATGPT || event.data?.type !== "chatgpt-relay-v2-ready") return;
-    if (event.data.relayVersion !== relayVersion) {
+    const mine = parseRelayVersion(relayVersion);
+    const theirs = parseRelayVersion(event.data.relayVersion);
+    if (!mine || !theirs || mine.key !== theirs.key) {
       trace("version-mismatch", { note: String(event.data.relayVersion || "unknown").slice(0, 40) });
       if (peer) return;
       needsUpdate = true;
@@ -94,6 +103,8 @@ export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutM
     if (peer && peer !== event.source) { trace("peer-ignored", {}); return; }
     if (!peer) peer = event.source;
     needsUpdate = false;
+    updateAvailable = theirs.patch < mine.patch;
+    emit();
     loop();
   });
   window.addEventListener("pagehide", () => navigator.sendBeacon("/relay/disconnect",

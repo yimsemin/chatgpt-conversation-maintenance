@@ -22,7 +22,7 @@ async function setup({ pageBehaviour }) {
   globalThis.fetch = async () => ({ ok: true });
   const { startRelay } = await import("../public/assets/relay-client.js");
   const broker = createRelayBroker({ timeoutMs: 2000 });
-  const RELAY = "relay-test";
+  const RELAY = "relay-9.9.1";
   const api = async (url, options) => {
     const body = options?.body ? JSON.parse(options.body) : {};
     if (url === "/relay/connect") return broker.connect(body.clientId);
