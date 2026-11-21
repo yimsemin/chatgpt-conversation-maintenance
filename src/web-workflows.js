@@ -74,7 +74,7 @@ function publishScan({ workspace, dataDir, job, runDir, scanResult, scope }) {
   };
   if (candidateCount > 0) {
     jobEvent(job, "review", message("workflow.prepareReview"));
-    writeClassificationReview(inventoryPath, reviewPath);
+    writeClassificationReview(inventoryPath, reviewPath, undefined, job.locale);
     writePointer(workspace, pointer);
     job.result = { phase: PHASE.AWAITING_PROPOSAL, run: publicPointer({ ...pointer, updatedAt: new Date().toISOString() }) };
     jobEvent(job, "ready", message("workflow.ready", { count: candidateCount }));

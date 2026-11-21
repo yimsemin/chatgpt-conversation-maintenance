@@ -48,7 +48,7 @@ function describeRun(pointer) {
 // 사용자가 버튼으로 하는 일과 에이전트가 하는 일을 구분해 다음 행동 하나만 돌려준다.
 export function nextAction({ lock, run }) {
   if (lock?.locked && !lock.stale) {
-    return { actor: "user", text: "다른 실행이 잠금을 잡고 있다. 그 실행이 끝났는지 확인 후 node maintenance-lock.js release" };
+    return { actor: "user", text: "다른 작업이 잠금을 잡고 있다. 그 작업이 끝났는지 확인한 뒤 `npm run lock -- release`" };
   }
   if (!run || run.phase === PHASE.COMPLETE) {
     return { actor: "user", text: "화면에서 수집 범위를 고르고 '이 범위 수집'을 누른다(에이전트는 수집하지 않는다)" };
@@ -63,9 +63,9 @@ export function nextAction({ lock, run }) {
     };
   }
   if (run.hasProposal && !run.hasDecisions) {
-    return { actor: "user", text: "화면에서 제안을 불러와 검토·수정한 뒤 '결정 저장 및 적용'을 누른다" };
+    return { actor: "user", text: "화면에서 제안을 불러와 검토·수정한 뒤 '검토하고 적용'을 누른다" };
   }
-  return { actor: "user", text: "화면에서 결정을 확인하고 '결정 저장 및 적용'을 누른다" };
+  return { actor: "user", text: "화면에서 결정을 확인하고 '검토하고 적용'을 누른다" };
 }
 
 export function buildBrief({ appRoot, dataDir = "", now = () => Date.now() } = {}) {

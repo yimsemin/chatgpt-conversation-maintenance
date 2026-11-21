@@ -208,6 +208,13 @@ test("classification review excerpts long messages, windows long paths, and trim
     const review = JSON.parse(readFileSync(outputPath, "utf8"));
 
     assert.deepEqual(review.criteria, CLASSIFICATION_CRITERIA);
+    // 에이전트가 받는 요청문의 언어는 수집할 때의 화면 언어를 따른다(영어 화면인데 한국어 지시가 나가지 않게).
+    const englishOutput = join(root, "review-en.json");
+    writeClassificationReview(inventoryPath, englishOutput, () => new Date("2026-08-30T00:00:00Z"), "en");
+    const englishReview = JSON.parse(readFileSync(englishOutput, "utf8"));
+    assert.equal(englishReview.locale, "en");
+    assert.match(buildClaudePrompt(englishReview), /Classify the candidates below/);
+    assert.match(buildClaudePrompt(review), /아래 후보를 분류하고/);
     const conversation = review.conversations[0];
     assert.equal(conversation.messages.length, 6);
     assert.equal(conversation.omittedMessages, 2 * turns - 6);

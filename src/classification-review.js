@@ -5,7 +5,7 @@ import { assert } from "./assert.js";
 import { readJson, writeJsonAtomic, writeTextAtomic } from "./fs-json.js";
 import { attachmentReferenceCount, sha256 } from "./content-hash.js";
 import { translator, fallbackLocale } from "./i18n.js";
-import { classificationCriteria, CLASSIFICATION_CRITERIA, CLASSIFICATION_PROPOSAL_SCHEMA } from "./classification-criteria.js";
+import { classificationCriteria, CLASSIFICATION_PROPOSAL_SCHEMA } from "./classification-criteria.js";
 
 // review.json 절감: 후보 대화 본문은 앞/뒤 발췌만 담는다. 짧은 메시지는 전문,
 // 긴 메시지는 head+tail+chars, 메시지가 많은 대화는 앞뒤 몇 개만 두고 나머지는 개수로.
@@ -133,7 +133,7 @@ function excerptText(text) {
   };
 }
 
-export function writeClassificationReview(inventoryPath, outputPath, now = () => new Date()) {
+export function writeClassificationReview(inventoryPath, outputPath, now = () => new Date(), locale = fallbackLocale) {
   const inventoryRaw = readFileSync(inventoryPath);
   const inventory = readJson(inventoryPath, "Inventory");
   assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory",
@@ -166,7 +166,8 @@ export function writeClassificationReview(inventoryPath, outputPath, now = () =>
     kind: "classification-review",
     generatedAt: now().toISOString(),
     inventoryDigest: sha256(inventoryRaw),
-    criteria: CLASSIFICATION_CRITERIA,
+    locale,
+    criteria: classificationCriteria(locale),
     counts: {
       candidates: conversations.length,
       projects: projects.length,
@@ -189,7 +190,7 @@ export function writeClassificationReview(inventoryPath, outputPath, now = () =>
 
 // Claude 전용 요청문: 규칙·프로젝트 문맥·후보 발췌를 한 덩어리에 담아 저장소
 // 문서 접근 없이도(예: claude.ai) 그대로 붙여넣어 분류할 수 있게 한다.
-export function buildClaudePrompt(review, { inventoryPath = null, proposalPath = null, locale = fallbackLocale } = {}) {
+export function buildClaudePrompt(review, { inventoryPath = null, proposalPath = null, locale = review?.locale || fallbackLocale } = {}) {
   assert(review?.version === 1 && review.kind === "classification-review",
     "Claude prompt requires a classification review");
   const t = translator(locale);
@@ -206,9 +207,7 @@ export function buildClaudePrompt(review, { inventoryPath = null, proposalPath =
       rationale: t("prompt.schemaRationale"), projectRationale: t("prompt.schemaProjectRationale"),
     }],
   };
-  const criteria = locale === fallbackLocale && Array.isArray(review.criteria) && review.criteria.length
-    ? [...new Set([...review.criteria, t("criteria.language")])]
-    : classificationCriteria(locale);
+  const criteria = classificationCriteria(locale);
   return [
     t("prompt.standaloneIntro"), "",
     `## ${t("prompt.criteria")}`, ...criteria.map((line) => `- ${line}`), "",
