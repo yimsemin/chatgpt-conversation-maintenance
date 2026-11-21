@@ -23,7 +23,7 @@ function friendly(error) {
   const explain = errorExplanation(error?.detail);
   if (explain) return [explain.title, `${explain.action}\n\n${error.detail.message || ""}`.trim()];
   const message = String(error?.message || error);
-  if (/failed to fetch|networkerror|load failed/i.test(message)) return [t("net.could.not.connect.to.the.app.server"), t("net.run.npm.run.app.in.a.terminal")];
+  if (/failed to fetch|networkerror|load failed/i.test(message)) return [t("net.serverUnreachable"), t("net.runNpmApp")];
   return [message, ""];
 }
 

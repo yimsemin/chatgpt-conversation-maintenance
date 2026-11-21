@@ -25,24 +25,24 @@ function render() {
   const outdated = S.relayLocal?.needsUpdate === true;
   // 북마클릿으로 막 연 창은 ChatGPT와 연결하는 데 몇 초 걸린다. 그동안은 "끊김"이 아니라 "연결 중"으로 보인다.
   const connecting = isRelayOwnerWindow() && s && !s.relay?.connected && Date.now() - BOOTED_AT < 20000;
-  const relay = connecting ? { level: "warn", label: t("app.connecting.to.chatgpt"), hint: "" } : outdated ? { level: "bad", label: t("app.bookmarklet.update.required"), hint: t("app.your.chatgpt.bookmarklet.is.older.than.this") }
+  const relay = connecting ? { level: "warn", label: t("app.connectingChatgpt"), hint: "" } : outdated ? { level: "bad", label: t("app.bookmarkletOutdated"), hint: t("app.bookmarkletOutdatedHint") }
     : s?.relay || (reachable ? { level: "warn", label: t("app.serverError"), hint: "" }
-      : { level: "bad", label: t("app.no.response.from.the.server"), hint: t("app.check.that.the.app.server.is.running") });
+      : { level: "bad", label: t("app.noServerResponse"), hint: t("app.checkServerRunning") });
   $("relay-pill").className = `pill ${relay.level}`;
   $("relay-label").textContent = relay.label;
   const hint = $("relay-hint");
   // 분류 제안을 기다리는 단계는 ChatGPT 연결이 필요 없으므로 연결 안내를 숨긴다.
   hint.hidden = !relay.hint || currentStep() === "proposal"; hint.textContent = relay.hint || "";
   if (relay.hint && s && !s.relay?.connected) {
-    hint.append(" ", h("a", { href: "/auth/bookmarklet", target: "_blank", rel: "noopener", text: t("app.install.the.bookmarklet") }));
+    hint.append(" ", h("a", { href: "/auth/bookmarklet", target: "_blank", rel: "noopener", text: t("app.installBookmarklet") }));
   }
   // 정리 창 하나로 통합했다: 북마클릿이 여는 창이 정리 화면이면서 ChatGPT 연결도 맡는다.
   const note = $("relay-note");
   const owner = isRelayOwnerWindow();
   // 연결 안내는 작업이 도는 동안만 줄로 보이고, 평소에는 연결 표시(pill)의 설명으로만 둔다.
   const noteText = owner
-    ? t("app.this.window.connects.to.chatgpt.keep.it")
-    : t("app.the.window.opened.by.the.bookmarklet.connects");
+    ? t("app.thisWindowConnects")
+    : t("app.relayWindowNote");
   note.hidden = !(s?.relay?.connected && s.job && !s.job.done);
   note.textContent = noteText;
   $("relay-pill").title = s?.relay?.connected ? noteText : "";
@@ -65,8 +65,8 @@ function renderAppInfo() {
   box.hidden = false;
   const since = duration(app.uptimeSeconds);
   box.textContent = t("app.processStatus", { pid: app.pid, elapsed: since });
-  box.title = t("app.the.app.keeps.running.when.you.close");
-  if (app.codeChanged) box.textContent += t("app.the.code.has.changed.since.startup.restart");
+  box.title = t("app.keepsRunningHint");
+  if (app.codeChanged) box.textContent += t("app.codeChangedRestart");
 }
 
 // 가장 최근 작업이 실패했고 그 뒤에 성공이 없으면 원인과 조치를 화면 맨 위에 보인다.
@@ -74,13 +74,13 @@ function renderFailure() {
   const last = S.session?.recentJobs?.[0]; const box = $("failure");
   const show = last && last.done && !last.ok && !S.dismissed.has(last.id) && !(S.session.job && !S.session.job.done);
   if (!show) { box.hidden = true; return; }
-  const explain = errorExplanation(last.error) || { title: last.error?.message || t("app.the.job.failed"), action: "" };
+  const explain = errorExplanation(last.error) || { title: last.error?.message || t("app.jobFailed"), action: "" };
   const message = last.error?.message || "";
   // 제목과 원문이 같으면 한 번만 복사한다.
   const copyText = [explain.title, message && message !== explain.title ? message : "", t("app.job", { kind: last.kind, when: last.startedAt || "" })].filter(Boolean).join("\n");
   fill(box, h("strong", { text: explain.title }), h("p", { class: "small", text: explain.action }),
     h("div", { class: "row" },
-      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; if (S.session.run?.scope) { S.scope = { ...S.scope, ...S.session.run.scope }; } await startScan(); } }, t("app.collect.the.same.scope.again")) : null,
+      explain.recovery === "rescan" ? h("button", { class: "btn", type: "button", disabled: !S.session.relay?.connected, onclick: async () => { S.dismissed.add(last.id); S.forceStep = null; S.view = null; if (S.session.run?.scope) { S.scope = { ...S.scope, ...S.session.run.scope }; } await startScan(); } }, t("app.collectSameScope")) : null,
       h("button", { class: "btn ghost", type: "button", onclick: (e) => { navigator.clipboard.writeText(copyText); e.target.textContent = t("app.copied"); } }, t("app.copy.error")),
       h("button", { class: "btn ghost", type: "button", onclick: () => { S.dismissed.add(last.id); render(); } }, t("app.close"))));
   box.hidden = false;
@@ -90,8 +90,8 @@ function renderFailure() {
 function renderTitle() {
   const job = S.session?.job; const step = currentStep();
   const link = isRelayOwnerWindow() ? (S.session?.relay?.connected ? "🔗 " : t("app.disconnected")) : "";
-  document.title = link + (job && !job.done ? t("app.in.progress.conversation.cleanup", { eta: job.progress?.etaSeconds ? ` · ${duration(job.progress.etaSeconds)}` : "" })
-    : step === "review" ? t("app.review.needed.conversation.cleanup") : step === "result" ? t("app.complete.conversation.cleanup") : t("app.name"));
+  document.title = link + (job && !job.done ? t("app.titleInProgress", { eta: job.progress?.etaSeconds ? ` · ${duration(job.progress.etaSeconds)}` : "" })
+    : step === "review" ? t("app.titleReviewNeeded") : step === "result" ? t("app.titleComplete") : t("app.name"));
 }
 
 // 북마클릿이 연 창(ChatGPT 탭이 열어 준 창)인가. 이 창이 ChatGPT와의 연결을 맡는다.
@@ -99,37 +99,37 @@ function isRelayOwnerWindow() { return window.name === "chatgptMaintenance" && B
 
 // 이 정리를 두고 다른 범위를 고르러 간다(새 수집을 시작하기 전에는 아무것도 버려지지 않는다).
 function restartButton() {
-  return h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.view = null; S.panelKey = ""; render(); } }, t("app.choose.another.scope"));
+  return h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.view = null; S.panelKey = ""; render(); } }, t("app.chooseOtherScope"));
 }
 
 function renderNow() {
   const s = S.session; const step = currentStep(); const job = s?.job;
   if (!s) {
     const reachable = Boolean(S.sessionError?.detail);
-    fill($("now"), h("div", {}, h("p", { class: "headline", text: reachable ? t("app.serverError") : t("app.could.not.connect.to.the.app") }),
-      h("p", { class: "sub", text: reachable ? (errorExplanation(S.sessionError.detail)?.title || S.sessionError.message) : t("app.run.npm.run.app.in.a.terminal") })));
+    fill($("now"), h("div", {}, h("p", { class: "headline", text: reachable ? t("app.serverError") : t("app.serverUnreachable") }),
+      h("p", { class: "sub", text: reachable ? (errorExplanation(S.sessionError.detail)?.title || S.sessionError.message) : t("app.runNpmApp") })));
     return;
   }
   let headline = t("app.collecting"); let sub = ""; let action = null;
   if (job && !job.done) {
-    headline = job.kind === "apply" ? t("app.applying.changes") : t("app.collecting.conversations");
+    headline = job.kind === "apply" ? t("app.applying.changes") : t("app.collectingTitle");
     sub = job.progress ? `${progressLabel(job.progress)}${job.progress.etaSeconds ? t("app.about.remaining", { remaining: duration(job.progress.etaSeconds) }) : ""}` : t("app.please.wait");
   } else if (step === "trash") {
-    headline = t("app.review.deletion.candidates"); sub = t("app.delete.or.restore.conversations.in", { project: s.trash?.project || "?" });
+    headline = t("app.reviewTrash"); sub = t("app.trashDeleteOrRestore", { project: s.trash?.project || "?" });
     action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = null; S.panelKey = ""; render(); } }, t("app.back"));
   } else if (step === "scan") {
     const allClear = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport;
-    headline = allClear ? t("app.there.are.no.conversations.to.clean.up") : t("app.choose.a.scope.to.collect");
-    sub = s.run ? t("app.last.collection", { when: when(s.run.updatedAt) }) : t("app.no.collection.history.yet");
+    headline = allClear ? t("app.nothingToClean") : t("app.chooseScope");
+    sub = s.run ? t("app.last.collection", { when: when(s.run.updatedAt) }) : t("app.noCollectionHistory");
   } else if (step === "proposal") {
-    headline = t("app.candidates.to.classify", { count: s.run?.candidates ?? "?" }); sub = t("app.collected.ask.an.ai.agent.to.classify", { scope: scopeLabel(s.run?.scope), when: when(s.run?.updatedAt) });
+    headline = t("app.needsClassification", { count: s.run?.candidates ?? "?" }); sub = t("app.collectedAskAgent", { scope: scopeLabel(s.run?.scope), when: when(s.run?.updatedAt) });
     action = restartButton();
   } else if (step === "review") {
-    headline = t("app.review.the.classification.proposal"); sub = t("app.candidates.collected", { scope: scopeLabel(s.run?.scope), count: s.run?.candidates ?? "?", when: when(s.run?.updatedAt) });
+    headline = t("app.reviewProposal"); sub = t("app.candidates.collected", { scope: scopeLabel(s.run?.scope), count: s.run?.candidates ?? "?", when: when(s.run?.updatedAt) });
     action = restartButton();
   } else if (step === "result") {
-    headline = s.report?.headline || t("app.cleanup.is.complete"); sub = t("app.finished", { when: when(s.report?.finishedAt) });
-    action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.panelKey = ""; render(); } }, t("app.start.a.new.cleanup"));
+    headline = s.report?.headline || t("app.cleanupComplete"); sub = t("app.finished", { when: when(s.report?.finishedAt) });
+    action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.panelKey = ""; render(); } }, t("app.startNewCleanup"));
   }
   fill($("now"), h("div", {}, h("p", { class: "headline", text: headline }), h("p", { class: "sub", text: sub })), action);
 }
@@ -145,7 +145,7 @@ function renderSteps() {
 function buildPanel(step) {
   const panel = $("panel"); fill(panel);
   const s = S.session;
-  if (!s) { panel.append(h("p", { class: "muted", text: t("app.connecting.to.the.app.server") })); return; }
+  if (!s) { panel.append(h("p", { class: "muted", text: t("app.connectingServer") })); return; }
   if (s.job && !s.job.done) {
     fill(panel, s.job.kind === "apply" ? applyStages() : s.job.kind === "scan" ? scanStages() : null, progressBlock(s.job.kind));
     return;
@@ -154,7 +154,7 @@ function buildPanel(step) {
   else if (step === "proposal") panel.append(proposalPanel());
   else if (step === "review") { panel.append(h("p", { class: "muted", text: t("app.loading.review") })); loadReview(); }
   else if (step === "result") { panel.append(h("p", { class: "muted", text: t("app.loading.results") })); loadResult(); }
-  else if (step === "trash") { panel.append(h("p", { class: "muted", text: t("app.loading.deletion.candidates") })); loadTrash(); }
+  else if (step === "trash") { panel.append(h("p", { class: "muted", text: t("app.loadingTrash") })); loadTrash(); }
   else if (step === "apply") panel.append(applyReadyPanel());
   else panel.append(scanPanel());
 }
@@ -171,7 +171,7 @@ function renderRecent() {
       if (openLogs.has(j.id)) openLogs.delete(j.id);
       else { try { openLogs.set(j.id, (await api(`/maintenance/job-log?id=${encodeURIComponent(j.id)}`)).events); } catch (err) { fail(err); return; } }
       renderRecent();
-    } }, openLogs.has(j.id) ? t("app.collapse.log") : t("app.view.full.log")),
+    } }, openLogs.has(j.id) ? t("app.collapse.log") : t("app.viewFullLog")),
     openLogs.has(j.id) ? h("pre", { class: "log" }, ...logLines(openLogs.get(j.id))) : null)) : [h("p", { class: "muted", text: t("app.no.records") })]));
 }
 
@@ -193,15 +193,15 @@ async function boot() {
     });
   }
   $("recent-clear").addEventListener("click", async () => {
-    if (!await ask({ title: t("app.clear.recent.job.history"), lines: [t("app.this.only.clears.the.history.stored.on")], ok: t("app.clear") })) return;
-    try { const r = await post("/maintenance/jobs/clear"); toast(t("app.recent.job.history.cleared"), t("app.records.removed", { count: r.removed })); await refreshSession(); } catch (e) { fail(e); }
+    if (!await ask({ title: t("app.clearRecentConfirm"), lines: [t("app.recentClearNote")], ok: t("app.clear") })) return;
+    try { const r = await post("/maintenance/jobs/clear"); toast(t("app.recentCleared"), t("app.records.removed", { count: r.removed })); await refreshSession(); } catch (e) { fail(e); }
   });
   $("app-stop").addEventListener("click", async () => {
-    if (!await ask({ title: t("app.stop.the.app"), lines: [t("app.this.page.will.stop.working.run.npm")], ok: t("app.stop.app") })) return;
+    if (!await ask({ title: t("app.stopConfirm"), lines: [t("app.pageStopped")], ok: t("app.stop.app") })) return;
     try {
       await post("/app/shutdown");
       fill(document.body, h("main", {}, h("h1", { text: t("app.stoppedTitle") }), h("p", { text: t("app.stoppedHint") })));
-    } catch (e) { toast(t("app.could.not.stop.the.app"), String(e?.message || e)); }
+    } catch (e) { toast(t("app.stopFailed"), String(e?.message || e)); }
   });
   const config = await api("/config").catch(() => ({}));
   loadScope();

@@ -14,7 +14,7 @@ export async function loadReview() {
   try {
     const [proposal, catalog] = await Promise.all([api("/maintenance/proposal"), api("/maintenance/catalog")]);
     S.proposal = proposal; S.catalog = catalog;
-    if (!proposal.ready) { fill($("panel"), h("p", { text: t("review.there.is.no.classification.proposal.yet") })); return; }
+    if (!proposal.ready) { fill($("panel"), h("p", { text: t("review.noProposal") })); return; }
     loadOverrides();
     drawReview();
     if (!S.live.includes(syncApplyBar)) S.live.push(syncApplyBar);
@@ -97,8 +97,8 @@ function drawReview() {
   const ex = summary.exceptions; const c = summary.changes; const totals = summary.totals;
   const invalid = rows.filter((r) => r.decision === "keep" && !S.overrides.get(r.conversationId)?.skipTitle && !isNormalizedTitle(r.newTitle || r.title));
   const blockers = [];
-  if (totals.undecided) blockers.push(t("review.decide.the.remaining", { count: totals.undecided }));
-  if (invalid.length) blockers.push(t("review.invalid.title.format.fix.the.titles.in", { count: invalid.length }));
+  if (totals.undecided) blockers.push(t("review.decideRemaining", { count: totals.undecided }));
+  if (invalid.length) blockers.push(t("review.invalidTitles", { count: invalid.length }));
   const dests = destinationEntries();
   const panel = $("panel");
   fill(panel, 
@@ -109,13 +109,13 @@ function drawReview() {
       c.remove ? h("span", { class: "chip warn", text: t("review.manualRemoveCount", { count: c.remove }) }) : null),
     projectTable(summary),
     trashControl(totals.delete + totals.trashed + totals.marked),
-    section(t("review.needs.a.decision"), ex.undecided.length, ex.undecided.map((d) => item(d.title, d.why || t("review.no.reason.provided"), [
+    section(t("review.needsDecision"), ex.undecided.length, ex.undecided.map((d) => item(d.title, d.why || t("review.noReason"), [
       h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "keep", project: d.project || "" }) }, t("review.keep")),
-      h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "delete" }) }, S.trash.permanent ? t("review.permanently.delete") : t("review.mark.for.deletion"))])), true),
+      h("button", { class: "btn ghost", type: "button", onclick: () => patch(d.conversationId, { decision: "delete" }) }, S.trash.permanent ? t("review.permanently.delete") : t("review.optionTrash"))])), true),
     destinationSection(dests),
     section(t("review.low.confidence"), ex.lowConfidence.length, ex.lowConfidence.map((d) => item(d.title, d.why || "", [])), false),
-    c.newProjects.length ? section(t("review.projects.to.create"), c.newProjects.length, c.newProjects.map((n) => item(n, t("review.created.automatically.when.you.apply.changes"), [])), true, "", t("review.projects")) : null,
-    ex.manualRemoves.length ? section(t("review.remove.from.project.manually"), ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, t("review.current.project.follow.the.instructions.on.the", { project: m.project }), [])), false) : null,
+    c.newProjects.length ? section(t("review.projectsToCreate"), c.newProjects.length, c.newProjects.map((n) => item(n, t("review.createdOnApply"), [])), true, "", t("review.projects")) : null,
+    ex.manualRemoves.length ? section(t("review.manualRemoveHeading"), ex.manualRemoves.length, ex.manualRemoves.map((m) => item(m.title, t("review.currentProjectManual", { project: m.project }), [])), false) : null,
     reviseGuide(),
     h("div", { class: "row applybar" },
       h("p", { class: "small down", id: "apply-blockers", hidden: true }),
@@ -124,7 +124,7 @@ function drawReview() {
   syncApplyBar();
 }
 
-const relayDownReason = () => t(S.relayLocal?.needsUpdate ? "app.bookmarklet.update.required" : "review.chatgpt.is.disconnected.run.the.bookmarklet.in");
+const relayDownReason = () => t(S.relayLocal?.needsUpdate ? "app.bookmarkletOutdated" : "review.relayDown");
 
 // 적용 버튼과 막힌 이유를 지금 상태(연결 여부 포함)에 맞춘다. 화면이 갱신될 때마다 부른다.
 function syncApplyBar() {
@@ -154,13 +154,13 @@ function saveTrash() { try { localStorage.setItem("app_trash", JSON.stringify({ 
 
 // 마음에 들지 않을 때: 화면에서 직접 고치거나, 제안 자체를 에이전트에게 고쳐 달라고 요청한다.
 // 요청문의 회색 이탤릭 부분이 사용자가 바꿔 적을 자리다(복사하면 그 문구가 그대로 붙으니 지우고 내용을 적는다).
-const REVISE_HEAD = t("review.run.npm.run.brief.in.this.repository");
-const REVISE_FILL = t("review.replace.this.text.with.your.edits.for");
+const REVISE_HEAD = t("review.revisePrompt");
+const REVISE_FILL = t("review.revisePlaceholder");
 const REVISE_PROMPT = `${REVISE_HEAD}\n- ${REVISE_FILL}`;
 
 function reviseGuide() {
-  return h("details", { "data-key": "revise-proposal" }, h("summary", { text: t("review.want.to.revise.the.proposal") }), h("div", { class: "body" },
-    h("p", { class: "small", text: t("review.make.small.edits.above.for.larger.changes") }),
+  return h("details", { "data-key": "revise-proposal" }, h("summary", { text: t("review.wantRevise") }), h("div", { class: "body" },
+    h("p", { class: "small", text: t("review.reviseHelp") }),
     h("div", { class: "callout" }, h("div", { text: REVISE_HEAD }), h("div", {}, "- ", h("em", { class: "muted", text: REVISE_FILL }))),
     h("div", { class: "row" },
       h("button", { class: "btn ghost", type: "button", onclick: async (e) => { await navigator.clipboard.writeText(REVISE_PROMPT); e.target.textContent = t("review.copied"); } }, t("review.copy.prompt")),
@@ -179,35 +179,35 @@ function trashControl(candidates) {
   const names = [...new Set([...known.map((p) => p.name), ...(S.catalog?.projects || []).map((p) => p.projectName)])].filter((n) => n !== S.trashDefault);
   const NEW = "__new__";
   const isListed = names.includes(S.trash.name);
-  const select = h("select", { "aria-label": t("review.project.for.deletion.review"), "data-fk": "trash:project", onchange: (e) => {
+  const select = h("select", { "aria-label": t("review.trashProjectLabel"), "data-fk": "trash:project", onchange: (e) => {
     if (e.target.value === NEW) set({ mode: "fixed", name: "", permanent: false, choosingNew: true });
     else set({ mode: "fixed", name: e.target.value, permanent: false, choosingNew: false });
-  } }, h("option", { value: "", text: t("review.choose.a.project") }), ...names.map((n) => h("option", { value: n, text: n })), h("option", { value: NEW, text: t("review.create.a.project.with.a.new.name") }));
+  } }, h("option", { value: "", text: t("review.chooseProject") }), ...names.map((n) => h("option", { value: n, text: n })), h("option", { value: NEW, text: t("review.createProject") }));
   select.value = S.trash.choosingNew ? NEW : (isListed ? S.trash.name : "");
-  const newName = S.trash.choosingNew ? h("input", { type: "text", size: "20", "aria-label": t("review.new.project.name"), placeholder: t("review.new.project.name"), "data-fk": "trash:name", value: S.trash.name,
+  const newName = S.trash.choosingNew ? h("input", { type: "text", size: "20", "aria-label": t("review.newProjectName"), placeholder: t("review.newProjectName"), "data-fk": "trash:name", value: S.trash.name,
     onchange: (e) => { const v = e.target.value.trim(); set(v ? { mode: "fixed", name: v, permanent: false, choosingNew: true } : {}); } }) : null;
   const link = h("input", { type: "text", size: "24", "data-fk": "trash:link", onchange: (e) => {
     const id = projectIdFromLink(e.target.value); e.target.value = "";
     const project = id ? known.find((p) => p.id === id) : null;
-    if (!id) toast(t("review.that.isn.t.a.project.link"), t("review.paste.the.url.of.the.project.open"));
-    else if (!project) toast(t("review.project.not.in.the.list"), t("review.refresh.the.project.list.on.the.first"));
+    if (!id) toast(t("review.notProjectLink"), t("review.pasteUrlHelp"));
+    else if (!project) toast(t("review.projectNotInList"), t("review.refreshListHint"));
     else set({ mode: "fixed", name: project.name, permanent: false, choosingNew: false });
   } });
   const target = trashTarget();
   return h("div", { class: "callout" },
-    h("strong", { text: t("review.how.to.handle.deletion.candidates") }),
-    h("label", { class: "check" }, radio("auto"), t("review.move.to.default.created.if.needed", { project: S.session?.trash?.project || S.trashDefault })),
+    h("strong", { text: t("review.trashHandling") }),
+    h("label", { class: "check" }, radio("auto"), t("review.moveToDefault", { project: S.session?.trash?.project || S.trashDefault })),
     lockedProject ? h("p", { class: "small muted", text: t("review.existingTrashProject") })
-      : h("label", { class: "check" }, radio("fixed"), t("review.move.to.a.project.you.specify")),
+      : h("label", { class: "check" }, radio("fixed"), t("review.moveToChosen")),
     mode === "fixed" && !S.trash.permanent ? [
       h("div", { class: "row" }, select, newName),
-      h("label", { class: "row small muted" }, t("review.or.paste.a.chatgpt.project.link"), link),
-      target.fallback ? h("p", { class: "small down", text: S.trash.name ? t("review.that.project.is.unavailable.the.app.will", { project: target.name }) : t("review.with.no.project.selected.candidates.will.go", { project: target.name }) }) : null,
+      h("label", { class: "row small muted" }, t("review.orPasteLink"), link),
+      target.fallback ? h("p", { class: "small down", text: S.trash.name ? t("review.projectUnavailable", { project: target.name }) : t("review.noProjectSelected", { project: target.name }) }) : null,
     ] : null,
-    h("label", { class: "check" }, radio("none"), t("review.mark.in.place.if.needed.remove.conversations")),
-    h("details", {}, h("summary", { text: t("review.advanced.permanent.deletion") }), h("div", { class: "body" },
+    h("label", { class: "check" }, radio("none"), t("review.markInPlaceHelp")),
+    h("details", {}, h("summary", { text: t("review.advancedPermanentDeletion") }), h("div", { class: "body" },
       h("label", { class: "check" }, h("input", { type: "checkbox", checked: S.trash.permanent ? true : null, onchange: (e) => set({ permanent: e.target.checked }) }),
-        t("review.permanently.delete.candidates.immediately.cannot.be.undone")))));
+        t("review.permanentOptionHelp")))));
 }
 
 function section(title, count, items, open, note = "", unit = t("review.items"), extra = "") {
@@ -230,7 +230,7 @@ function paged(key, list, render) {
   const bar = (position) => h("div", { class: "pager", "data-pos": position },
     state.all ? h("span", { class: "small muted", text: t("review.showing.all", { count: list.length }) }) : [
       h("button", { class: "btn ghost", type: "button", disabled: state.page === 0 ? true : null, onclick: () => go({ page: state.page - 1 }) }, t("review.previous")),
-      h("span", { class: "small", text: t("review.page.of.of", { page: state.page + 1, pages: pages, first: state.page * PAGE_SIZE + 1, last: Math.min(list.length, (state.page + 1) * PAGE_SIZE), total: list.length }) }),
+      h("span", { class: "small", text: t("review.pageOf", { page: state.page + 1, pages: pages, first: state.page * PAGE_SIZE + 1, last: Math.min(list.length, (state.page + 1) * PAGE_SIZE), total: list.length }) }),
       h("button", { class: "btn ghost", type: "button", disabled: state.page === pages - 1 ? true : null, onclick: () => go({ page: state.page + 1 }) }, t("review.next"))],
     h("button", { class: "btn ghost", type: "button", onclick: () => go({ all: !state.all }) }, state.all ? t("review.show.pages") : t("review.show.all")));
   return [bar("top"), shown.map((x) => render(x)), bar("bottom")];
@@ -240,7 +240,7 @@ function paged(key, list, render) {
 // 대화마다 "어디로 보낼까"(삭제후보 · 프로젝트 없음 · 각 프로젝트)와 "제목을 무엇으로 바꿀까"를 같은 자리에서 고친다.
 // 적용 체크를 해제하면 그 대화는 원래 자리·원래 제목 그대로 둔다.
 const TRASH_VALUE = "__trash__";
-const DEST_KEY = t("review.conversations.to.change");
+const DEST_KEY = t("review.changesHeading");
 let destFilter = "all"; // all | move | trash | title
 
 function destinationEntries() {
@@ -263,9 +263,9 @@ function destinationEntries() {
 }
 
 function trashLabel() {
-  if (S.trash.permanent) return t("review.delete.permanently.cannot.be.undone");
-  if (S.trash.mode === "none") return t("review.mark.for.deletion.in.place");
-  return t("review.move.for.deletion.review", { project: trashTarget().name });
+  if (S.trash.permanent) return t("review.deleteOptionPermanent");
+  if (S.trash.mode === "none") return t("review.optionMarkInPlace");
+  return t("review.moveToTrash", { project: trashTarget().name });
 }
 
 // 해제는 대화를 원래 자리·원래 제목 그대로 두는 것이다(해제한 대화는 표준 제목 예외). 다시 켜면 이동·제목 변경이 모두 돌아온다.
@@ -287,7 +287,7 @@ function destinationSection(all) {
   };
   const scope = { all: "", move: t("review.bulkProjectMoves"), trash: t("review.bulkDeletionCandidates"), title: t("review.title.changes") }[destFilter];
   const listOff = list.filter((e) => e.off).length;
-  const note = list.length > PAGE_SIZE ? t("review.select.all.and.deselect.all.also.affect") : "";
+  const note = list.length > PAGE_SIZE ? t("review.bulkNote") : "";
   const tabs = [tab("all", t("review.all"), all.length), tab("move", t("review.project.moves"), count("move")), tab("trash", t("review.deletion.candidates"), count("trash")), tab("title", t("review.titles.only"), count("title"))];
   return section(DEST_KEY, all.length, [
     h("div", { class: "seg" }, tabs),
@@ -295,8 +295,8 @@ function destinationSection(all) {
       h("button", { class: "btn link", type: "button", disabled: listOff === 0 ? true : null, onclick: bulk(false) }, t("review.select.all", { scope }).trim()),
       h("button", { class: "btn link", type: "button", disabled: listOff === list.length ? true : null, onclick: bulk(true) }, t("review.deselect.all", { scope }).trim()),
       note ? h("span", { class: "muted small", text: note }) : null),
-    list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: t("review.there.are.no.items.in.this.tab") })],
-  true, t("review.edit.the.destination.and.title.on.each"),
+    list.length ? paged(DEST_KEY, list, destinationItem) : h("p", { class: "muted small", text: t("review.emptyTab") })],
+  true, t("review.editHelp"),
   t("review.items"), off ? t("review.selected", { count: all.length - off }) : "");
 }
 
@@ -317,20 +317,20 @@ function destinationItem(e) {
   const from = e.from || t("review.no.project");
   const route = h("div", { class: "row small" },
     e.groupTrash || e.moving ? [h("span", { class: "muted", text: from }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" })]
-      : h("span", { class: "muted", text: t("review.keep.current.project") }),
+      : h("span", { class: "muted", text: t("review.keepProject") }),
     select);
   // 영구 삭제는 제목이 필요 없다. 프로젝트만 옮기는 대화는 제목을 그대로 둘 수도 있어 그 경우만 따로 해제한다.
   const canKeepTitle = e.moving && !e.groupTrash;
   const keepTitle = !e.off && canKeepTitle
     ? h("label", { class: "check" }, h("input", { type: "checkbox", "data-fk": `c:title:${id}`, checked: e.titleOff ? true : null,
-      onchange: (ev) => patch(id, { skipTitle: ev.target.checked }) }), t("review.keep.current.title")) : null;
+      onchange: (ev) => patch(id, { skipTitle: ev.target.checked }) }), t("review.keepCurrentTitle")) : null;
   let rename = null;
   if (e.kind !== "delete") {
-    if (e.off) rename = h("div", { class: "row small muted", text: t("review.deselected.the.original.title.will.be.kept") });
-    else if (e.titleOff && canKeepTitle) rename = h("div", { class: "row small muted" }, t("review.the.title.will.stay.the.same"), keepTitle);
+    if (e.off) rename = h("div", { class: "row small muted", text: t("review.deselectedKeepTitle") });
+    else if (e.titleOff && canKeepTitle) rename = h("div", { class: "row small muted" }, t("review.titleStays"), keepTitle);
     else if (editingTitle.has(id) || !isNormalizedTitle(e.effTitle)) {
       rename = h("div", { class: "row small" }, h("input", { class: `title-input${isNormalizedTitle(e.effTitle) ? "" : " invalid"}`, type: "text", value: e.effTitle, "data-fk": `t:${id}`,
-        placeholder: t("review.new.title.topic.action.or.result"), onchange: (ev) => {
+        placeholder: t("review.newTitleLabel"), onchange: (ev) => {
           const v = ev.target.value.trim(); ev.target.classList.toggle("invalid", !isNormalizedTitle(v));
           if (isNormalizedTitle(v)) editingTitle.delete(id);
           patch(id, { title: v, skipTitle: false, listed: true });
@@ -358,10 +358,10 @@ function projectTable(summary) {
 
 async function confirmApply(summary) {
   const { delete: deletes, trashed, marked } = summary.totals;
-  const lines = [t("review.this.changes.conversations.in.chatgpt.the.app"),
-    trashed ? t("review.candidates.to.move.to.for.later.review", { count: trashed, project: trashTarget().name }) : "",
-    marked ? t("review.candidates.to.mark.in.place.delete.them", { count: marked }) : ""].filter(Boolean);
-  const ok = await ask({ title: summaryHeadline(summary, locale), lines, ok: t("review.start.applying.changes"), ack: deletes ? t("review.i.understand.that.permanent.deletion.cannot.be", { count: deletes }) : null });
+  const lines = [t("review.applyNote"),
+    trashed ? t("review.moveToTrashSummary", { count: trashed, project: trashTarget().name }) : "",
+    marked ? t("review.markInPlaceSummary", { count: marked }) : ""].filter(Boolean);
+  const ok = await ask({ title: summaryHeadline(summary, locale), lines, ok: t("review.applyStart"), ack: deletes ? t("review.confirmPermanent", { count: deletes }) : null });
   if (!ok) return;
   try {
     const rows = effectiveRows();

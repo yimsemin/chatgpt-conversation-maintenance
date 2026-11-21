@@ -10,7 +10,7 @@ export const logLines = (events, detail = false) => events.filter((e) => detail 
   .map((e) => h("div", { class: LOG_CLASS[e.stage] || "" }, `${clock(e.at)}  ${eventText(e)}`));
 
 // 종류별 누계 한 줄: 제목 변경 31건 · 프로젝트 이동 41건 · … / 본문 받음 20건 · 재활용 25건 · 건너뜀 1건
-const COUNT_LABELS = [["rename", t("progress.renamed")], ["move", t("progress.moved")], ["trash", t("progress.moved.for.deletion.review")], ["delete", t("progress.deleted")], ["fetch", t("progress.downloaded")], ["reuse", t("progress.reused")], ["skip", t("progress.skipped")], ["failed", t("progress.failed")]];
+const COUNT_LABELS = [["rename", t("progress.renamed")], ["move", t("progress.moved")], ["trash", t("progress.countTrashed")], ["delete", t("progress.deleted")], ["fetch", t("progress.downloaded")], ["reuse", t("progress.reused")], ["skip", t("progress.skipped")], ["failed", t("progress.failed")]];
 const countsText = (counts) => COUNT_LABELS.filter(([key]) => counts?.[key] > 0).map(([key, label]) => t("progress.count", { label: label, count: counts[key] })).join(" · ");
 
 // 진행바 위 두 줄: 단계·전체 진행·남은 시간 / 지금 처리 중인 대화·경과 시간.
@@ -20,7 +20,7 @@ function statusLines(job) {
   if (!p) return [t("progress.preparing"), t("progress.elapsed", { elapsed: duration(job.elapsedSeconds) })];
   const unit = p.phase === "projects" ? t("progress.projects") : t("progress.conversations");
   const finishing = p.overallTotal > 0 && p.overallIndex >= p.overallTotal;
-  const phase = finishing ? t("progress.changes.applied.verifying.and.writing.report") : `${progressLabel(p)}${p.total ? ` (${p.index}/${p.total}${unit})` : ""}`;
+  const phase = finishing ? t("progress.verifyingReport") : `${progressLabel(p)}${p.total ? ` (${p.index}/${p.total}${unit})` : ""}`;
   const overall = !finishing && p.overallTotal > 0 ? t("progress.overall", { percent: Math.round(p.overallIndex / p.overallTotal * 100), completed: p.overallIndex, total: p.overallTotal }) : "";
   return [[phase, overall, p.etaSeconds ? t("progress.about.left", { remaining: duration(p.etaSeconds) }) : ""].filter(Boolean).join(" · "),
     [job.currentItem ? t("progress.current", { item: displayMessage(job.currentItem) }) : "", t("progress.elapsed", { elapsed: duration(job.elapsedSeconds) })].filter(Boolean).join(" · ")];
@@ -31,16 +31,16 @@ export function progressBlock(kind) {
   const label = h("p", { class: "small" }); const sub = h("p", { class: "muted small" }); const counts = h("p", { class: "small" });
   const log = h("pre", { class: "log" });
   const cancel = h("button", { class: "btn ghost", type: "button", onclick: async () => {
-    if (!await ask({ title: t("progress.stop.this.job"), lines: [t("progress.completed.work.is.saved.use.the.same")], ok: t("progress.stop") })) return;
+    if (!await ask({ title: t("progress.stopConfirm"), lines: [t("progress.resumeHint")], ok: t("progress.stop") })) return;
     try { await post("/maintenance/cancel", { jobId: S.session.job.id }); } catch (e) { fail(e); }
   } }, t("progress.stop"));
   let full = false;
-  const hint = h("span", { class: "muted small", text: t("progress.shows.the.latest.200.lines") });
+  const hint = h("span", { class: "muted small", text: t("progress.summaryLogNote") });
   const fullBtn = h("button", { class: "btn link", type: "button", onclick: async () => {
-    full = !full; fullBtn.textContent = full ? t("progress.show.summary") : t("progress.view.detailed.log"); hint.textContent = full ? t("progress.shows.all.lines.from.the.start.including") : t("progress.shows.the.latest.200.lines");
+    full = !full; fullBtn.textContent = full ? t("progress.show.summary") : t("progress.viewDetailedLog"); hint.textContent = full ? t("progress.fullLogNote") : t("progress.summaryLogNote");
     if (!full) return;
-    try { const r = await api(`/maintenance/job-log?id=${encodeURIComponent(S.session.job.id)}`); fill(log, ...logLines(r.events, true)); log.scrollTop = log.scrollHeight; } catch (e) { fail(e); full = false; fullBtn.textContent = t("progress.view.detailed.log"); hint.textContent = t("progress.shows.the.latest.200.lines"); }
-  } }, t("progress.view.detailed.log"));
+    try { const r = await api(`/maintenance/job-log?id=${encodeURIComponent(S.session.job.id)}`); fill(log, ...logLines(r.events, true)); log.scrollTop = log.scrollHeight; } catch (e) { fail(e); full = false; fullBtn.textContent = t("progress.viewDetailedLog"); hint.textContent = t("progress.summaryLogNote"); }
+  } }, t("progress.viewDetailedLog"));
   const box = h("div", {}, barWrap, label, sub, counts, h("div", { class: "row" }, cancel), log, h("div", { class: "row" }, hint, fullBtn));
   S.live.push(() => {
     const job = S.session?.job;
@@ -63,7 +63,7 @@ export function progressBlock(kind) {
   return box;
 }
 
-const APPLY_STAGES = [["apply", t("progress.rename.and.delete")], ["routing", t("progress.move.between.projects")], ["verify", t("progress.verify.changes")], ["report", t("progress.write.report")]];
+const APPLY_STAGES = [["apply", t("progress.stepApply")], ["routing", t("progress.stepMove")], ["verify", t("progress.verify.changes")], ["report", t("progress.write.report")]];
 
 export function applyStages() {
   const list = h("p", { class: "substeps" });
@@ -76,7 +76,7 @@ export function applyStages() {
   return list;
 }
 
-const SCAN_STAGES = [["projects", t("progress.project.list")], ["lists", t("progress.conversation.lists")], ["downloads", t("progress.download.content")], ["review", t("progress.prepare.classification.input")]];
+const SCAN_STAGES = [["projects", t("progress.project.list")], ["lists", t("progress.conversation.lists")], ["downloads", t("progress.download.content")], ["review", t("progress.stepPrepare")]];
 const SCAN_PHASE_STAGE = { projects: 0, active: 1, archived: 1, downloads: 2 };
 
 // 수집 단계 표시. 범위에 따라 프로젝트 목록을 읽지 않으면 그 단계는 숨긴다.

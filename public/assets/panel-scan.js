@@ -7,11 +7,11 @@ import { projectIdFromLink } from "/assets/shared/project-link.js";
 import { refreshSession } from "/assets/session-client.js";
 
 // ---------- step 1: scan ----------
-const SCOPE_KINDS = [["unassigned", t("scan.conversations.without.a.project")], ["project", t("scan.conversations.in.selected.projects")], ["recent", t("scan.recently.updated.conversations")], ["untidy", t("scan.unorganized.conversations.until.standard.titles")],
-  ["all", t("scan.all.conversations.full.cleanup.can.take.a")]];
+const SCOPE_KINDS = [["unassigned", t("scan.scopeUnassigned")], ["project", t("scan.scopeProjects")], ["recent", t("scan.scopeRecent")], ["untidy", t("scan.scopeUntidyLong")],
+  ["all", t("scan.allConversationsFull")]];
 
 // 프로젝트 없는 대화의 기간 선택지(일). 0 은 기간 제한 없음.
-const UNASSIGNED_WINDOWS = [[14, t("scan.last.14.days")], [30, t("scan.last.30.days")], [0, t("scan.all.time")]];
+const UNASSIGNED_WINDOWS = [[14, t("scan.last14")], [30, t("scan.last30")], [0, t("scan.all.time")]];
 
 // 받지 못하는 대화를 4회 실패 시 건너뛸지(기본 켬). 끄면 전부 받을 때까지 멈추고 재시도한다.
 // 수집 옵션 한 줄: 체크 상자(브라우저에 기억) + 짧은 설명.
@@ -36,11 +36,11 @@ export function loadScope() {
 }
 
 const SCOPE_HINTS = {
-  unassigned: t("scan.organize.conversations.that.are.outside.projects.a"),
-  project: t("scan.collect.conversations.only.from.the.chosen.projects"),
-  recent: t("scan.collect.recently.updated.conversations.for.a.complete"),
-  untidy: t("scan.read.newest.updates.first.and.stop.after"),
-  all: t("scan.collect.and.reclassify.all.conversations.including.archived"),
+  unassigned: t("scan.unassignedScopeNote"),
+  project: t("scan.projectScopeNote"),
+  recent: t("scan.recentScopeNote"),
+  untidy: t("scan.untidyScopeNote"),
+  all: t("scan.collectAllNote"),
 };
 
 // 프로젝트가 마지막으로 쓰인 때를 사람이 읽는 말로(알 때만).
@@ -84,18 +84,18 @@ function projectChooser() {
     return h("label", { class: "check project-item" }, box, project.name, project.updatedAt ? h("span", { class: "muted small", text: ` · ${since(project.updatedAt)}` }) : null);
   });
   // 프로젝트 링크(ChatGPT에서 프로젝트를 열었을 때 주소창 주소)를 붙여 넣으면 그 프로젝트를 고른다.
-  const link = h("input", { type: "text", size: "34", placeholder: t("scan.paste.a.project.link"), onchange: (e) => {
+  const link = h("input", { type: "text", size: "34", placeholder: t("scan.pasteLink"), onchange: (e) => {
     const id = projectIdFromLink(e.target.value); e.target.value = "";
     const project = id ? projects.find((p) => p.id === id) : null;
-    if (!id) { toast(t("scan.that.isn.t.a.project.link"), t("scan.paste.the.url.of.the.project.open")); return; }
-    if (!project) { toast(t("scan.project.not.in.the.list"), t("scan.click.refresh.project.list.then.paste.the")); return; }
+    if (!id) { toast(t("scan.notProjectLink"), t("scan.pasteUrlHelp")); return; }
+    if (!project) { toast(t("scan.projectNotInList"), t("scan.refreshListHint")); return; }
     if (!chosen.has(project.name)) { chosen.add(project.name); S.scope.projectNames = projects.map((p) => p.name).filter((name) => chosen.has(name)); saveScope(); }
     toast(t("scan.project.selected"), project.name); S.panelKey = ""; hooks.render();
   } });
   return h("div", {},
     h("div", { class: "row" }, count, link,
-      h("button", { class: "btn ghost", type: "button", disabled: !s.relay?.connected, onclick: startProjectList }, projects.length ? t("scan.refresh.project.list") : t("scan.load.project.list"))),
-    projects.length ? h("div", { class: "project-list" }, items) : h("p", { class: "muted small", text: t("scan.load.the.project.list.first.it.takes") }));
+      h("button", { class: "btn ghost", type: "button", disabled: !s.relay?.connected, onclick: startProjectList }, projects.length ? t("scan.refreshProjectList") : t("scan.loadProjectList"))),
+    projects.length ? h("div", { class: "project-list" }, items) : h("p", { class: "muted small", text: t("scan.loadListHint") }));
 }
 
 // 실행(run)에 기록된 수집 범위를 사람이 읽는 말로.
@@ -103,9 +103,9 @@ export function scopeLabel(scope) {
   if (!scope) return "";
   if (scope.kind === "project") return t("scan.projects", { projects: scope.projectNames.map((name) => t("common.quoted", { text: name })).join(", ") });
   if (scope.kind === "recent") return t("scan.last.days", { days: scope.days });
-  if (scope.kind === "untidy") return t("scan.unorganized.conversations");
+  if (scope.kind === "untidy") return t("scan.scopeUntidy");
   if (scope.kind === "all") return t("scan.all.conversations");
-  return scope.days ? t("scan.conversations.without.a.project.last.days", { days: scope.days }) : t("scan.conversations.without.a.project");
+  return scope.days ? t("scan.scopeUnassignedRecent", { days: scope.days }) : t("scan.scopeUnassigned");
 }
 
 // 진행 중인 분류·검토가 있으면 새 수집을 시작할 때 버려진다는 것을 알린다.
@@ -127,7 +127,7 @@ function scanBody() {
 // 받지 못해 건너뛴 대화 안내. 후보에서 빠졌으므로 나중에 같은 범위로 다시 확인하면 다시 시도한다.
 export function skippedCallout(skipped) {
   return h("div", { class: "callout" }, h("strong", { text: t("scan.conversations.skipped", { count: skipped.length }) }),
-    t("scan.chatgpt.did.not.return.these.after.four"),
+    t("scan.skippedAfterFour"),
     h("ul", {}, ...skipped.slice(0, 20).map((item) => h("li", { text: `${item.title}${item.status ? ` (HTTP ${item.status})` : ""}` })),
       skipped.length > 20 ? h("li", { text: t("scan.and.more", { count: skipped.length - 20 }) }) : null));
 }
@@ -138,8 +138,8 @@ function trashCallout() {
   if (!trash?.count) return null;
   return h("div", { class: "callout" },
     h("strong", { text: t("scan.deletion.candidates", { count: trash.count }) }), t("scan.chatgpt.project"), h("b", { text: t("common.quoted", { text: trash.project }) }),
-    t("scan.review.the.candidates.to.delete.or.restore", { oldest: trash.oldestDays ? t("scan.oldestCandidate", { days: trash.oldestDays }) : "" }),
-    h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = "trash"; S.panelKey = ""; hooks.render(); } }, t("scan.review.deletion.candidates")));
+    t("scan.trashHint", { oldest: trash.oldestDays ? t("scan.oldestCandidate", { days: trash.oldestDays }) : "" }),
+    h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = "trash"; S.panelKey = ""; hooks.render(); } }, t("scan.reviewTrash")));
 }
 
 export function scanPanel() {
@@ -147,43 +147,43 @@ export function scanPanel() {
   const last = s.run?.phase === "complete" && s.run.candidates === 0 && !s.run.hasReport ? s.run : null;
   const pending = pendingRun();
   return h("div", {},
-    pending ? h("div", { class: "callout" }, h("strong", { text: t("scan.a.cleanup.is.in.progress") }),
-      t("scan.candidates.collecting.again.starts.a.new.cleanup", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" }),
-      h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = null; S.panelKey = ""; hooks.render(); } }, t("scan.return.to.that.cleanup"))) : null,
-    s.partialScan ? h("div", { class: "callout" }, h("strong", { text: t("scan.a.collection.was.interrupted") }),
-      t("scan.collected.of.collect.the.same.scope.again", { scope: scopeLabel(s.partialScan.scope), total: s.partialScan.total, downloaded: s.partialScan.downloaded }),
-      h("button", { class: "btn ghost", type: "button", onclick: startPartialScan }, t("scan.classify.collected.conversations", { count: s.partialScan.downloaded }))) : null,
+    pending ? h("div", { class: "callout" }, h("strong", { text: t("scan.unfinishedCleanup") }),
+      t("scan.collectAgainReplaces", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" }),
+      h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = null; S.panelKey = ""; hooks.render(); } }, t("scan.returnToCleanup"))) : null,
+    s.partialScan ? h("div", { class: "callout" }, h("strong", { text: t("scan.interruptedCollection") }),
+      t("scan.partialCollected", { scope: scopeLabel(s.partialScan.scope), total: s.partialScan.total, downloaded: s.partialScan.downloaded }),
+      h("button", { class: "btn ghost", type: "button", onclick: startPartialScan }, t("scan.classifyCollected", { count: s.partialScan.downloaded }))) : null,
     scopePicker(),
-    option("app_skip_failed", skipFailedOn(), t("scan.skip.conversations.after.four.failed.attempts"), t("scan.turn.this.off.to.keep.retrying.a")),
-    option("app_skip_standard", skipStandardOn(), t("scan.skip.conversations.with.a.standard.title"), t("scan.also.skips.conversations.whose.titles.you.chose")),
-    h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, t("scan.collect.this.scope"))),
-    last ? h("p", { class: "chip good", text: t("scan.no.conversations.to.clean.up.in.this", { when: when(last.updatedAt) }) }) : null,
-    last?.standardTitlesExcluded ? h("p", { class: "muted small", text: t("scan.skipped.conversations.with.standard.or.explicitly.preserved", { count: last.standardTitlesExcluded }) }) : null,
+    option("app_skip_failed", skipFailedOn(), t("scan.skipFailedOption"), t("scan.skipFailedOffNote")),
+    option("app_skip_standard", skipStandardOn(), t("scan.skipStandardOption"), t("scan.skipKeptTitlesNote")),
+    h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, t("scan.collectButton"))),
+    last ? h("p", { class: "chip good", text: t("scan.nothingInScope", { when: when(last.updatedAt) }) }) : null,
+    last?.standardTitlesExcluded ? h("p", { class: "muted small", text: t("scan.skippedStandardNote", { count: last.standardTitlesExcluded }) }) : null,
     last?.skipped?.length ? skippedCallout(last.skipped) : null,
-    !s.relay?.connected ? h("p", { class: "muted small", text: t("scan.connect.to.chatgpt.to.collect.this.scope") }) : null,
+    !s.relay?.connected ? h("p", { class: "muted small", text: t("scan.connectToCollect") }) : null,
     trashCallout());
 }
 
 // 이미 검토가 끝난 결정(후속 실행 등)을 적용한다. 서버가 도중에 멈춰도 같은 버튼으로 이어진다.
 export function applyReadyPanel() {
-  return h("div", {}, h("h2", { text: t("scan.ready.to.apply") }),
-    h("p", { class: "muted", text: t("scan.reviewed.decisions.are.ready.once.you.start") }),
+  return h("div", {}, h("h2", { text: t("scan.readyToApply") }),
+    h("p", { class: "muted", text: t("scan.decisionsReady") }),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !S.session?.relay?.connected, onclick: async () => {
       try { await post("/maintenance/apply", { confirmDeletes: true }); await refreshSession(); } catch (e) { fail(e); }
-    } }, t("scan.start.applying.changes"))));
+    } }, t("scan.applyStart"))));
 }
 
 export async function startScan() {
-  if (S.scope.kind === "project" && !S.scope.projectNames.length) { toast(t("scan.choose.projects"), t("scan.choose.at.least.one.project.to.collect")); return; }
+  if (S.scope.kind === "project" && !S.scope.projectNames.length) { toast(t("scan.choose.projects"), t("scan.chooseOneProject")); return; }
   const pending = pendingRun();
-  if (pending && !await ask({ title: t("scan.start.a.new.collection"), lines: [t("scan.replaceCollectionWarning", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" })], ok: t("scan.collect.again") })) return;
-  if (S.scope.kind === "all" && !await ask({ title: t("scan.collect.all.conversations"), lines: [t("scan.downloading.all.content.can.take.minutes.or")], ok: t("scan.start.collection") })) return;
+  if (pending && !await ask({ title: t("scan.startNewTitle"), lines: [t("scan.replaceCollectionWarning", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" })], ok: t("scan.collect.again") })) return;
+  if (S.scope.kind === "all" && !await ask({ title: t("scan.collectAllTitle"), lines: [t("scan.collectAllTimeNote")], ok: t("scan.start.collection") })) return;
   try { S.forceStep = null; await post("/maintenance/scan", scanBody()); await refreshSession(); } catch (e) { fail(e); }
 }
 
 async function startPartialScan() {
   const pending = pendingRun();
-  if (pending && !await ask({ title: t("scan.continue.with.collected.conversations"), lines: [t("scan.replaceWithPartialWarning", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" })], ok: t("scan.continue") })) return;
+  if (pending && !await ask({ title: t("scan.continuePartialTitle"), lines: [t("scan.replaceWithPartialWarning", { scope: scopeLabel(pending.scope), count: pending.candidates ?? "?" })], ok: t("scan.continue") })) return;
   try { S.forceStep = null; await post("/maintenance/scan/partial"); await refreshSession(); } catch (e) { fail(e); }
 }
 

@@ -212,7 +212,7 @@ export function reportMarkdown(report, locale) {
   if (details.renames?.length) lines.push("", `## ${t("report.renames")}`, "", ...details.renames.map((item) => `- ${item.from} → ${item.to}`));
   if (details.moves?.length) lines.push("", `## ${t("report.moves")}`, "", ...details.moves.map((item) => `- ${item.title}: ${item.from || t("result.no.project")} → ${item.to}`));
   if (details.trashed?.length) lines.push("", `## ${t("report.trashed")}`, "", ...details.trashed.map((item) => `- ${item.title}${item.project ? t("report.previousProject", { project: item.project }) : ""}${item.why ? ` — ${item.why}` : ""}`));
-  lines.push("", `## ${t("result.actions.for.you")}`);
+  lines.push("", `## ${t("result.nextSteps")}`);
   if (!report.todo.deleteEmptyProjects.length && !report.todo.removeFromProject.length && !report.todo.deleteYourself.length) lines.push("", t("result.none"));
   if (report.todo.deleteYourself.length) {
     lines.push("", t("report.manualDelete"),
