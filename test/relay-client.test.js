@@ -73,7 +73,7 @@ test("a page that never answers fails only that request with 599 and the loop ke
   const api = createRelayApi({ broker, requestDelayMs: 0, backoffBaseMs: 1, backoffCapMs: 2 });
   const first = await api.accountInfo();
   assert.equal(first.status, 599);
-  assert.match(first.bodySnippet, /응답 시간 초과/);
+  assert.match(first.bodySnippet, /did not respond/);
   assert.equal(states.at(-1).connected, true);
   const second = await api.accountInfo();
   assert.equal(second.ok, true);

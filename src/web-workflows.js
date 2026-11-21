@@ -1,5 +1,6 @@
 // 원격에 닿는 워크플로: 스캔, 적용, 삭제후보 다시 확인, 프로젝트 목록 읽기. 잠금·영수증을 다룬다.
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { KIND } from "./error-kinds.js";
 import { message } from "./i18n.js";
 import { PHASE } from "./phases.js";
 import { join } from "node:path";
@@ -404,7 +405,7 @@ export async function trashSyncWorkflow(workspace, dataDir, api, job) {
       present = new Set(catalog.conversations.map((item) => item.conversationId));
     } catch (error) {
       // 프로젝트 자체가 지워졌다면 그 안의 대화도 더 이상 그곳에 없다.
-      if (!/프로젝트를 찾을 수 없습니다/.test(String(error?.message || ""))) throw error;
+      if (error?.kind !== KIND.projectNotFound) throw error;
     }
     const gone = trash.items.filter((item) => !present.has(item.conversationId)).map((item) => item.conversationId);
     if (gone.length) removeTrashed(dataDir, gone);

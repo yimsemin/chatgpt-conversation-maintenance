@@ -1,3 +1,4 @@
+import { KIND } from "./error-kinds.js";
 import { fallbackLocale, message, messageText } from "./i18n.js";
 
 // 내부 오류 문장(영문·검증 메시지)을 사용자가 바로 행동할 수 있는 "무슨 일 + 무엇을 하면 되는가"로 바꾼다.
@@ -9,31 +10,30 @@ const RULES = [
     recovery: "rescan" },
   { test: /Uncertain in-progress receipt actions/i,
     key: "uncertainWrite" },
-  { test: /\block\b|잠금/i,
+  { test: /\block\b/i,
     key: "locked" },
   { test: /HTTP 40[13]|accessToken|session lookup|session has no access token/i,
     key: "auth" },
   { test: /HTTP 429|rate.?limit|429/i,
     key: "limited" },
-  { test: /timed out|시간 초과|HTTP 599|page-timeout/i,
+  { kind: KIND.relayTimeout, test: /timed out|HTTP 599|page-timeout/i,
     key: "timeout" },
-  { test: /Relay client was replaced|relay page disconnected/i,
+  { kind: KIND.relayReplaced, test: /Relay client was replaced|relay page disconnected/i,
     key: "relayChanged",
     recovery: "rescan" },
-  { test: /relay.*not connected|릴레이|ChatGPT relay page/i,
+  { kind: KIND.relayDown, test: /relay.*not connected|ChatGPT relay page/i,
     key: "relayDown" },
   { test: /HTTP 5\d\d/i,
     key: "remote" },
-  { test: /사용자가 중단/,
-    key: "cancelled" },
-  { test: /INTERRUPTED|서버가 종료/,
+  { key: "cancelled" }, // 문장이 아니라 diagnostic(error.cancelled.title)로만 알아본다.
+  { test: /INTERRUPTED/,
     key: "interrupted" },
 ];
 
-export function explainError(text, diagnostic) {
+export function explainError(text, diagnostic, kind = null) {
   const rule = diagnostic
     ? RULES.find(({ key }) => diagnostic.key === `error.${key}.title`)
-    : RULES.find(({ test }) => test.test(String(text || "")));
+    : (kind && RULES.find((item) => item.kind === kind)) || RULES.find(({ test }) => test?.test(String(text || "")));
   const titleContent = diagnostic || message(rule ? `error.${rule.key}.title` : "error.generic.title");
   const actionContent = message(rule ? `error.${rule.key}.action` : "error.generic.action");
   return {

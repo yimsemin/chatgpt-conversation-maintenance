@@ -159,6 +159,7 @@ export const messages = Object.freeze({
   "error.noSuchJob": "작업 상태를 찾을 수 없습니다",
   "error.planChanged": "이미 적용한 변경이 있는데 결정이 바뀌었습니다. 이 정리는 안전하게 다시 만들 수 없어 여기서 멈춥니다. 같은 범위를 ‘새로 수집’해 ChatGPT의 현재 상태를 다시 읽은 뒤 새 정리에서 결정하세요.",
   "error.planSourceUnknown": "이 정리의 변경이 어떤 결정에서 나왔는지 확인할 수 없고 이미 적용한 변경도 있습니다. 안전을 위해 멈춥니다. 같은 범위를 ‘새로 수집’한 뒤 새 정리에서 결정하세요.",
+  "error.projectNotFound": "프로젝트를 찾을 수 없습니다: {name}",
   "error.relayChanged.action": "북마클릿을 다시 실행했거나 정리 창을 닫으면 이렇게 됩니다. 정리 창은 하나만 열어 두세요(이전 창은 닫기). 화면이 ‘ChatGPT 연결됨’이면 같은 버튼으로 다시 시작하세요. 끝난 부분은 다시 하지 않습니다.",
   "error.relayChanged.title": "ChatGPT 연결(정리 창)이 바뀌거나 끊겨 작업이 중단되었습니다",
   "error.relayDown.action": "chatgpt.com 탭에서 북마클릿(ChatGPT → 대화 정리)을 누르세요.",

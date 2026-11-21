@@ -159,6 +159,7 @@ export const messages = Object.freeze({
   "error.noSuchJob": "Job not found",
   "error.planChanged": "Decisions changed after some actions were applied. Collect the same scope again and review the current ChatGPT state in a new cleanup.",
   "error.planSourceUnknown": "Some actions were applied, but their source decisions could not be verified. Collect the same scope again and review a new cleanup.",
+  "error.projectNotFound": "Project not found: {name}",
   "error.relayChanged.action": "Keep one cleanup window open. When it shows “ChatGPT connected”, click the same button again.",
   "error.relayChanged.title": "The ChatGPT connection changed or disconnected during the job",
   "error.relayDown.action": "Run the bookmarklet in the chatgpt.com tab.",

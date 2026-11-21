@@ -6,7 +6,8 @@ import { CONFIG } from "./config.js";
 import { ACCOUNT_ID } from "./ids.js";
 import { createRelayApi } from "./relay-api.js";
 import { relayBroker } from "./remote-relay.js";
-import { fallbackLocale, message, messageText } from "./i18n.js";
+import { isTransientFailure } from "./error-kinds.js";
+import { fallbackLocale, localizedError, message, messageText } from "./i18n.js";
 import { computeEta, createJobLog, trackProgress } from "./jobs.js";
 import { createPacer } from "./relay-api.js";
 import { createSafeDiagnostic } from "./web-common.js";
@@ -160,20 +161,20 @@ export function publicJob(job) {
   };
 }
 
+const cancelledError = () => localizedError(message("error.cancelled.title"));
+
 // 429 쿨다운 대기 중에도 중단 요청에 반응하도록 잘게 나눠 잔다.
 async function cancellableSleep(job, ms) {
   for (let left = ms; left > 0; left -= 500) {
-    if (job.cancelled) throw new Error("사용자가 중단했습니다");
+    if (job.cancelled) throw cancelledError();
     await new Promise((resolve) => setTimeout(resolve, Math.min(500, left)));
   }
-  if (job.cancelled) throw new Error("사용자가 중단했습니다");
+  if (job.cancelled) throw cancelledError();
 }
 
 // 일시적인 실패(429·릴레이 시간 초과·5xx)는 사용자가 버튼을 다시 누르지 않아도 기다렸다가 이어서 한다.
 // 각 단계는 영수증·재조회로 이미 끝난 일을 건너뛰므로 다시 실행해도 안전하다.
 const AUTO_RESUME_ATTEMPTS = 12;
-
-const TRANSIENT_FAILURE = /429|rate.?limit|timed out|시간 초과|HTTP 5\d\d|HTTP 599|relay|릴레이|disconnected|not connected/i;
 
 export async function untilDone(job, label, step) {
   for (let attempt = 1; ; attempt++) {
@@ -181,7 +182,7 @@ export async function untilDone(job, label, step) {
       return await step();
     } catch (error) {
       const reason = String(error?.message || error);
-      if (job.cancelled || attempt >= AUTO_RESUME_ATTEMPTS || !TRANSIENT_FAILURE.test(reason)) throw error;
+      if (job.cancelled || attempt >= AUTO_RESUME_ATTEMPTS || !isTransientFailure(error)) throw error;
       // 기본 5분에서 시작해 시도마다 늘어 최대 30분. 개발·시험에서는 환경 변수로 줄일 수 있다.
       const baseSeconds = CONFIG.resumeWaitSeconds;
       const waitSeconds = Math.min(baseSeconds * attempt, Math.max(baseSeconds, 1800));
@@ -198,7 +199,7 @@ export function relayApi(job, requestDelayMs = 1000) {
   return createRelayApi({ broker: relayBroker, requestDelayMs: CONFIG.requestDelayMs === undefined ? requestDelayMs : CONFIG.requestDelayMs,
     pacer: CONFIG.requestDelayMs === undefined ? readPacer : null,
     backoffBaseMs: CONFIG.relayBackoffMs, backoffCapMs: Math.max(CONFIG.relayBackoffMs, 300000), sleep: (ms) => cancellableSleep(job, ms),
-    onRequest: ({ op, count }) => { if (job.cancelled) throw new Error("사용자가 중단했습니다"); jobEvent(job, "request", message("log.chatgptRequest", { count, op, item: job.currentItem ? message("log.item.detail", { detail: job.currentItem }) : "" })); },
+    onRequest: ({ op, count }) => { if (job.cancelled) throw cancelledError(); jobEvent(job, "request", message("log.chatgptRequest", { count, op, item: job.currentItem ? message("log.item.detail", { detail: job.currentItem }) : "" })); },
     onRelayDown: () => jobEvent(job, "relay-down", message("log.relayDown")),
     onRelayUp: ({ waitedMs }) => jobEvent(job, "relay-up", message("log.relayUp", { seconds: Math.round(waitedMs / 1000) })),
     onRetry: (retry) => {

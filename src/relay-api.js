@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { assert } from "./assert.js";
+import { KIND, withKind } from "./error-kinds.js";
 import { validateRemoteOperation, validateRemoteResult } from "./remote-ops.js";
 import { createRelayTrace } from "./relay-trace.js";
 
@@ -32,7 +33,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     }
     if (clientId && clientId !== id) {
       trace.record("connect-replaced", { clientId, note: `${ownerStuck ? "stuck" : "stale"}; taken over by ${id.slice(0, 8)}` });
-      for (const requestId of [...pending.keys()]) cancel(requestId, "Relay client was replaced", { retryable: true });
+      for (const requestId of [...pending.keys()]) cancel(requestId, "Relay client was replaced", { retryable: true, kind: KIND.relayReplaced });
       queue.length = 0;
     }
     clientId = id;
@@ -54,7 +55,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     if (!(clientId && now() - lastSeenAt <= livenessMs)) {
       const error = new Error("ChatGPT relay page is not connected");
       error.relayDown = true;
-      throw error;
+      throw withKind(error, KIND.relayDown);
     }
     const id = randomUUID();
     return new Promise((resolve, reject) => {
@@ -67,6 +68,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
         const error = new Error(`ChatGPT page relay timed out: ${validated.op}`);
         error.retryable = false;
         error.timedOut = true;
+        withKind(error, KIND.relayTimeout);
         reject(error);
       }, timeoutMs);
       const entry = { id, operation: validated, resolve, reject, timer, enqueuedAt };
@@ -122,7 +124,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     return { accepted: true };
   }
   // retryable: 연결(정리 창)이 바뀌거나 끊겨서 취소된 요청은 새 연결로 다시 보낼 수 있다. 사용자 취소는 다시 보내지 않는다.
-  function cancel(requestId, message = "Remote operation was cancelled", { retryable = false, relayDown = false } = {}) {
+  function cancel(requestId, message = "Remote operation was cancelled", { retryable = false, relayDown = false, kind = null } = {}) {
     const entry = pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
@@ -131,6 +133,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     const error = new Error(message);
     error.retryable = retryable;
     if (relayDown) error.relayDown = true;
+    if (kind) withKind(error, kind);
     entry.reject(error);
     return true;
   }
@@ -138,7 +141,7 @@ export function createRelayBroker({ timeoutMs = 90000, livenessMs = 120000, stuc
     if (id !== clientId) return { disconnected: false };
     trace.record("disconnect", { clientId: id });
     clientId = null;
-    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected", { retryable: true, relayDown: true });
+    for (const requestId of [...pending.keys()]) cancel(requestId, "ChatGPT relay page disconnected", { retryable: true, relayDown: true, kind: KIND.relayReplaced });
     queue.length = 0;
     return { disconnected: true };
   }
@@ -186,7 +189,7 @@ export function createRelayApi({ broker, sleep = (ms) => new Promise((resolve) =
     onRelayDown();
     const started = now();
     while (!broker.status().connected) {
-      if (now() - started > relayWaitMaxMs) throw new Error("ChatGPT relay page is not connected (waited too long)");
+      if (now() - started > relayWaitMaxMs) throw withKind(new Error("ChatGPT relay page is not connected (waited too long)"), KIND.relayDown);
       await sleep(relayPollMs);
     }
     onRelayUp({ waitedMs: now() - started });

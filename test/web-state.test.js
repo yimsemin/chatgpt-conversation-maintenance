@@ -12,7 +12,8 @@ test("known failures become an explanation with a next action", () => {
   assert.match(explainError("ChatGPT page relay timed out: getConversation").title, /응답하지 않았습니다/);
   assert.match(explainError("ChatGPT relay page is not connected").action, /북마클릿/);
   assert.match(explainError("Uncertain in-progress receipt actions require manual review: a").action, /확인/);
-  assert.match(explainError("사용자가 중단했습니다").title, /중단/);
+  assert.match(explainError("", { key: "error.cancelled.title" }).title, /중단/);
+  assert.match(explainError("anything", null, "relay-down").action, /북마클릿/);
 });
 
 import { computeEta, createJobLog, formatDuration } from "../src/jobs.js";

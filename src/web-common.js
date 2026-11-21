@@ -110,7 +110,7 @@ export function createSafeDiagnostic(stage, error, workspace, runId = null) {
     runId,
     occurredAt: new Date().toISOString(),
     message,
-    explain: explainError(message, error?.diagnostic),
+    explain: explainError(message, error?.diagnostic, error?.kind),
   };
 }
 

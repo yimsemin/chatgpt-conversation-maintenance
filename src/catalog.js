@@ -4,6 +4,8 @@
 // 전체 대화 목록 응답에는 프로젝트 대화가 일부 빠져 있어(2026-09-25 실측, docs/API_COMPATIBILITY.md) 목록만으로는 프로젝트 안의 대화를 다 못 찾는다.
 // 프로젝트 없는 대화는 그 실측에서 빠진 적이 없어 목록으로 찾는다.
 import { assert } from "./assert.js";
+import { KIND, withKind } from "./error-kinds.js";
+import { localizedError, message } from "./i18n.js";
 import { CONVERSATION_ID } from "./ids.js";
 import { isNormalizedTitle } from "./title-rules.js";
 
@@ -220,7 +222,7 @@ export async function collectScopedCatalog(api, scope, now = () => new Date(), o
   if (scope.kind === "project") {
     for (const [index, name] of scope.projectNames.entries()) {
       const target = projects.find((project) => project.projectName === name);
-      assert(target, `프로젝트를 찾을 수 없습니다: ${name}`);
+      if (!target) throw withKind(localizedError(message("error.projectNotFound", { name })), KIND.projectNotFound);
       onProgress({ phase: "projects", index, total: scope.projectNames.length, projectName: target.projectName });
       const items = await readProjectConversations(api, target);
       for (const item of items) records.set(item.id, catalogRecord(item, target.projectName));

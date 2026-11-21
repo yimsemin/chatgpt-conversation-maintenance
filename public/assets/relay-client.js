@@ -29,7 +29,7 @@ export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutM
         window.removeEventListener("message", receive);
         trace("page-timeout", { op: request.op, requestId: request.id, elapsedMs: Date.now() - startedAt });
         resolve({ ok: false, status: 599, data: null, contentType: "",
-          bodySnippet: "ChatGPT 페이지 응답 시간 초과 — chatgpt.com 탭을 앞으로 가져오세요" });
+          bodySnippet: "The ChatGPT page did not respond in time" });
       }, pageTimeoutMs);
       function receive(event) {
         if (event.origin !== CHATGPT || event.source !== peer || event.data?.id !== request.id) return;
@@ -63,12 +63,12 @@ export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutM
       while (connected && !stopped) {
         const next = await api("/relay/next", { method: "POST", body: JSON.stringify({ clientId }) });
         if (!next.request) { await new Promise((resolve) => setTimeout(resolve, 250)); continue; }
-        if (!peer || peer.closed) throw new Error("ChatGPT 페이지 연결이 끊겼습니다");
+        if (!peer || peer.closed) throw new Error("The connection to the ChatGPT page was lost");
         const result = await deliver(next.request);
         try {
           await api("/relay/result", { method: "POST", body: JSON.stringify({ clientId, requestId: next.request.id, result }) });
         } catch (postError) {
-          const note = `결과 전달 실패: ${postError?.message || postError}`;
+          const note = `Could not deliver the result: ${postError?.message || postError}`;
           trace("loop-error", { op: next.request.op, requestId: next.request.id, note });
           await api("/relay/result", { method: "POST", body: JSON.stringify({ clientId, requestId: next.request.id,
             result: { ok: false, status: 599, data: null, contentType: "", bodySnippet: note.slice(0, 200) } }) }).catch(() => {});
