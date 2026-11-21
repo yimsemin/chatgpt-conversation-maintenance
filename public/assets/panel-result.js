@@ -35,6 +35,7 @@ export async function loadResult() {
       h("h3", { text: t("result.project.changes") }),
       h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: t("result.project") }), h("th", { class: "num", text: t("result.before") }), h("th", { class: "num", text: t("result.after") }), h("th", { class: "num", text: t("result.change") }))),
         h("tbody", {}, r.projects.filter((p) => p.delta !== 0 || p.isNew).map((p) => h("tr", {}, h("td", { text: `${p.name}${p.isNew ? t("result.new") : ""}` }), h("td", { class: "num", text: p.before ?? "—" }), h("td", { class: "num", text: p.actualAfter ?? "—" }),
-          h("td", { class: `num ${p.delta > 0 ? "up" : "down"}`, text: `${p.delta > 0 ? "+" : ""}${p.delta}` }))))));
+          h("td", { class: `num ${p.delta > 0 ? "up" : "down"}`, text: `${p.delta > 0 ? "+" : ""}${p.delta}` }))))),
+      r.projects.some((p) => (p.delta !== 0 || p.isNew) && p.actualAfter == null) ? h("p", { class: "muted small", text: t("result.notReread") }) : null);
   } catch (e) { fail(e); }
 }

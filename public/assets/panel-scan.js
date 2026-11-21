@@ -157,7 +157,6 @@ export function scanPanel() {
     option("app_skip_failed", skipFailedOn(), t("scan.skipFailedOption"), t("scan.skipFailedOffNote")),
     option("app_skip_standard", skipStandardOn(), t("scan.skipStandardOption"), t("scan.skipKeptTitlesNote")),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !s.relay?.connected, onclick: startScan }, t("scan.collectButton"))),
-    last ? h("p", { class: "chip good", text: t("scan.nothingInScope", { when: when(last.updatedAt) }) }) : null,
     last?.standardTitlesExcluded ? h("p", { class: "muted small", text: t("scan.skippedStandardNote", { count: last.standardTitlesExcluded }) }) : null,
     last?.skipped?.length ? skippedCallout(last.skipped) : null,
     !s.relay?.connected ? h("p", { class: "muted small", text: t("scan.connectToCollect") }) : null,
