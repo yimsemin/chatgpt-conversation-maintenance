@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { assert } from "./assert.js";
+import { message } from "./i18n.js";
 import { runFiles } from "./run-files.js";
 import { writeJsonAtomic } from "./fs-json.js";
 import { attachmentReferenceCount, contentSha256, sha256 } from "./content-hash.js";
@@ -252,7 +253,7 @@ export function findPartialScan(dataDir, { now = Date.now() } = {}) {
 export function finishPartialScan({ runDir }) {
   const root = resolve(runDir);
   const draft = readScanDraft(root);
-  assert(draft, "이어서 쓸 수 있는 끊긴 수집이 없습니다");
+  assert(draft, message("error.noPartialScan"));
   const candidates = [];
   for (const item of draft.selected) {
     const backupFile = resolve(root, "json", `${item.conversationId}.json`);
@@ -262,7 +263,7 @@ export function finishPartialScan({ runDir }) {
       candidates.push({ ...conversationRecord(item, JSON.parse(raw.toString("utf8")), raw, backupFile), reasons: item.reasons });
     } catch {}
   }
-  assert(candidates.length > 0, "받아 둔 대화 본문이 없습니다");
+  assert(candidates.length > 0, message("error.noPartialScan"));
   return publishInventory({ root, catalog: draft.catalog, candidates, scope: draft.scope,
     partial: { downloaded: candidates.length, total: draft.selected.length }, standardTitlesExcluded: draft.standardTitlesExcluded || 0 });
 }

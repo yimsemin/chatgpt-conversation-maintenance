@@ -208,7 +208,7 @@ export function startServer() {
     const first = isFirstUse();
     console.log(`\n${line}\n 대화 정리 앱이 실행 중입니다 (프로세스 ${process.pid})\n 주소: ${LOCAL_URL}\n`
       + ` 이 터미널 창이 앱입니다. 창을 닫거나 Ctrl+C 를 누르면 앱이 종료됩니다.\n\n`
-      + ` 다음: chatgpt.com 에 로그인한 탭에서 북마클릿(ChatGPT → 유지관리)을 누르세요.\n`
+      + ` 다음: chatgpt.com 에 로그인한 탭에서 북마클릿(ChatGPT → 대화 정리)을 누르세요.\n`
       + ` 그러면 '대화 정리' 창이 열리고, 정리 작업은 그 창 하나에서 합니다.\n`
       + (first ? ` (처음이면 북마클릿 설치 안내를 브라우저에 열었습니다: ${LOCAL_URL}/auth/bookmarklet)\n` : "")
       + `${line}\n`);

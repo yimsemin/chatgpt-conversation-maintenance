@@ -42,7 +42,7 @@ export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
     // 사용자가 제목 변경을 해제한 대화(keepTitle)만 원래 제목을 그대로 둔다(예외).
     const keepTitle = input.keepTitle === true && (!newTitle || newTitle === source.title);
     assert(keepTitle || isNormalizedTitle(newTitle || source.title),
-      `${label}: 제목은 "주제 — 작업/결과" 형식이어야 합니다`);
+      message("error.invalidTitleFormat"));
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
     assert(!(input.trashed === true && input.marked === true), `${label}: 삭제후보 이동과 삭제 표시는 함께 쓸 수 없습니다`);
     return {

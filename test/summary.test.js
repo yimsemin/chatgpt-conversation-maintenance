@@ -50,7 +50,7 @@ test("the result report lists the empty projects and manual removals the user mu
   assert.equal(report.todo.removeFromProject.length, 1);
   const markdown = reportMarkdown(report);
   assert.match(markdown, /비어 있는 프로젝트/);
-  assert.match(markdown, /영수증/);
+  assert.match(markdown, /확인 기록/);
   assert.equal(report.details.moves.length, report.changes.move);
   assert.equal(report.details.renames.length, report.changes.rename);
   if (report.changes.rename) assert.match(markdown, /## 바뀐 제목/);

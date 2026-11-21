@@ -124,13 +124,13 @@ function drawReview() {
   syncApplyBar();
 }
 
-const RELAY_DOWN = t("review.chatgpt.is.disconnected.run.the.bookmarklet.in");
+const relayDownReason = () => t(S.relayLocal?.needsUpdate ? "app.bookmarklet.update.required" : "review.chatgpt.is.disconnected.run.the.bookmarklet.in");
 
 // 적용 버튼과 막힌 이유를 지금 상태(연결 여부 포함)에 맞춘다. 화면이 갱신될 때마다 부른다.
 function syncApplyBar() {
   const button = $("apply-button"); const box = $("apply-blockers");
   if (!button || !box) return;
-  const reasons = [...(S.applyBlockers || []), ...(S.session?.relay?.connected ? [] : [RELAY_DOWN])];
+  const reasons = [...(S.applyBlockers || []), ...(S.session?.relay?.connected ? [] : [relayDownReason()])];
   button.disabled = reasons.length > 0;
   box.textContent = reasons.join(" · "); box.hidden = reasons.length === 0;
 }

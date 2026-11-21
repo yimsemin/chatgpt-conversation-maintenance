@@ -101,7 +101,7 @@ function projectChooser() {
 // 실행(run)에 기록된 수집 범위를 사람이 읽는 말로.
 export function scopeLabel(scope) {
   if (!scope) return "";
-  if (scope.kind === "project") return t("scan.projects", { projects: scope.projectNames.map((name) => `「${name}」`).join(", ") });
+  if (scope.kind === "project") return t("scan.projects", { projects: scope.projectNames.map((name) => t("common.quoted", { text: name })).join(", ") });
   if (scope.kind === "recent") return t("scan.last.days", { days: scope.days });
   if (scope.kind === "untidy") return t("scan.unorganized.conversations");
   if (scope.kind === "all") return t("scan.all.conversations");
@@ -137,7 +137,7 @@ function trashCallout() {
   const trash = S.session.trash;
   if (!trash?.count) return null;
   return h("div", { class: "callout" },
-    h("strong", { text: t("scan.deletion.candidates", { count: trash.count }) }), t("scan.chatgpt.project"), h("b", { text: `「${trash.project}」` }),
+    h("strong", { text: t("scan.deletion.candidates", { count: trash.count }) }), t("scan.chatgpt.project"), h("b", { text: t("common.quoted", { text: trash.project }) }),
     t("scan.review.the.candidates.to.delete.or.restore", { oldest: trash.oldestDays ? t("scan.oldestCandidate", { days: trash.oldestDays }) : "" }),
     h("button", { class: "btn ghost", type: "button", onclick: () => { S.view = "trash"; S.panelKey = ""; hooks.render(); } }, t("scan.review.deletion.candidates")));
 }

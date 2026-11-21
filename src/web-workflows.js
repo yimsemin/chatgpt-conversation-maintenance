@@ -289,7 +289,7 @@ async function applyManagementPlans({ files, api, accountId, job }) {
             : message(event.ok ? "workflow.batchFinish" : "workflow.batchFail", { count: event.actions }));
         }
       } });
-    assert(applied.ok, applied.error || "제목 변경 또는 삭제 적용에 실패했습니다");
+    assert(applied.ok, applied.error || message("workflow.applyFailed"));
   });
   job.currentItem = null;
 }
@@ -330,7 +330,7 @@ async function routingStage({ files, api, accountId, job }) {
         } });
       const failed = routed.results?.find((item) => !item.ok);
       if (failed) jobItem(job, moveKind(), { ok: false, title: movingTitle, reason: friendlyReason(failed.error) });
-      assert(routed.ok, `프로젝트 이동에 실패했습니다: ${failed?.error || ""}`);
+      assert(routed.ok, message("workflow.moveFailed", { reason: failed?.error || "" }));
     });
     job.currentItem = null;
   } else {
