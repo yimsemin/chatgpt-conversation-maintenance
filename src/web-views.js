@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { lockStatus } from "./maintenance-lock.js";
 import { relayBroker } from "./remote-relay.js";
 import { buildClaudePrompt } from "./classification-review.js";
-import { translate, translator } from "./i18n.js";
+import { message, translate, translator } from "./i18n.js";
 import { classificationCriteria } from "./classification-criteria.js";
 import { validateClassificationProposals } from "./proposal-validation.js";
 import { readTrash } from "./trash.js";
@@ -51,7 +51,7 @@ export function sessionData(workspace, dataDir, locale) {
   }
   let report = null;
   if (run?.hasReport) {
-    try { const data = readJson(runFiles(pointer.runDir).report, "결과"); report = { headline: data.totals && data.changes ? summaryHeadline(data, locale) : data.headline, finishedAt: data.finishedAt }; } catch {}
+    try { const data = readJson(runFiles(pointer.runDir).report, message("file.report")); report = { headline: data.totals && data.changes ? summaryHeadline(data, locale) : data.headline, finishedAt: data.finishedAt }; } catch {}
   }
   // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·삭제후보 다시 확인)이 있으면 결과 화면으로 되돌리지 않는다.
   const reportAt = Date.parse(report?.finishedAt || "") || 0;
@@ -81,7 +81,7 @@ export function reportData(workspace, dataDir, locale) {
   const pointer = readPointer(workspace, dataDir);
   const path = pointer ? runFiles(pointer.runDir).report : null;
   if (!path || !existsSync(path)) return { ready: false };
-  const report = readJson(path, "결과 보고서");
+  const report = readJson(path, message("file.report"));
   return { ready: true, report: { ...report, note: translate(locale, "summary.note"),
     headline: report.totals && report.changes ? summaryHeadline(report, locale) : report.headline } };
 }
@@ -99,7 +99,7 @@ export function proposalData(workspace, dataDir, locale) {
     };
   }
   const validation = validateClassificationProposals(pointer.inventoryPath, proposalPath);
-  const proposal = readJson(proposalPath, "분류안");
+  const proposal = readJson(proposalPath, message("file.proposal"));
   const manualMoves = proposal.items.filter((item) => item.suggestedProjectAction === "manual-move").length;
   return {
     ready: true,
@@ -138,7 +138,7 @@ function classificationPrompt(pointer, locale) {
 function claudePrompt(pointer, locale) {
   if (!pointer.reviewPath || !existsSync(pointer.reviewPath)) return null;
   try {
-    return buildClaudePrompt(readJson(pointer.reviewPath, "분류용 입력"), {
+    return buildClaudePrompt(readJson(pointer.reviewPath, message("file.reviewInput")), {
       locale, inventoryPath: pointer.inventoryPath,
       proposalPath: pointer.proposalPath || runFiles(pointer.runDir).proposal,
     });
@@ -150,11 +150,11 @@ export function catalogData(workspace, dataDir) {
   const pointer = readPointer(workspace, dataDir);
   const runCatalogPath = pointer ? runFiles(pointer.runDir).catalog : null;
   if (!runCatalogPath || !existsSync(runCatalogPath)) return { ready: false };
-  const catalog = readJson(runCatalogPath, "카탈로그");
+  const catalog = readJson(runCatalogPath, message("file.catalog"));
 
   const reasonsById = new Map();
   if (existsSync(pointer.inventoryPath)) {
-    const inventory = readJson(pointer.inventoryPath, "인벤토리");
+    const inventory = readJson(pointer.inventoryPath, message("file.inventory"));
     for (const item of inventory.conversations || []) {
       reasonsById.set(item.conversationId, item.reasons || []);
     }

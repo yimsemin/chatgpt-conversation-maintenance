@@ -35,7 +35,7 @@ export function jobLogFor(dataDir) {
 export function createJob(kind, workspace, dataDir = null) {
   cleanupJobs();
   assert(![...jobs.values()].some((job) => !job.done && job.workspace === workspace),
-    "이 작업 폴더에서 이미 다른 작업이 진행 중입니다");
+    message("error.anotherJobRunning"));
   const id = randomUUID();
   const job = { id, kind, workspace, createdAt: Date.now(), events: [], done: false, ok: null, result: null, error: null,
     progress: null };

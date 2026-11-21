@@ -18,33 +18,33 @@ import { proposalData } from "./web-views.js";
 // 규칙은 decision-compile.js compileReviewedDecisions / finalize.js finalizeMaintenanceRun과 같다.
 export function buildReviewedDecisionsFromInputs(pointer, inventory, inputs) {
   assert(inventory?.version === 1 && inventory.kind === "conversation-maintenance-inventory",
-    "유지관리 인벤토리가 아닙니다");
+    message("error.inventoryInvalid"));
   assert(Array.isArray(inventory.warnings) && inventory.warnings.length === 0,
-    `인벤토리에 경고가 있어 결정을 만들 수 없습니다: ${(inventory.warnings || ["warnings 필드 없음"]).join("; ")}`);
+    message("error.inventoryWarnings", { warnings: (inventory.warnings || ["warnings"]).join("; ") }));
   assert(Array.isArray(inputs) && inputs.length > 0, message("error.noDecisions"));
   const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
   const seen = new Set();
   const decisions = inputs.map((input, index) => {
-    const label = `결정[${index}]`;
-    assert(input && typeof input === "object" && !Array.isArray(input), `${label} 형식이 올바르지 않습니다`);
+    const number = index + 1;
+    assert(input && typeof input === "object" && !Array.isArray(input), message("error.decisionFormat", { index: number }));
     const source = inventoryById.get(input.conversationId);
-    assert(source, `${label}: 인벤토리에 없는 대화입니다`);
-    assert(!seen.has(input.conversationId), `${label}: 중복된 대화입니다`);
+    assert(source, message("error.decisionUnknown", { index: number }));
+    assert(!seen.has(input.conversationId), message("error.decisionDuplicate", { index: number }));
     seen.add(input.conversationId);
     assert(input.decision === "keep" || input.decision === "delete",
-      `${label}: 결정은 보존 또는 삭제여야 합니다`);
+      message("error.decisionKind", { index: number }));
     const newTitle = typeof input.newTitle === "string" ? input.newTitle.trim() : "";
     if (input.decision === "delete") {
-      assert(!newTitle, `${label}: 삭제할 대화의 제목은 바꿀 수 없습니다`);
+      assert(!newTitle, message("error.decisionDeleteTitle", { index: number }));
       return { conversationId: source.conversationId, decision: "delete", reviewed: true };
     }
     // 삭제후보으로 옮기는 대화도 표준 제목을 갖는다(살릴 수도 있고 목록 탐색에 필요하다).
     // 사용자가 제목 변경을 해제한 대화(keepTitle)만 원래 제목을 그대로 둔다(예외).
     const keepTitle = input.keepTitle === true && (!newTitle || newTitle === source.title);
     assert(keepTitle || isNormalizedTitle(newTitle || source.title),
-      message("error.invalidTitleFormat"));
+      message("error.invalidTitleFormat", { index: number }));
     const projectName = typeof input.projectName === "string" ? input.projectName.trim() : "";
-    assert(!(input.trashed === true && input.marked === true), `${label}: 삭제후보 이동과 삭제 표시는 함께 쓸 수 없습니다`);
+    assert(!(input.trashed === true && input.marked === true), message("error.decisionTrashConflict", { index: number }));
     return {
       conversationId: source.conversationId,
       decision: "keep",
@@ -70,7 +70,7 @@ export function writeReviewedDecisions(workspace, dataDir, inputs, trash = null)
   const pointer = readPointer(workspace, dataDir);
   assert(pointer, message("error.collectFirst"));
   assert(pointer.phase === PHASE.AWAITING_PROPOSAL, message("error.cannotSaveDecisions"));
-  const inventory = readJson(pointer.inventoryPath, "인벤토리");
+  const inventory = readJson(pointer.inventoryPath, message("file.inventory"));
   const decisions = buildReviewedDecisionsFromInputs(pointer, inventory, inputs);
   if (trash?.entries?.length) assertTrashProject(readTrash(dataDir), trash.project);
   writeJsonAtomic(runFiles(pointer.runDir).decisions, decisions);
@@ -83,16 +83,16 @@ function writeTrashMeta(pointer, inventory, decisions, trash) {
   const path = runFiles(pointer.runDir).trashMeta;
   if (!trash) { rmSync(path, { force: true }); return; }
   assert(typeof trash.project === "string" && trash.project.trim() === trash.project && trash.project,
-    "삭제후보 프로젝트 이름이 올바르지 않습니다");
+    message("error.trashProjectNameInvalid"));
   const decisionById = new Map(decisions.decisions.map((item) => [item.conversationId, item]));
   const inventoryById = new Map(inventory.conversations.map((item) => [item.conversationId, item]));
   const items = [];
   for (const entry of trash.entries || []) {
     const decision = decisionById.get(entry.conversationId);
     const source = inventoryById.get(entry.conversationId);
-    assert(decision && source, "삭제후보 이동 대상이 이번 후보에 없습니다");
+    assert(decision && source, message("error.trashTargetMissing"));
     assert(decision.decision === "keep" && decision.projectName === trash.project,
-      "삭제후보 이동 대상은 삭제후보 프로젝트에 두는 결정이어야 합니다");
+      message("error.trashTargetProject"));
     items.push({
       conversationId: entry.conversationId, title: decision.newTitle || source.title, fromProject: source.projectName || null,
       reason: String(entry.reason || "").slice(0, 200), intendedTarget: entry.intendedTarget ?? null, record: source,

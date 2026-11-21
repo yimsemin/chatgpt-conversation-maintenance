@@ -10,6 +10,7 @@ import { readJson, writeJsonAtomic } from "./fs-json.js";
 import { resolveDataDir, runsDir } from "./data-dir.js";
 import { CONFIG } from "./config.js";
 import { explainError } from "./errors.js";
+import { localizedError, message as messageOf } from "./i18n.js";
 
 export const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -29,11 +30,11 @@ export async function readRequestJson(req, limit = MAX_BODY_BYTES) {
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    assert(size <= limit, "요청 본문이 너무 큽니다");
+    assert(size <= limit, messageOf("error.requestTooLarge"));
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-  catch { throw new Error("요청 본문이 올바른 JSON이 아닙니다"); }
+  catch { throw localizedError(messageOf("error.requestInvalidJson")); }
 }
 
 function isInside(root, path) {
@@ -54,7 +55,7 @@ export function pointerPath(workspace) {
 export function readPointer(workspace, dataDir) {
   const path = pointerPath(workspace);
   if (!existsSync(path)) return null;
-  const pointer = readJson(path, "로컬 실행 상태");
+  const pointer = readJson(path, messageOf("file.runPointer"));
   if (pointer?.version !== 1 || typeof pointer.runDir !== "string") return null;
   if (!isInside(runsDir(dataDir), pointer.runDir)) return null;
   return pointer;

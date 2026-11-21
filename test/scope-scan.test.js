@@ -51,7 +51,7 @@ function api() {
 test("scope validation accepts only the five scope kinds", () => {
   assert.deepEqual(validateScope({ kind: "unassigned" }), { kind: "unassigned" });
   assert.deepEqual(validateScope({ kind: "unassigned", days: 14 }), { kind: "unassigned", days: 14 });
-  assert.throws(() => validateScope({ kind: "unassigned", days: 0 }), /기간/);
+  assert.throws(() => validateScope({ kind: "unassigned", days: 0 }), /일수/);
   assert.deepEqual(validateScope({ kind: "all", extra: 1 }), { kind: "all" });
   assert.deepEqual(validateScope({ kind: "recent", days: 7, extra: 1 }), { kind: "recent", days: 7 });
   assert.throws(() => validateScope({ kind: "everything" }), /종류/);

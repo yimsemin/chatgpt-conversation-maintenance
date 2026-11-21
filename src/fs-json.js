@@ -4,10 +4,15 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { dirname } from "node:path";
 
 import { assert } from "./assert.js";
+import { localizedError } from "./i18n.js";
 
+// label: 화면에 나올 수 있는 파일은 message("file.*") 번역 키를, 개발용 CLI는 영어 문자열을 넘긴다.
 export function readJson(path, label = "JSON") {
   try { return JSON.parse(readFileSync(path, "utf8")); }
-  catch { throw new Error(`${label}을(를) 읽을 수 없습니다: ${path}`); }
+  catch {
+    if (label?.key) throw localizedError({ key: "error.fileUnreadable", values: { label, path } });
+    throw new Error(`Could not read ${label}: ${path}`);
+  }
 }
 
 // 텍스트 파일을 임시 파일에 쓴 뒤 이름을 바꿔 원자적으로 반영한다(도중에 죽어도 반쯤 쓴 파일이 남지 않는다).

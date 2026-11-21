@@ -29,25 +29,25 @@ const MAX_RECENT_DAYS = 3650;
 const MAX_SCOPE_PROJECTS = 20;
 
 export function validateScope(scope) {
-  assert(scope && typeof scope === "object" && !Array.isArray(scope), "수집 범위가 올바르지 않습니다");
-  assert(SCOPE_KINDS.includes(scope.kind), "수집 범위 종류가 올바르지 않습니다");
+  assert(scope && typeof scope === "object" && !Array.isArray(scope), message("error.scopeInvalid"));
+  assert(SCOPE_KINDS.includes(scope.kind), message("error.scopeKindInvalid"));
   if (scope.kind === "project") {
     const names = scope.projectNames;
-    assert(Array.isArray(names), "프로젝트 이름 목록이 필요합니다");
-    assert(names.length >= 1 && names.length <= MAX_SCOPE_PROJECTS, `프로젝트는 1~${MAX_SCOPE_PROJECTS}개를 고르세요`);
+    assert(Array.isArray(names), message("error.projectNamesRequired"));
+    assert(names.length >= 1 && names.length <= MAX_SCOPE_PROJECTS, message("error.projectCountRange", { max: MAX_SCOPE_PROJECTS }));
     for (const name of names) {
-      assert(typeof name === "string" && name.trim() === name && name.length > 0 && name.length <= 100, "프로젝트 이름이 올바르지 않습니다");
+      assert(typeof name === "string" && name.trim() === name && name.length > 0 && name.length <= 100, message("error.projectNameInvalid"));
     }
     return { kind: "project", projectNames: [...new Set(names)] };
   }
   const validDays = (days) => Number.isInteger(days) && days >= 1 && days <= MAX_RECENT_DAYS;
   if (scope.kind === "recent") {
-    assert(validDays(scope.days), "최근 일수는 1 이상의 정수여야 합니다");
+    assert(validDays(scope.days), message("error.daysInvalid"));
     return { kind: "recent", days: scope.days };
   }
   if (scope.kind === "unassigned") {
     // days 가 없으면 기간 제한 없이 프로젝트 없는 대화 전체다.
-    assert(scope.days == null || validDays(scope.days), "기간(일)은 1 이상의 정수여야 합니다");
+    assert(scope.days == null || validDays(scope.days), message("error.daysInvalid"));
     return scope.days == null ? { kind: "unassigned" } : { kind: "unassigned", days: scope.days };
   }
   return { kind: scope.kind };

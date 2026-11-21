@@ -1,5 +1,6 @@
 // 적용 뒤 결과 확정: 승인된 결정과 완료된 계획이 서로 맞는지 확인하고, 이번 실행의 결과 카탈로그를 만든다.
 // 제목·삭제·이동은 적용 단계가 대화마다 다시 읽어 검증하고 영수증에 남겼으므로 여기서는 원격을 다시 읽지 않는다.
+import { message } from "./i18n.js";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { assert } from "./assert.js";
@@ -105,7 +106,7 @@ export function finalizeMaintenanceRun({ inventoryPath, decisionsPath, plansDir 
       mutations.map((item) => item.conversationId));
   }
   if (routingPath) {
-    assert(projectRoutingStatus(validateProjectRouting(readJson(routingPath, "프로젝트 배치 계획"))).pendingTargets === 0,
+    assert(projectRoutingStatus(validateProjectRouting(readJson(routingPath, message("file.routingPlan")))).pendingTargets === 0,
       "Project routing is not fully applied");
   }
   const before = readJson(inventory.catalogFile, "Maintenance catalog");

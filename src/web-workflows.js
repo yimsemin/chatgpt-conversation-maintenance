@@ -132,21 +132,21 @@ export async function scanWorkflow(workspace, dataDir, api, job, { scope, skipFa
 function settleTrash(pointer, dataDir, afterCatalog) {
   const metaPath = runFiles(pointer.runDir).trashMeta;
   if (existsSync(metaPath)) {
-    const meta = readJson(metaPath, "삭제후보 이동 정보");
+    const meta = readJson(metaPath, message("file.trashInfo"));
     addTrashed(dataDir, { project: meta.project, items: meta.items });
   }
   const followPath = runFiles(pointer.runDir).followUp;
   if (existsSync(followPath)) {
-    const follow = readJson(followPath, "후속 실행 정보");
+    const follow = readJson(followPath, message("file.followUp"));
     const stillTrashed = new Set(afterCatalog.conversations.filter((item) => item.projectName === follow.project).map((item) => item.conversationId));
     removeTrashed(dataDir, follow.ids.filter((id) => !stillTrashed.has(id)));
   }
 }
 
 function writeResultReport(pointer, afterCatalog, renameOrder, locale) {
-  const inventory = readJson(pointer.inventoryPath, "인벤토리");
-  const catalogBefore = readJson(inventory.catalogFile, "카탈로그");
-  const decisions = readJson(runFiles(pointer.runDir).decisions, "검토된 결정");
+  const inventory = readJson(pointer.inventoryPath, message("file.inventory"));
+  const catalogBefore = readJson(inventory.catalogFile, message("file.catalog"));
+  const decisions = readJson(runFiles(pointer.runDir).decisions, message("file.decisions"));
   const report = buildResultReport({
     catalogBefore,
     catalogAfter: afterCatalog,
@@ -199,9 +199,9 @@ function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDe
   let decisionCount;
   // 화면에서 저장한 결정이 있으면 그것을 그대로 쓰고, 없으면 붙여넣은 proposal.json에서 만든다.
   if (existsSync(files.decisions)) {
-    const reviewed = readJson(files.decisions, "검토된 결정");
+    const reviewed = readJson(files.decisions, message("file.decisions"));
     assert(reviewed?.version === 1 && reviewed.kind === "reviewed-decisions"
-      && Array.isArray(reviewed.decisions), "reviewed-decisions.json 형식이 올바르지 않습니다");
+      && Array.isArray(reviewed.decisions), message("error.fileInvalid", { label: message("file.decisions") }));
     deletes = reviewed.decisions.filter((item) => item.decision === "delete").length;
     decisionCount = reviewed.decisions.length;
   } else {
@@ -219,13 +219,13 @@ function checkApplyPreconditions({ workspace, dataDir, pointer, files, confirmDe
 // 나왔을 때만 재사용하고, 어긋나면 적용 결과(영수증)가 없을 때만 다시 만든다.
 function compilePlans({ pointer, files, job }) {
   if (!existsSync(files.decisions)) {
-    writeJsonAtomic(files.decisions, buildReviewedDecisions(pointer, readJson(pointer.proposalPath, "분류안")));
+    writeJsonAtomic(files.decisions, buildReviewedDecisions(pointer, readJson(pointer.proposalPath, message("file.proposal"))));
   }
   const decisionsDigest = sha256(readFileSync(files.decisions));
   // 출처 파일이 깨졌으면 출처를 모르는 계획으로 취급한다(영수증이 있으면 아래에서 중단한다).
   let planSource = null;
   if (existsSync(files.planSource)) {
-    try { planSource = readJson(files.planSource, "계획 출처"); } catch { planSource = null; }
+    try { planSource = readJson(files.planSource, message("file.planSource")); } catch { planSource = null; }
   }
   const reuse = planReuseDecision({
     hasCompiledArtifacts: existsSync(files.plans) || existsSync(files.routing),
@@ -297,14 +297,14 @@ async function applyManagementPlans({ files, api, accountId, job }) {
 
 // 프로젝트 배치·이동(25건 단위 타깃)을 적용하고 결과를 반영한다.
 async function routingStage({ files, api, accountId, job }) {
-  const routing = validateProjectRouting(readJson(files.routing, "프로젝트 배치 계획"));
+  const routing = validateProjectRouting(readJson(files.routing, message("file.routingPlan")));
   const routingPrepare = prepareProjectRouting(routing);
   const routingStatus = projectRoutingStatus(routing);
   if (routingStatus.pendingTargets > 0) {
     jobEvent(job, "routing", message("workflow.routing", { count: routingPrepare.conversationCount }));
     reportProgress(job, { phase: "routing", index: routingStatus.completedConversations, total: routingStatus.totalConversations });
     let targetBase = 0; let targetName = ""; let movingTitle = "";
-    const trashProject = existsSync(files.trashMeta) ? readJson(files.trashMeta, "삭제후보 정보").project : null;
+    const trashProject = existsSync(files.trashMeta) ? readJson(files.trashMeta, message("file.trashInfo")).project : null;
     const moveKind = () => (trashProject && targetName === trashProject ? "trash" : "move");
     await untilDone(job, message("workflow.operation.routing"), async () => {
       if (projectRoutingStatus(routing).pendingTargets === 0) return;
@@ -368,7 +368,7 @@ export async function applyWorkflow(workspace, dataDir, api, accountId, confirmD
     acquireLock({ dataDir });
     lockHeld = true;
     if (existsSync(files.trashMeta)) {
-      const meta = readJson(files.trashMeta, "삭제후보 이동 정보");
+      const meta = readJson(files.trashMeta, message("file.trashInfo"));
       if (meta.items.length) assertTrashProject(readTrash(dataDir), meta.project);
     }
     const { routingRequired, hasManagementPlans } = compilePlans({ pointer, files, job });
@@ -376,7 +376,7 @@ export async function applyWorkflow(workspace, dataDir, api, accountId, confirmD
       planTotal: hasManagementPlans ? preparePlanSet(files.plans).summary?.remainingActions || 0 : 0,
       total: 0,
     };
-    job.overall.total = job.overall.planTotal + (routingRequired ? projectRoutingStatus(validateProjectRouting(readJson(files.routing, "프로젝트 배치 계획"))).totalConversations : 0);
+    job.overall.total = job.overall.planTotal + (routingRequired ? projectRoutingStatus(validateProjectRouting(readJson(files.routing, message("file.routingPlan")))).totalConversations : 0);
     if (hasManagementPlans) await applyManagementPlans({ files, api, accountId, job });
     if (routingRequired) await routingStage({ files, api, accountId, job });
     jobEvent(job, "verify", message("workflow.verify"));
