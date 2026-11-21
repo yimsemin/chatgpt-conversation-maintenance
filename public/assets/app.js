@@ -2,7 +2,7 @@
 import { errorExplanation, eventText, progressLabel, t } from "/assets/language.js";
 import { startRelay } from "/assets/relay-client.js";
 import { S, STEPS, hooks } from "/assets/state.js";
-import { $, ask, duration, fill, h, meta, when } from "/assets/dom.js";
+import { $, ask, dotted, duration, fill, h, meta, when } from "/assets/dom.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { currentStep, refreshSession, schedulePoll } from "/assets/session-client.js";
 import { applyStages, logLines, progressBlock, scanStages } from "/assets/progress.js";
@@ -67,9 +67,11 @@ function renderAppInfo() {
   if (!app) { box.hidden = true; return; }
   box.hidden = false;
   const since = duration(app.uptimeSeconds);
-  box.textContent = t("app.processStatus", { pid: app.pid, elapsed: since });
+  // 항목마다 한 덩어리로 묶어 줄이 바뀔 때 항목 사이에서만 끊는다. 끄는 방법은 도움말 탭에 있다.
+  const parts = [t("app.running"), t("app.processPid", { pid: app.pid }), t("app.startedAgo", { elapsed: since })];
+  if (app.codeChanged) parts.push(t("app.codeChangedRestart"));
+  fill(box, h("i", { class: "dot" }), ...parts.map((text) => h("span", { text })));
   box.title = t("app.keepsRunningHint");
-  if (app.codeChanged) box.textContent += t("app.codeChangedRestart");
 }
 
 // 가장 최근 작업이 실패했고 그 뒤에 성공이 없으면 원인과 조치를 화면 맨 위에 보인다.
@@ -134,7 +136,7 @@ function renderNow() {
     headline = s.report?.headline || t("app.cleanupComplete"); sub = t("app.finished", { when: when(s.report?.finishedAt) });
     action = h("button", { class: "btn ghost", type: "button", onclick: () => { S.forceStep = "scan"; S.panelKey = ""; render(); } }, t("app.startNewCleanup"));
   }
-  fill($("now"), h("div", {}, h("p", { class: "headline", text: headline }), h("p", { class: "sub", text: sub })), action);
+  fill($("now"), h("div", {}, h("p", { class: "headline" }, ...dotted(headline)), h("p", { class: "sub" }, ...dotted(sub))), action);
 }
 
 function renderSteps() {

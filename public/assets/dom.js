@@ -26,6 +26,13 @@ export function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
 }
 
+// "A · B · C" 형태의 한 줄 요약을 항목 단위로 묶는다: 줄이 바뀌어도 "프로젝트 이동 / 12건"처럼 항목 중간에서 끊기지 않고 항목 사이에서만 끊긴다.
+// 구분점은 앞 항목에 붙여 줄 맨 앞에 남지 않게 한다.
+export function dotted(text, sep = " · ") {
+  const parts = String(text ?? "").split(sep); const dot = sep.trim();
+  return parts.flatMap((part, i) => [i ? " " : null, h("span", { class: "nw", text: i < parts.length - 1 ? `${part} ${dot}` : part })]);
+}
+
 export function duration(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
   if (seconds < 60) return t("dom.seconds", { seconds: Math.max(1, Math.round(seconds)) });
@@ -57,7 +64,7 @@ export function ask({ title, lines = [], ok = t("dom.continue"), ack = null }) {
     const box = ack ? h("input", { type: "checkbox" }) : null;
     const go = h("button", { class: "btn", value: "go", disabled: Boolean(ack) }, ok);
     if (box) box.addEventListener("change", () => { go.disabled = !box.checked; });
-    fill($("confirm-form"), h("h2", { text: title }), ...lines.map((line) => h("p", { class: "small", text: line })),
+    fill($("confirm-form"), h("h2", {}, ...dotted(title)), ...lines.map((line) => h("p", { class: "small", text: line })),
       ack ? h("label", { class: "check" }, box, ack) : null,
       h("div", { class: "row" }, go, h("button", { class: "btn ghost", value: "cancel" }, t("dom.cancel"))));
     dialog.returnValue = "";

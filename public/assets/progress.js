@@ -1,7 +1,7 @@
 // 진행 중 작업의 진행률·로그 블록과 적용 단계 표시.
 import { displayMessage, eventText, progressLabel, t } from "/assets/language.js";
 import { S } from "/assets/state.js";
-import { ask, clock, duration, fill, h } from "/assets/dom.js";
+import { ask, clock, dotted, duration, fill, h } from "/assets/dom.js";
 import { api, fail, post } from "/assets/net.js";
 
 // 기본은 대화 단위 줄만 보여 주고, detail 이면 서버가 ChatGPT에 보낸 요청 줄까지 보여 준다.
@@ -54,7 +54,7 @@ export function progressBlock(kind) {
       bar.style.width = `${Math.min(whole && !job.done ? 99 : 100, Math.round(pct * 100))}%`;
     } else barWrap.classList.add("indeterminate");
     const [line1, line2] = statusLines(job);
-    label.textContent = line1; sub.textContent = line2; counts.textContent = countsText(job.counts);
+    fill(label, ...dotted(line1)); fill(sub, ...dotted(line2)); fill(counts, ...dotted(countsText(job.counts)));
     if (full) return;
     const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     fill(log, ...logLines(job.events.slice(-200)));
