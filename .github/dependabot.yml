@@ -3,7 +3,6 @@
 #   1. 프로젝트에 없는 패키지 관리자 항목은 지운다(매니페스트가 없으면 Dependabot이 오류를 낸다).
 #      npm = package.json, uv = pyproject.toml + uv.lock, pip = requirements.txt,
 #      github-actions = .github/workflows/.
-#   2. 프로젝트가 develop을 쓰면 모든 항목에 `target-branch: develop`을 추가한다.
 #   3. 매니페스트가 루트가 아니면 directory를 그 폴더로 바꾼다.
 # 규칙: 매주 월요일 09:00(KST), minor·patch는 한 PR로 묶고 major는 개별 PR, 동시 PR 5개,
 # 제목 접두사는 build(의존성)·ci(Actions)로 커밋 규칙에 맞춘다.
@@ -12,7 +11,6 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -28,7 +26,6 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday

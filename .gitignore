@@ -35,7 +35,14 @@ logs/
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+!.claude/settings.json
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+.venv/
+__pycache__/
+coverage/
+.cache/
+.claude/settings.local.json
+.claude/worktrees/

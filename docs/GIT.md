@@ -2,14 +2,14 @@
 
 ## 브랜치와 외부 반영
 
-- `develop`에서 작업 브랜치를 만들고 검증 뒤 로컬에서 `--ff-only`로 병합한다. 일반 작업은 PR 없이 병합한다. Dependabot 등 자동화 PR은 검토 후 병합할 수 있다. `main`은 릴리스한 안정 버전이다.
-- `main`과 `develop` 직접 커밋은 훅으로 막는다. 릴리스 커밋과 사용자가 즉시 수정을 요청한 사소한 작업에는 기존 `ALLOW_PROTECTED_COMMIT=1` 예외를 쓴다.
+- `develop` 없이 `main`만 쓴다. 작업 브랜치(`feat/` `fix/` `docs/` `chore/` + kebab-case)에서 PR을 올려 squash로 병합한다. `main` 직접 커밋·푸시는 훅과 GitHub 브랜치 보호가 막는다. 병합은 릴리스가 아니다. 공통 Git 규칙은 [AGENTS.md](../AGENTS.md)의 베이스라인 구역을 따른다.
+- Dependabot 등 자동화 PR은 검토 후 사용자가 요청할 때 병합한다.
 - 병렬 작업은 워크트리로 분리한다. 푸시 전 같은 작업의 후속 수정은 기존 커밋에 합친다.
 - 원격 동작, 인증·보안, 민감정보 검사, 대량 삭제·이동에 영향을 주는 변경은 병합 전에 사용자에게 알린다. 푸시·릴리스·공개 전환·공유 이력 재작성은 사용자가 해당 작업을 명시적으로 요청하거나 승인한 뒤 진행한다. 푸시 승인은 해당 작업에만 적용한다.
 
 ## 커밋 검사
 
-- `npm install`의 `prepare`가 `.githooks`를 활성화한다. 훅이 작성자와 커밋터의 GitHub noreply 이메일, 영어 단어가 포함된 Conventional Commits 제목을 검사한다. 예시는 `docs(readme): clarify first run`이다. 커밋 메시지는 AI 생성 표식 없이 작성한다.
+- `npm install`의 `prepare`가 `.githooks`를 활성화한다. 훅이 GitHub noreply 이메일과 영어 Conventional Commits 제목(`ysm:commit-lang=en`)을 검사한다. 예시는 `docs(readme): clarify first run`이다. 커밋 메시지는 AI 생성 표식 없이 작성한다.
 - 검증 명령은 `npm test`, `npm run repo:check`, `git diff --check`다. 푸시 후 macOS·Windows의 `Verify` 결과를 확인한다.
 - Git에는 코드·테스트·운영 문서와 합성 예시를 둔다. 실제 대화 데이터와 인증정보의 보관 위치는 [AGENTS.md](../AGENTS.md#데이터와-민감정보)를 따른다.
 
@@ -24,10 +24,11 @@
 
 ## 릴리스
 
-1. 승인과 깨끗한 `develop` 작업 트리를 확인한다. `[Unreleased]`에서 중복을 정리한다.
-2. `node src/release-notes.js release <X.Y.Z>`로 변경 이력과 패키지 버전을 함께 갱신한다. `Added`가 있으면 최소 minor를 올린다.
-3. 커밋 검사를 실행한 뒤 릴리스 파일 두 개만 `develop`에 커밋한다. `main`에 `develop`을 `--ff-only`로 반영한다.
-4. 패키지 버전·최신 변경 이력과 같은 `vX.Y.Z` 태그를 만들고 승인 범위에서 브랜치와 태그를 푸시한다. `node src/release-notes.js notes <X.Y.Z>`의 출력을 GitHub Release 본문으로 쓴다. 배포 소스는 `main`이며 Release 첨부 파일은 쓰지 않는다.
+1. 승인과 깨끗한 `main` 작업 트리를 확인한다. `[Unreleased]`에서 중복을 정리한다.
+2. `chore/release-vX.Y.Z` 브랜치에서 `node src/release-notes.js release <X.Y.Z>`로 변경 이력과 패키지 버전을 함께 갱신하고 릴리스 파일 두 개만 `chore(release): vX.Y.Z`로 커밋한다. `Added`가 있으면 최소 minor를 올린다.
+3. 커밋 검사가 통과하면 PR을 올려 squash로 병합한다.
+4. 병합된 `main`의 커밋에 annotated 태그를 만들어 푸시한다(`git tag -a vX.Y.Z -m "vX.Y.Z"`). `node src/release-notes.js notes <X.Y.Z>`의 출력을 GitHub Release 본문으로 쓴다. 배포 소스는 `main`이며 Release 첨부 파일은 쓰지 않는다.
+5. 병합이 끝난 작업 브랜치를 로컬·원격에서 지운다.
 
 ## 공개 전 점검
 
