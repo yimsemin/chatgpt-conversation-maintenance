@@ -12,10 +12,7 @@
 </head>
 <body>
 <header class="top">
-  <div>
-    <h1>__MSG_app.name__</h1>
-    <p class="status" id="app-info" hidden></p>
-  </div>
+  <h1>__MSG_app.name__</h1>
   <div class="top-right">
     <select id="language" aria-label="__MSG_common.language__">__LANGUAGE_OPTIONS__</select>
     <button class="pill" id="version" type="button" title="__MSG_app.releaseNotesButton__">v__APP_VERSION__</button>
@@ -23,6 +20,7 @@
     <button class="pill" id="relay-pill" type="button" aria-live="polite"><i class="dot"></i><span id="relay-label">__MSG_app.checkingConnection__</span></button>
     <button class="icon" id="theme" type="button" title="__MSG_app.toggleTheme__" aria-label="__MSG_app.toggleTheme__">◐</button>
   </div>
+  <p class="status" id="app-info" hidden></p>
 </header>
 <p class="relay-hint" id="relay-hint" hidden></p>
 <p class="relay-note" id="relay-note" hidden></p>

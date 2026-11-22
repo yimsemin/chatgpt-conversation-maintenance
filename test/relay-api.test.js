@@ -210,8 +210,11 @@ test("the trace keeps only fixed diagnostic fields, refuses unknown stages and c
   assert.equal(capped.list().at(-1).seq, 10);
 });
 
-test("relay connection accepts only the current relay version", () => {
+test("relay connection accepts the same major.minor and rejects anything else", () => {
   assert.doesNotThrow(() => validateRelayVersion(RELAY_VERSION));
+  const [major, minor] = RELAY_VERSION.slice("relay-".length).split(".");
+  assert.doesNotThrow(() => validateRelayVersion(`relay-${major}.${minor}.99`));
+  assert.throws(() => validateRelayVersion(`relay-${major}.${Number(minor) + 1}.0`), /version mismatch/);
   assert.throws(() => validateRelayVersion("relay-0.0.1"), /version mismatch/);
   assert.throws(() => validateRelayVersion(undefined), /version mismatch/);
 });

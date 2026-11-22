@@ -3,7 +3,7 @@ import { locale, t } from "/assets/language.js";
 import { buildReviewSummary, rowsFromProposal, summaryHeadline } from "/assets/shared/summary.js";
 import { isNormalizedTitle } from "/assets/shared/title-rules.js";
 import { S } from "/assets/state.js";
-import { $, ask, fill, h } from "/assets/dom.js";
+import { $, ask, dotted, fill, h } from "/assets/dom.js";
 import { projectIdFromLink } from "/assets/shared/project-link.js";
 import { api, fail, post, toast } from "/assets/net.js";
 import { refreshSession } from "/assets/session-client.js";
@@ -102,7 +102,7 @@ function drawReview() {
   const dests = destinationEntries();
   const panel = $("panel");
   fill(panel, 
-    h("p", { class: "lead", text: summaryHeadline(summary, locale) }),
+    h("p", { class: "lead" }, ...dotted(summaryHeadline(summary, locale))),
     S.session?.run?.skipped?.length ? skippedCallout(S.session.run.skipped) : null,
     h("div", { class: "chips" }, h("span", { class: "chip", text: t("review.candidates", { count: totals.candidates }) }), h("span", { class: "chip good", text: t("review.keepCount", { count: totals.keep }) }),
       totals.delete ? h("span", { class: "chip warn", text: t("review.permanentDeleteCount", { count: totals.delete }) }) : null, totals.trashed ? h("span", { class: "chip", text: t("review.trashedCount", { count: totals.trashed }) }) : null, totals.marked ? h("span", { class: "chip", text: t("review.markedCount", { count: totals.marked }) }) : null, totals.undecided ? h("span", { class: "chip bad", text: t("review.undecided", { count: totals.undecided }) }) : null,
