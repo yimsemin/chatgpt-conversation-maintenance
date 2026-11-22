@@ -1,22 +1,52 @@
 #!/bin/sh
-# 1) main·develop 에 직접 커밋하는 것을 막는다. 작업은 브랜치에서 하고 ff-only 로 병합한다.
-#    예외는 릴리스 커밋과, 사용자가 사소한 즉시 수정을 요청했을 때뿐이며 ALLOW_PROTECTED_COMMIT=1 git commit ... 으로 우회한다.
-# 2) 작성자·커밋터 이메일이 GitHub noreply 주소가 아니면 거부한다(개인 이메일이 이력에 남지 않게).
+# 보호 브랜치에 직접 커밋하면, 비밀값으로 보이는 파일·문자열이 staged에 있으면, 그리고 noreply 이메일이 요구되는 프로젝트에서 다른 이메일이면 커밋을 막는다. Node 등 런타임이 필요 없다.
+# 오탐이면 해당 줄·파일을 고치거나 사용자에게 알린다. 우회(--no-verify)는 사용자만 결정한다.
+# 활성화: git config core.hooksPath .githooks
 
-branch="$(git symbolic-ref --short -q HEAD)"
-if { [ "$branch" = "main" ] || [ "$branch" = "develop" ]; } && [ "$ALLOW_PROTECTED_COMMIT" != "1" ]; then
-  echo "$branch 에 직접 커밋할 수 없다. 작업 브랜치를 만든다 (docs/GIT.md)." >&2
-  exit 1
-fi
-
-for ident in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
-  email="$(git var "$ident" | sed -E 's/^.*<(.*)>.*$/\1/')"
+# 이 프로젝트가 noreply 이메일을 요구하도록 설정된 경우(ysm.requireNoreply=true)에만 검사한다.
+if [ "$(git config --get ysm.requireNoreply)" = "true" ]; then
+  email="$(git config user.email)"
   case "$email" in
     *@users.noreply.github.com) ;;
     *)
-      echo "커밋 이메일이 GitHub noreply 주소가 아니다($email)." >&2
-      echo "git config --local user.email <id>+<계정>@users.noreply.github.com 으로 고친다 (docs/GIT.md)." >&2
-      exit 1 ;;
+      echo "커밋 이메일이 GitHub noreply 주소가 아니다: '$email'" >&2
+      echo "이 프로젝트에서만 바꾼다: git config --local user.email <id>+<계정>@users.noreply.github.com" >&2
+      exit 1
+      ;;
   esac
-done
+fi
+
+# 보호 브랜치(main·master·develop)에는 직접 커밋하지 않는다. 첫 커밋은 허용한다.
+# main 직행은 AGENTS.md에 `<!-- ysm:direct-main -->` 줄이 있는 프로젝트만 허용한다(develop은 예외 없음).
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+case "$branch" in
+  main|master|develop)
+    if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+      root="$(git rev-parse --show-toplevel)"
+      if [ "$branch" = "develop" ] || ! grep -qs '^<!-- ysm:direct-main -->' "$root/AGENTS.md"; then
+        echo "보호 브랜치 '$branch'에는 직접 커밋할 수 없다." >&2
+        echo "작업 브랜치를 만든다: git switch -c <feat|fix|docs|chore>/<kebab-case>" >&2
+        exit 1
+      fi
+    fi
+    ;;
+esac
+
+files="$(git diff --cached --name-only --diff-filter=ACM)"
+bad_files="$(printf '%s\n' "$files" | grep -E '(^|/)(\.env(\..+)?|id_rsa|id_ed25519|[^/]+\.(pem|key|p12|pfx))$' | grep -vE '\.env\.(example|sample)$')"
+if [ -n "$bad_files" ]; then
+  echo "비밀 파일로 보이는 파일은 커밋할 수 없다:" >&2
+  printf '  %s\n' $bad_files >&2
+  echo "필요하면 .gitignore에 추가하고, 예시는 값 없는 .env.example로 둔다." >&2
+  exit 1
+fi
+
+pattern='(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+hits="$(git diff --cached -U0 --no-color | grep -E '^\+[^+]' | grep -E "$pattern")"
+if [ -n "$hits" ]; then
+  echo "비밀값으로 보이는 문자열이 staged 변경에 있다. 커밋하지 않는다:" >&2
+  printf '%s\n' "$hits" | cut -c1-80 >&2
+  exit 1
+fi
+
 exit 0
