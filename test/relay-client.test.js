@@ -15,7 +15,7 @@ function fakeWindow() {
   };
 }
 
-async function setup({ pageBehaviour }) {
+async function setup({ pageBehaviour, bookmarkletVersion }) {
   const window = fakeWindow();
   globalThis.window = window;
   Object.defineProperty(globalThis, "navigator", { value: { sendBeacon() {} }, configurable: true, writable: true });
@@ -38,26 +38,36 @@ async function setup({ pageBehaviour }) {
   };
   const states = [];
   const relay = startRelay({ api, relayVersion: RELAY, onState: (state) => states.push(state), pageTimeoutMs: 150 });
-  // 북마클릿 하트비트
-  window.dispatch({ origin: "https://chatgpt.com", source: peer, data: { type: "chatgpt-relay-v2-ready", relayVersion: RELAY } });
+  const sendReady = () => window.dispatch({
+    origin: "https://chatgpt.com", source: peer,
+    data: { type: "chatgpt-relay-v2-ready", relayVersion: bookmarkletVersion ?? RELAY },
+  });
+  sendReady();
   await new Promise((resolve) => setTimeout(resolve, 30));
-  return { broker, states, window, relay };
+  return { broker, states, sendReady, relay };
 }
 
-test("the relay client carries a request to the page and returns its result", async () => {
-  const { broker, states, relay } = await setup({
+test("a compatible older bookmarklet carries requests and reports its available update once per state", async (t) => {
+  const { broker, states, sendReady, relay } = await setup({
+    bookmarkletVersion: "relay-9.9.0",
     pageBehaviour: (message, reply) => {
       reply({ type: "chatgpt-relay-v2-ack", id: message.id });
       reply({ type: "chatgpt-relay-v2-result", id: message.id,
         result: { ok: true, status: 200, data: { accountId: "11111111-2222-4333-8444-555555555555" }, contentType: "application/json" } });
     },
   });
+  t.after(() => relay.stop());
   assert.equal(states.at(-1).connected, true);
+  assert.equal(states.at(-1).updateAvailable, true);
+  // 2026-11-21: 매 하트비트의 중복 상태 알림이 화면 세션을 다시 조회했다.
+  const initialStateCount = states.length;
+  sendReady();
+  sendReady();
+  assert.equal(states.length, initialStateCount);
   const api = createRelayApi({ broker, requestDelayMs: 0 });
   const result = await api.accountInfo();
   assert.equal(result.ok, true);
   assert.equal(result.data.accountId, "11111111-2222-4333-8444-555555555555");
-  relay.stop();
 });
 
 test("a page that never answers fails only that request with 599 and the loop keeps running", async () => {
