@@ -34,7 +34,6 @@ export function sessionData(workspace, dataDir, locale) {
   const relay = relayBroker.status();
   const active = [...jobs.values()].filter((job) => job.workspace === workspace && !job.done);
   const activeJob = active[0] ? publicJob(active[0]) : null;
-  const recent = jobLogFor(dataDir).recent(3);
   let run = null;
   if (pointer) {
     const proposalPath = pointer.proposalPath || runFiles(pointer.runDir).proposal;
@@ -54,8 +53,9 @@ export function sessionData(workspace, dataDir, locale) {
     try { const data = readJson(runFiles(pointer.runDir).report, message("file.report")); report = { headline: data.totals && data.changes ? summaryHeadline(data, locale) : data.headline, finishedAt: data.finishedAt }; } catch {}
   }
   // 결과 보고서 뒤에 끝난 읽기 전용 작업(scan 종류: 확인·삭제후보 다시 확인)이 있으면 결과 화면으로 되돌리지 않는다.
+  const recent = jobLogFor(dataDir).recent(run?.hasReport ? 10 : 3);
   const reportAt = Date.parse(report?.finishedAt || "") || 0;
-  const resultSuperseded = jobLogFor(dataDir).recent(10).some((job) => job.kind === "scan" && job.ok && Date.parse(job.finishedAt || "") > reportAt);
+  const resultSuperseded = run?.hasReport && recent.some((job) => job.kind === "scan" && job.ok && Date.parse(job.finishedAt || "") > reportAt);
   const lock = lockStatus({ dataDir });
   return {
     relay: { ...relay, ...describeRelay(relay, locale) },
@@ -72,7 +72,7 @@ export function sessionData(workspace, dataDir, locale) {
     step: deriveStep({ activeJobKind: activeJob?.kind || null, phase: run?.phase, hasProposal: run?.hasProposal,
       hasReport: run?.hasReport, hasRun: Boolean(run), resultSuperseded }),
     job: activeJob,
-    recentJobs: recent,
+    recentJobs: recent.slice(0, 3),
     lock: lock.locked ? { device: lock.holder?.device || null, stale: lock.stale } : null,
   };
 }
