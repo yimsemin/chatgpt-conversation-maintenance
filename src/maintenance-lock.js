@@ -51,7 +51,7 @@ export function acquireLock({
     throw new Error(
       `maintenance lock held by ${holder.device || "unknown"} since ${holder.acquiredAt || "unknown time"} `
       + `(run ${holder.runId || "unknown"}); if that run is not active, clear it with `
-      + `"node maintenance-lock.js release"`,
+      + `"npm run lock -- release"`,
     );
   }
   if (current.locked && current.stale) {
@@ -84,9 +84,9 @@ export function releaseLock({ dataDir } = {}) {
 function usage() {
   return [
     "Usage:",
-    "  node maintenance-lock.js status  [--data-dir <path>]",
-    "  node maintenance-lock.js acquire [--data-dir <path>]",
-    "  node maintenance-lock.js release [--data-dir <path>]",
+    "  npm run lock -- status  [--data-dir <path>]",
+    "  npm run lock -- acquire [--data-dir <path>]",
+    "  npm run lock -- release [--data-dir <path>]",
     "",
     "The app takes and releases the lock itself. Use release only to clear a lock",
     "left behind by a crashed run once you have confirmed that run is dead.",

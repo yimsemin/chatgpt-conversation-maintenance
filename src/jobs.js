@@ -14,14 +14,6 @@ export function computeEta({ startedAtMs, nowMs, index, total }) {
   return Math.round(((total - index) * (elapsed / index)) / 1000);
 }
 
-export function formatDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return "";
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}초`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}분`;
-  return `${Math.floor(minutes / 60)}시간 ${minutes % 60}분`;
-}
-
 // 진행 상황을 job.progress 에 기록한다. 단계가 바뀌면 시작 시각을 다시 잡는다.
 export function trackProgress(job, { phase, label = phase, index = 0, total = null }, nowMs = Date.now()) {
   const previous = job.progress;
@@ -90,7 +82,6 @@ export function createJobLog(dir) {
       }
       return closed;
     },
-    // 최근 작업 요약(최신순). 이벤트 전문 대신 마지막 몇 줄만 돌려준다.
     // 끝난 작업의 기록 파일을 지운다(진행 중인 작업의 파일은 keepFiles 로 남긴다). 지운 개수를 돌려준다.
     clear(keepFiles = []) {
       if (!existsSync(dir)) return 0;
@@ -111,6 +102,7 @@ export function createJobLog(dir) {
         try { return JSON.parse(line); } catch { return null; }
       }).filter((line) => line?.type === "event").map(publicEvent);
     },
+    // 최근 작업 요약(최신순). 이벤트 전문 대신 마지막 몇 줄만 돌려준다.
     recent(limit = 10, tail = 12) {
       if (!existsSync(dir)) return [];
       return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort().reverse().slice(0, limit).map((name) => {

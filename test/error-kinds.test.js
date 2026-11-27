@@ -9,7 +9,7 @@ test("transient failures and error explanations follow the error kind, not the m
     assert.equal(isTransientFailure(withKind(new Error("임의의 문구"), kind)), true);
   }
   assert.equal(isTransientFailure(new Error("사용자가 작업을 중단했습니다")), false);
-  assert.equal(isTransientFailure(withKind(new Error("Project not found"), KIND.projectNotFound)), false);
+  assert.equal(isTransientFailure(withKind(new Error("Project not found: Project 429"), KIND.projectNotFound)), false);
   assert.equal(isTransientFailure(new Error("ChatGPT returned HTTP 503")), true);
   assert.equal(explainError("임의의 문구", null, KIND.relayTimeout).titleContent.key, "error.timeout.title");
   assert.equal(explainError("임의의 문구", null, KIND.relayDown).titleContent.key, "error.relayDown.title");

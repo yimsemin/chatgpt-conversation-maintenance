@@ -7,7 +7,7 @@ import { APP_VERSION } from "./app-version.js";
 // 이 모듈을 처음 불러온 시각 = 앱 프로세스가 시작된 시각.
 const STARTED_AT = Date.now();
 
-// 시작한 뒤 바뀐 코드(루트 *.js, public/ 아래 파일)가 있는지. 있으면 화면이 "다시 켜세요"라고 알린다.
+// 시작한 뒤 바뀐 코드나 화면 파일이 있으면 "다시 켜세요"라고 알린다.
 function latestSourceChange(rootDir) {
   let latest = 0;
   const visit = (dir, filter) => {
@@ -15,13 +15,15 @@ function latestSourceChange(rootDir) {
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) { if (!["node_modules", ".git", "data", ".local", "test", "docs"].includes(entry.name)) visit(path, () => true); continue; }
-      if (!filter(entry.name)) continue;
+      if (entry.isDirectory()) {
+        if (!["node_modules", ".git", "data", ".local", "test", "docs"].includes(entry.name)) visit(path);
+        continue;
+      }
+      if (filter && !filter(entry.name)) continue;
       try { latest = Math.max(latest, statSync(path).mtimeMs); } catch {}
     }
   };
   visit(rootDir, (name) => name.endsWith(".js") || name === "package.json");
-  visit(join(rootDir, "public"), () => true);
   return latest;
 }
 

@@ -4,7 +4,7 @@
 
 ## 실행 순서
 
-1. `npm run brief`로 현재 실행을 확인한다. 해당 실행의 `review.json`에서 후보와 `criteria`를 읽고, 데이터 폴더에 `classification-taxonomy.md`가 있으면 프로젝트 경계를 판단할 때 참고한다. [분류체계 예시](../templates/classification-taxonomy.example.md)
+1. `npm run brief`로 현재 실행을 확인한다. 출력이 가리키는 `review.json`에서 후보와 `criteria`를 읽고, 데이터 폴더에 `classification-taxonomy.md`가 있으면 프로젝트 경계를 판단할 때 참고한다. [분류체계 예시](../templates/classification-taxonomy.example.md)
 2. 후보마다 보존 여부, 제목, 최종 프로젝트를 정한다. 발췌만으로 판단하기 어려운 항목만 해당 원본 JSON을 읽는다. 원본과 다른 실행의 파일은 읽기 전용으로 다룬다.
 3. 현재 실행 폴더의 `proposal.json`에 후보당 정확히 한 항목을 쓴다. 후보 식별 정보와 해시는 현재 인벤토리와 일치해야 한다. 적용 배치는 앱이 나누므로 25건 한도 때문에 제안을 나눌 필요는 없다.
 4. 아래 명령으로 검증한다. 제목 길이·중복·프로젝트명 반복처럼 고칠 수 있는 경고는 직접 정리한 후 다시 검증한다. 사용자 판단이 필요한 항목과 검증 결과만 요약한다.

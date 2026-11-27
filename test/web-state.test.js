@@ -16,15 +16,12 @@ test("known failures become an explanation with a next action", () => {
   assert.match(explainError("anything", null, "relay-down").action, /북마클릿/);
 });
 
-import { computeEta, createJobLog, formatDuration } from "../src/jobs.js";
+import { computeEta, createJobLog } from "../src/jobs.js";
 
 test("eta is estimated from the rate since the phase started", () => {
   assert.equal(computeEta({ startedAtMs: 0, nowMs: 10000, index: 10, total: 110 }), 100);
   assert.equal(computeEta({ startedAtMs: 0, nowMs: 10000, index: 0, total: 110 }), null);
   assert.equal(computeEta({ startedAtMs: 0, nowMs: 10000, index: 110, total: 110 }), null);
-  assert.equal(formatDuration(45), "45초");
-  assert.equal(formatDuration(600), "10분");
-  assert.equal(formatDuration(3900), "1시간 5분");
 });
 
 test("job logs restore a finished job and close an interrupted one", async () => {

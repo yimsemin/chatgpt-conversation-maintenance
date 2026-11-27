@@ -1,19 +1,18 @@
 # ChatGPT 대화 정리
 
+ChatGPT 대화의 제목을 정돈하고 관련 대화를 프로젝트로 모을 수 있습니다. AI 에이전트가 정리안을 만들고, 적용할 변경은 사용자가 화면에서 고릅니다.
+
+처음이라면 [설치 요청문](#에이전트에게-설치-요청하기)을 Codex나 Claude Code에 보냅니다. 설치한 폴더에서 macOS는 `start-local.command`, Windows는 `start-local.cmd`를 열면 브라우저에서 앱이 열립니다.
+
 **English summary.** Organize your ChatGPT conversations with help from an AI agent. Standardize titles, group related chats into projects, and set aside candidates for deletion. Review and approve changes in a local web dashboard.
 
 **Disclaimer.** This unofficial tool uses ChatGPT’s undocumented web API. It is provided “as is,” without warranty. Use it at your own risk.
 
-## 소개
-
-AI의 도움을 받아 쌓여 있는 ChatGPT 대화의 제목을 정리하고, 관련 대화를 프로젝트로 묶고, 다시 참고할 일이 적은 대화를 골라낼 수 있습니다. 에이전트가 정리안을 만들면 사용자가 웹 대시보드에서 검토하고 적용합니다.
-
 ## 기능
 
-- **제목 변경** — 대화 제목을 `핵심 주제 — 실제 작업 또는 결과` 형식으로 맞춥니다.
+- **제목 변경** — 대화 제목을 [표준 형식](docs/CLASSIFICATION_WORKFLOW.md#제목-기준)으로 맞춥니다.
 - **프로젝트 배치** — 주제에 맞는 프로젝트로 대화를 옮깁니다. 적합한 기존 프로젝트가 없고 계속 쓸 주제라면 새 프로젝트를 제안합니다.
 - **삭제후보 골라내기** — 재사용 가치가 낮은 대화는 기본적으로 삭제후보 프로젝트에 모읍니다. 나중에 사용자가 **삭제후보 확인**에서 삭제하거나 복원합니다.
-- **웹 대시보드** — 처음 쓰는 사람도 화면 안내를 따라 수집 범위를 고르고, 제안을 검토하고, 적용 결과를 확인할 수 있습니다.
 
 ## 빠른 시작
 

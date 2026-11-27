@@ -169,7 +169,7 @@ export function applyReadyPanel() {
     h("p", { class: "muted", text: t("scan.decisionsReady") }),
     h("div", { class: "row" }, h("button", { class: "btn", type: "button", disabled: !S.session?.relay?.connected, onclick: async () => {
       try { await post("/maintenance/apply", { confirmDeletes: true }); await refreshSession(); } catch (e) { fail(e); }
-    } }, t("scan.applyStart"))));
+    } }, t("review.applyStart"))));
 }
 
 export async function startScan() {
