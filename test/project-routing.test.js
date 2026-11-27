@@ -103,6 +103,9 @@ test("routing resolves a named source and reuses the catalog when moving to exis
       },
     };
     const routing = routingFixture(root);
+    await assert.rejects(runProjectRouting({ routing, confirmation: "wrong", accountId: ACCOUNT_ID, api }), /Confirmation phrase/);
+    assert.deepEqual([listCalls, created.length, moves.length], [0, 0, 0]);
+
     const result = await runProjectRouting({
       routing,
       confirmation: projectRoutingConfirmation(routing),

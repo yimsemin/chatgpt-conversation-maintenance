@@ -95,6 +95,7 @@ test("apply deletes only after confirmation and review, verifies invisibility, a
     const confirmation = managementConfirmation(validateManagementManifest(manifest));
     await assert.rejects(runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation: "wrong", api }), /Confirmation phrase/);
     await assert.rejects(runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, api }), /reviewed by the user/);
+    await assert.rejects(runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [], api }), /do not exactly match/);
     assert.equal(api.state.patches.length, 0, "nothing is written before both gates pass");
 
     const result = await runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [ID], api });
@@ -122,6 +123,15 @@ test("a backup that does not match blocks every action before any write", async 
     assert.equal(result.phase, "preflight");
     assert.equal(api.state.patches.length, 0);
     assert.equal(existsSync(manifest.receiptDir), false);
+
+    // ID·제목은 맞아도 승인 때와 바이트가 다른 사본은 쓰지 않는다.
+    writeFileSync(manifest.actions[0].backupFile, JSON.stringify({ conversation_id: ID, title: TITLE, mapping: { other: {} } }));
+    const changed = await runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [ID], api });
+    assert.match(changed.preflight[0].error, /SHA-256 does not match/);
+    writeFileSync(manifest.actions[0].backupFile, JSON.stringify({ conversation_id: "55555555-5555-4555-8555-555555555599", title: TITLE, mapping: { other: {} } }));
+    const other = await runManagementWorkflow({ manifest, accountId: ACCOUNT_ID, confirmation, reviewedConversationIds: [ID], api });
+    assert.match(other.preflight[0].error, /Backup conversation ID does not match/);
+    assert.equal(api.state.patches.length, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

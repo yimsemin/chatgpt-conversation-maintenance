@@ -125,7 +125,7 @@ test("apply reconciles mutation-then-HTTP-500 responses by reading remote state"
   }
 });
 
-test("a conversation already assigned to an unexpected project is not moved", async () => {
+test("nothing is moved without both approval gates, from an unexpected project, or after a title change", async () => {
   const root = mkdtempSync(join(tmpdir(), "chatgpt-project-preflight-test-"));
   let writes = 0;
   const api = {
@@ -149,17 +149,27 @@ test("a conversation already assigned to an unexpected project is not moved", as
   try {
     const plan = fixturePlan(root);
     const prepared = prepare(plan);
-    const result = await runProjectPlacementWorkflow({
+    const run = (overrides = {}) => runProjectPlacementWorkflow({
       plan,
       accountId: ACCOUNT_ID,
       confirmation: prepared.expectedConfirmation,
       reviewedConversationIds: [CONVERSATION_ID],
       api,
+      ...overrides,
     });
+    await assert.rejects(run({ confirmation: "wrong" }), /Confirmation phrase/);
+    await assert.rejects(run({ reviewedConversationIds: undefined }), /reviewed by the user/);
+    await assert.rejects(run({ reviewedConversationIds: [] }), /do not exactly match/);
+
+    const result = await run();
     assert.equal(result.ok, false);
     assert.match(result.error, /not in the expected source project/);
-    assert.equal(writes, 0);
     assert.equal(JSON.parse(readFileSync(result.receiptFile, "utf8")).status, "failed");
+
+    api.getConversation = async () => ({ ok: true, status: 200,
+      data: { conversation_id: CONVERSATION_ID, title: "Changed after review", gizmo_id: null } });
+    assert.match((await run()).error, /Remote title does not match/);
+    assert.equal(writes, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
