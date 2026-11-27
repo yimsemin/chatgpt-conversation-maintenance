@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { resolveDataDir } from "./data-dir.js";
 import { lockStatus } from "./maintenance-lock.js";
 import { readTrash } from "./trash.js";
+import { translator } from "./i18n.js";
 
 // 새 대화(에이전트)가 코드를 탐색하지 않고 현재 상태와 다음 할 일을 바로
 // 알도록 하는 읽기 전용 요약이다. ChatGPT에 요청하지 않고 파일만 읽는다.
@@ -45,27 +46,26 @@ function describeRun(pointer) {
   };
 }
 
+const t = translator("ko");
+
 // 사용자가 버튼으로 하는 일과 에이전트가 하는 일을 구분해 다음 행동 하나만 돌려준다.
 export function nextAction({ lock, run }) {
   if (lock?.locked && !lock.stale) {
-    return { actor: "user", text: "다른 작업이 잠금을 잡고 있다. 그 작업이 끝났는지 확인한 뒤 `npm run lock -- release`" };
+    return { actor: "user", text: "다른 작업이 잠금을 잡고 있다. 그 작업이 끝날 때까지 기다린다" };
   }
   if (!run || run.phase === PHASE.COMPLETE) {
-    return { actor: "user", text: "화면에서 수집 범위를 고르고 '이 범위 수집'을 누른다(에이전트는 수집하지 않는다)" };
+    return { actor: "user", text: `화면에서 수집 범위를 고르고 ‘${t("scan.collectButton")}’을 누른다` };
   }
   if (run.phase === PHASE.READY_TO_APPLY) {
-    return { actor: "user", text: "화면에서 검토가 끝난 결정의 '적용 시작'을 누른다" };
+    return { actor: "user", text: `화면에서 검토가 끝난 결정의 ‘${t("review.applyStart")}’을 누른다` };
   }
   if (run.phase === PHASE.AWAITING_PROPOSAL && !run.hasProposal) {
     return {
       actor: "agent",
-      text: `AI 분류: node src/workflow.js claude-prompt "${run.reviewPath}" "${run.promptPath}" "${run.inventoryPath}" "${run.proposalPath}" 로 요청문을 만들고, 그 지시대로 proposal.json 을 쓴 뒤 validate-proposal 로 검증한다`,
+      text: `"${run.reviewPath}"의 후보와 기준을 읽고 docs/CLASSIFICATION_WORKFLOW.md의 제안 형식에 맞춰 "${run.proposalPath}"을 쓴다. node src/workflow.js validate-proposal "${run.inventoryPath}" "${run.proposalPath}"로 검증한다`,
     };
   }
-  if (run.hasProposal && !run.hasDecisions) {
-    return { actor: "user", text: "화면에서 제안을 불러와 검토·수정한 뒤 '검토하고 적용'을 누른다" };
-  }
-  return { actor: "user", text: "화면에서 결정을 확인하고 '검토하고 적용'을 누른다" };
+  return { actor: "user", text: `화면에서 제안을 검토한 뒤 ‘${t("review.apply")}’을 누른다` };
 }
 
 export function buildBrief({ appRoot, dataDir = "", now = () => Date.now() } = {}) {
