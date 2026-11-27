@@ -2,15 +2,13 @@
 
 ## 브랜치와 외부 반영
 
-- `develop` 없이 `main`만 쓴다. 작업 브랜치(`feat/` `fix/` `docs/` `chore/` + kebab-case)에서 PR을 올려 squash로 병합한다. `main` 직접 커밋·푸시는 훅과 GitHub 브랜치 보호가 막는다. 병합은 릴리스가 아니다. 공통 Git 규칙은 [AGENTS.md](../AGENTS.md)의 베이스라인 구역을 따른다.
-- Dependabot 등 자동화 PR은 검토 후 사용자가 요청할 때 병합한다.
-- 병렬 작업은 워크트리로 분리한다. 푸시 전 같은 작업의 후속 수정은 기존 커밋에 합친다.
+- `develop` 없이 `main`만 쓴다. 브랜치·커밋·병합의 공통 규칙은 [AGENTS.md의 공통 작업 규칙](../AGENTS.md#git)을 따르고, 이 문서는 이 저장소에만 해당하는 것을 정한다.
 - 원격 동작, 인증·보안, 민감정보 검사, 대량 삭제·이동에 영향을 주는 변경은 병합 전에 사용자에게 알린다. 푸시·릴리스·공개 전환·공유 이력 재작성은 사용자가 해당 작업을 명시적으로 요청하거나 승인한 뒤 진행한다. 푸시 승인은 해당 작업에만 적용한다.
 
 ## 커밋 검사
 
-- `npm install`의 `prepare`가 `.githooks`를 활성화한다. 훅이 GitHub noreply 이메일과 영어 Conventional Commits 제목(`ysm:commit-lang=en`)을 검사한다. 예시는 `docs(readme): clarify first run`이다. 커밋 메시지는 AI 생성 표식 없이 작성한다.
-- 검증 명령은 `npm test`, `npm run repo:check`, `git diff --check`다. 푸시 후 macOS·Windows의 `Verify` 결과를 확인한다.
+- `npm install`의 `prepare`가 `.githooks`를 활성화한다. 훅이 GitHub noreply 이메일과 영어 Conventional Commits 제목(`ysm:commit-lang=en`)을 검사한다. 예시는 `docs(readme): clarify first run`이다.
+- 검증 명령은 `npm test`, `npm run repo:check`, `git diff --check`다. PR을 연 뒤와 병합한 뒤 macOS·Windows의 `Verify` 결과를 확인한다.
 - Git에는 코드·테스트·운영 문서와 합성 예시를 둔다. 실제 대화 데이터와 인증정보의 보관 위치는 [AGENTS.md](../AGENTS.md#데이터와-민감정보)를 따른다.
 
 ## 변경 이력
