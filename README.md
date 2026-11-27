@@ -1,55 +1,42 @@
 # ChatGPT 대화 정리
 
-ChatGPT 대화의 제목을 정돈하고 관련 대화를 프로젝트로 모을 수 있습니다. AI 에이전트가 정리안을 만들고, 적용할 변경은 사용자가 화면에서 고릅니다.
+ChatGPT 대화의 제목을 정돈하고 관련 대화를 프로젝트로 모으는 로컬 앱입니다. Codex나 Claude Code가 제목·프로젝트 이동·삭제후보를 제안하고, 사용자가 화면에서 적용할 변경을 고릅니다. 삭제후보는 기본적으로 별도 프로젝트에 모읍니다.
 
-처음이라면 [설치 요청문](#에이전트에게-설치-요청하기)을 Codex나 Claude Code에 보냅니다. 설치한 폴더에서 macOS는 `start-local.command`, Windows는 `start-local.cmd`를 열면 브라우저에서 앱이 열립니다.
+![수집 화면에서 프로젝트에 넣지 않은 대화와 최근 14일을 선택한 모습](docs/screenshots/collect.png)
 
-**English summary.** Organize your ChatGPT conversations with help from an AI agent. Standardize titles, group related chats into projects, and set aside candidates for deletion. Review and approve changes in a local web dashboard.
-
-**Disclaimer.** This unofficial tool uses ChatGPT’s undocumented web API. It is provided “as is,” without warranty. Use it at your own risk.
-
-## 기능
-
-- **제목 변경** — 대화 제목을 [표준 형식](docs/CLASSIFICATION_WORKFLOW.md#제목-기준)으로 맞춥니다.
-- **프로젝트 배치** — 주제에 맞는 프로젝트로 대화를 옮깁니다. 적합한 기존 프로젝트가 없고 계속 쓸 주제라면 새 프로젝트를 제안합니다.
-- **삭제후보 골라내기** — 재사용 가치가 낮은 대화는 기본적으로 삭제후보 프로젝트에 모읍니다. 나중에 사용자가 **삭제후보 확인**에서 삭제하거나 복원합니다.
+화면 예시는 모의 데이터를 사용했습니다.
 
 ## 빠른 시작
 
-macOS 또는 Windows에서 Node.js 24 이상과 ChatGPT에 로그인할 브라우저가 필요합니다.
-
 ### 에이전트에게 설치 요청하기
 
-Codex나 Claude Code에 아래 요청문을 보냅니다. 저장소를 내려받고 실행에 필요한 준비를 하는 일은 에이전트에게 맡깁니다.
+macOS 또는 Windows에서 Node.js 24 이상과 ChatGPT에 로그인할 브라우저가 필요합니다. Codex나 Claude Code에 아래 요청문을 보냅니다.
 
 **한국어**
 
 > https://github.com/yimsemin/chatgpt-conversation-maintenance 저장소를 내 컴퓨터에 내려받고 실행할 수 있게 준비해줘. AGENTS.md를 읽고 Node.js 버전과 설치 상태를 확인해. 준비가 끝나면 프로젝트 폴더 위치와 내가 직접 할 다음 단계만 한국어로 알려줘.
 
-**English**
+**English setup**
 
-> Download https://github.com/yimsemin/chatgpt-conversation-maintenance to my computer and get it ready to run. Read AGENTS.md and check my Node.js version and installation. When setup is complete, tell me in English where the project folder is and what I need to do next.
+> Download https://github.com/yimsemin/chatgpt-conversation-maintenance to my computer and get it ready to run. Read AGENTS.md and check that Node.js 24 or later is available. Then tell me where the folder is and walk me through my first cleanup in English, using the app’s English labels.
 
 ### 첫 정리하기
 
-설치한 프로젝트 폴더를 에이전트에서 열고 아래 요청문을 보냅니다. 막히면 앱의 **오류 복사**로 내용을 에이전트에게 전달합니다.
+1. **앱 켜기.** 설치한 폴더에서 macOS는 `start-local.command`, Windows는 `start-local.cmd`를 더블클릭합니다. 터미널 창을 닫으면 앱이 꺼집니다.
+2. **ChatGPT 연결하기.** 처음 실행하면 브라우저에 연결 안내가 열립니다. 안내에 따라 **ChatGPT → 대화 정리** 버튼을 브라우저의 북마크바에 끌어다 놓고, `chatgpt.com`에 로그인한 탭에서 그 북마크를 누릅니다. 수집과 적용 중에는 ChatGPT 탭과 새로 열린 정리 창을 닫거나 최소화하지 않습니다.
+3. **수집하기.** 처음에는 **프로젝트에 넣지 않은 대화**에서 **최근 14일**을 고르고 **이 범위 수집**을 누릅니다. **모든 대화**에는 보관된 대화도 포함되며, 대화가 많으면 오래 걸릴 수 있습니다. [수집 범위와 옵션](docs/ARCHITECTURE.md#수집-범위와-옵션)
+4. **제안 받기.** 수집이 끝나면 **요청문 복사**를 누르고, 설치한 폴더를 연 Codex나 Claude Code에 붙여넣습니다. 에이전트가 제안을 만들면 앱에 검토 화면이 열립니다.
+5. **검토하고 적용하기.** 제목과 이동할 프로젝트, 삭제후보를 확인하고 필요한 항목을 고칩니다. **검토하고 적용**을 누른 뒤 확인 창에서 **적용 시작**을 눌러야 ChatGPT에 변경이 반영됩니다.
 
-**한국어**
+![검토 화면의 변경 요약, 삭제후보 처리 옵션, 검토하고 적용 버튼](docs/screenshots/review.png)
 
-> 이 프로젝트에서 처음으로 ChatGPT 대화를 정리하려고 해. 앱 실행과 ChatGPT 연결부터 수집, 분류 요청, 검토와 적용까지 내가 직접 할 일을 순서대로 알려줘.
-
-**English**
-
-> Walk me through my first ChatGPT cleanup in English. Show me how to start the app, choose English, connect to ChatGPT, collect conversations, request a cleanup proposal, and review and apply the changes. Tell me which steps I need to do myself.
+앱에서 오류가 나면 **오류 복사**로 내용을 복사해 에이전트에게 전달합니다.
 
 ## 주의사항
 
-- **비공식 API** — ChatGPT 웹 서비스가 바뀌면 연결이나 정리 기능이 작동하지 않을 수 있습니다.
-- **첫 전체 수집** — 대화가 많으면 몇 시간 걸릴 수 있습니다. 처음에는 **프로젝트에 넣지 않은 대화 · 최근 14일**처럼 작은 범위로 시작할 수 있습니다. [수집 범위와 옵션](docs/ARCHITECTURE.md#수집-범위와-옵션)
-- **작업 중 연결** — 수집과 적용이 끝날 때까지 ChatGPT 탭과 정리 창을 열어 두고 최소화하지 않습니다.
-- **관리 범위** — 대화 보관·보관 해제와 ChatGPT Memory 설정은 ChatGPT에서 직접 관리합니다. **모든 대화** 범위에는 보관된 대화도 포함됩니다.
-- **영구 삭제** — 삭제후보 프로젝트로 이동한 대화는 복원할 수 있지만, 영구 삭제를 확정한 대화는 되돌릴 수 없습니다.
-- **대화 사본** — 정리 과정에서 대화 사본이 기본적으로 프로젝트 폴더의 `data/`에 저장됩니다. 다른 AI 서비스에 분류 입력을 붙여넣으면 대화 발췌본이 해당 서비스로 전달됩니다. [데이터와 로컬 설정](docs/ARCHITECTURE.md#데이터와-코드의-분리)
+- 앱은 비공식 ChatGPT 웹 API를 사용합니다. ChatGPT가 웹 서비스를 바꾸면 연결이나 정리 기능이 작동하지 않을 수 있습니다.
+- 수집한 대화 사본은 기본적으로 설치 폴더의 `data/`에 저장됩니다. 분류에 사용하는 AI 서비스는 대화 발췌본을 처리합니다. [데이터와 로컬 설정](docs/ARCHITECTURE.md#데이터와-코드의-분리)
+- 옮겨 둔 대화는 **삭제후보 확인**에서 복원하거나 영구 삭제할 수 있습니다. 영구 삭제는 되돌릴 수 없습니다. 대화 보관·보관 해제와 Memory 설정은 ChatGPT에서 직접 관리합니다.
 
 ## 라이선스
 
