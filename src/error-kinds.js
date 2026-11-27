@@ -17,5 +17,6 @@ const TRANSIENT_KINDS = new Set([KIND.relayDown, KIND.relayTimeout, KIND.relayRe
 const TRANSIENT_EXTERNAL = /429|rate.?limit|timed out|HTTP 5\d\d|HTTP 599|disconnected|not connected/i;
 
 export function isTransientFailure(error) {
-  return TRANSIENT_KINDS.has(error?.kind) || TRANSIENT_EXTERNAL.test(String(error?.message || error));
+  if (error?.kind) return TRANSIENT_KINDS.has(error.kind);
+  return TRANSIENT_EXTERNAL.test(String(error?.message || error));
 }
