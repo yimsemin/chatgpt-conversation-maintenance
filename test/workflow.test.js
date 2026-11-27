@@ -257,13 +257,13 @@ function writeDecisions(root, inventoryDigest, decisions) {
 }
 
 // 후보 하나짜리 인벤토리와 그 인벤토리에 묶인 분류 제안을 만들어 검증한다.
-function validateProposal(root, source, item, { projects = [], catalogConversations = [source] } = {}) {
+function validateProposal(root, source, item, { projects = [], catalogConversations = [source], candidateCount = 1, warnings, inventoryDigest } = {}) {
   const catalogPath = join(root, "catalog.json");
   writeFileSync(catalogPath, JSON.stringify({ version: 1, kind: "conversation-maintenance-catalog", projects, conversations: catalogConversations }));
-  const inventory = writeInventory(root, { catalogFile: catalogPath, projects, conversations: [source] }, "proposal-inventory.json");
+  const inventory = writeInventory(root, { catalogFile: catalogPath, projects, conversations: [source], ...(warnings ? { warnings } : {}) }, "proposal-inventory.json");
   const proposalPath = join(root, "proposal.json");
   writeFileSync(proposalPath, JSON.stringify({
-    version: 1, kind: "classification-proposals", inventoryDigest: inventory.digest, scope: { candidateCount: 1 },
+    version: 1, kind: "classification-proposals", inventoryDigest: inventoryDigest ?? inventory.digest, scope: { candidateCount },
     items: [{ conversationId: source.conversationId, currentTitle: source.title, reasons: source.reasons, ...item }],
   }));
   return validateClassificationProposals(inventory.path, proposalPath);
@@ -361,4 +361,13 @@ test("classification proposals are source-bound; a projectless keep is fine and 
   assert.equal(projectless(null, "none").ok, true);
   assert.equal(projectless("Project A", "manual-remove").ok, true);
   assert.throws(() => projectless("Project A", "none"), /manual-remove/);
+
+  // 제안은 만든 근거인 인벤토리와 어긋나면 거부한다.
+  const keep = { projectName: null, suggestedDecision: "keep", suggestedNewTitle: title,
+    suggestedProjectAction: "none", suggestedProjectName: null, confidence: "high", rationale: "고유한 검토 결과가 있다" };
+  const unassigned = { ...base, projectName: null, reasons: ["overhaul"] };
+  assert.throws(() => validateProposal(root, unassigned, { ...keep, currentTitle: "다른 제목" }), /currentTitle does not match/);
+  assert.throws(() => validateProposal(root, unassigned, keep, { candidateCount: 2 }), /candidateCount does not match/);
+  assert.throws(() => validateProposal(root, unassigned, keep, { inventoryDigest: "0".repeat(64) }), /do not match the inventory digest/);
+  assert.throws(() => validateProposal(root, unassigned, keep, { warnings: ["incomplete scan"] }), /not safe to classify/);
 }));

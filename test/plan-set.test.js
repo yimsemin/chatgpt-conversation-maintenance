@@ -103,6 +103,18 @@ test("receipts skip a completed batch and pending batches are applied and verifi
     assert.equal(summary.remainingRenames, 1);
     assert.match(summary.expectedConfirmation,
       /^APPLY 2 BATCHES; 2 ACTIONS; DELETE 1 CONVERSATIONS; SET [0-9a-f]{12}$/);
+    await assert.rejects(applyPlanSet({ plansDir, confirmation: "wrong", accountId: ACCOUNT_ID, api }), /confirmation does not match/);
+    assert.deepEqual(operations, []);
+
+    // 쓰다가 끊긴 영수증이 있으면 성공 여부를 모르므로 다시 쓰지 않는다.
+    const interrupted = join(root, "receipts", "interrupted.json");
+    writeFileSync(interrupted, JSON.stringify({ version: 1, runId: "interrupted-run", source: SOURCE, status: "in-progress",
+      results: [], currentAction: { conversationId: IDS[1], decision: "delete" } }));
+    await assert.rejects(applyPlanSet({ plansDir, confirmation: summary.expectedConfirmation, accountId: ACCOUNT_ID, api }),
+      /require manual review/);
+    assert.deepEqual(operations, []);
+    rmSync(interrupted);
+
     const result = await applyPlanSet({
       plansDir,
       confirmation: summary.expectedConfirmation,
