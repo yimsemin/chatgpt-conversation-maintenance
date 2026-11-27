@@ -18,8 +18,14 @@ export function startRelay({ api, relayVersion, onState = () => {}, pageTimeoutM
   let updateAvailable = false;
   let ownedElsewhere = false;
   let stopped = false;
+  let lastState;
 
-  const emit = () => onState({ connected, needsUpdate, updateAvailable, ownedElsewhere, hasPeer: Boolean(peer && !peer.closed) });
+  function emit() {
+    const state = { connected, needsUpdate, updateAvailable, ownedElsewhere, hasPeer: Boolean(peer && !peer.closed) };
+    if (lastState && Object.keys(state).every((key) => state[key] === lastState[key])) return;
+    lastState = state;
+    onState(state);
+  }
 
   function trace(stage, fields) {
     try {

@@ -25,8 +25,8 @@ function render() {
   const outdated = S.relayLocal?.needsUpdate === true;
   // 북마클릿으로 막 연 창은 ChatGPT와 연결하는 데 몇 초 걸린다. 그동안은 "끊김"이 아니라 "연결 중"으로 보인다.
   const connecting = isRelayOwnerWindow() && s && !s.relay?.connected && Date.now() - BOOTED_AT < 20000;
-  // 겉모습만 바뀐 새 북마클릿이 있으면 연결은 유지하되 선택적 갱신을 안내한다.
-  const softUpdate = S.relayLocal?.updateAvailable === true && s?.relay?.connected === true;
+  // 연결이 정상일 때 선택적 갱신을 안내하고, 지연이나 불안정 상태에서는 연결 안내를 표시한다.
+  const softUpdate = S.relayLocal?.updateAvailable === true && s?.relay?.level === "ok";
   const relay = connecting ? { level: "warn", label: t("app.connectingChatgpt"), hint: "" } : outdated ? { level: "bad", label: t("app.bookmarkletOutdated"), hint: t("app.bookmarkletOutdatedHint") }
     : softUpdate ? { ...s.relay, hint: t("app.bookmarkletUpdateAvailable") }
     : s?.relay || (reachable ? { level: "warn", label: t("app.serverError"), hint: "" }
